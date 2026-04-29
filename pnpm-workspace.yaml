@@ -41,5 +41,6 @@ onlyBuiltDependencies:
   - msw
   - unrs-resolver
 
-overrides:
-  '@esbuild-kit/esm-loader': npm:tsx@^4.21.0
+
+# Removido overrides para compatibilidade com Vercel
+
