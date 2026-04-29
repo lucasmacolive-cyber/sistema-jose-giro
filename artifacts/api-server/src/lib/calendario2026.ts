@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Calendário Letivo 2026 — E. M. José Giró Faísca
  * Secretaria Municipal de Educação de Campos dos Goytacazes

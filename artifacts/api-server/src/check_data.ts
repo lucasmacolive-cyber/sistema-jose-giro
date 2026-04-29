@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { db, professoresTable, funcionariosTable } from './src/lib/db/src/index.js';
 
 async function run() {

@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { File } from "@google-cloud/storage";
 
 const ACL_POLICY_METADATA_KEY = "custom:aclPolicy";

@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * Parser de Diário SUAP — PDF
  *

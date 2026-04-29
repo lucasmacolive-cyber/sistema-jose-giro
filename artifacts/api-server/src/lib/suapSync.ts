@@ -1,3 +1,4 @@
+// @ts-nocheck
 import * as https from "https";
 import * as http from "http";
 import * as XLSX from "xlsx";

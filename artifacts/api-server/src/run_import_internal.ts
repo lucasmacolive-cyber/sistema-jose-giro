@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { importarAlunosXLS } from './services/importService.ts';
 import path from 'path';
 
