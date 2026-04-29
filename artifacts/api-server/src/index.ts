@@ -61,7 +61,16 @@ async function setup() {
   }
 }
 
-app.listen(PORT, async () => {
-  await setup();
-  console.log(`🚀 Servidor rodando em http://localhost:${PORT}`);
-});
+// Chamar setup uma vez na inicialização do arquivo
+setup().catch(console.error);
+
+// Exportar para o Vercel
+export default app;
+
+// Iniciar servidor apenas se rodando localmente (não no Vercel)
+if (process.env.NODE_ENV !== "production") {
+  app.listen(PORT, () => {
+    console.log(`🚀 Servidor rodando localmente em http://localhost:${PORT}`);
+  });
+}
+
