@@ -7,7 +7,7 @@ dotenv.config();
 
 import app from "./app.js";
 // @ts-ignore
-import * as dbModule from "./lib/db/index.ts";
+import * as dbModule from "./lib/db/index";
 const { db, usuariosTable, usuarios } = dbModule as any;
 import { eq } from "drizzle-orm";
 

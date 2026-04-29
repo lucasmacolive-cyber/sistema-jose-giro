@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { Router, type IRouter } from "express";
-import { db } from "../lib/db/index.ts";
-import { syncStatusTable, alunosTable, configuracoesTable, diarioAulasTable, diarioPresencasTable, turmasTable, professoresTable } from "../lib/db/index.ts";
+import { db } from "../lib/db/index";
+import { syncStatusTable, alunosTable, configuracoesTable, diarioAulasTable, diarioPresencasTable, turmasTable, professoresTable } from "../lib/db/index";
 import { desc, eq, isNotNull } from "drizzle-orm";
 import * as XLSX from "xlsx";
 import archiver from "archiver";

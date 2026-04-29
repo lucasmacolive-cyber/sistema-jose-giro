@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { db, alunos, turmasTable } from './lib/db/index.ts';
+import { db, alunos, turmasTable } from './lib/db/index';
 import { eq } from "drizzle-orm";
 
 async function cleanup() {

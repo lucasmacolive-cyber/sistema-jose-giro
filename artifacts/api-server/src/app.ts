@@ -5,7 +5,7 @@ import pinoHttp from "pino-http";
 import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
 import router from "./routes/index.js";
-import { pool } from "./lib/db/index.ts";
+import { pool } from "./lib/db/index";
 
 const PgSession = (connectPgSimple as any)(session);
 

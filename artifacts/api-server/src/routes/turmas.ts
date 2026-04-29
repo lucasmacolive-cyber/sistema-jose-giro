@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { Router, type IRouter } from "express";
-import { db } from "../lib/db/index.ts";
-import { turmasTable, alunosTable } from "../lib/db/index.ts";
+import { db } from "../lib/db/index";
+import { turmasTable, alunosTable } from "../lib/db/index";
 import { eq, and } from "drizzle-orm";
 import { sql } from "drizzle-orm";
 
