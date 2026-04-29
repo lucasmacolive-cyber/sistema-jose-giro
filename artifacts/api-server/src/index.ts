@@ -5,11 +5,13 @@ import path from "path";
 dotenv.config();
 
 import app from "./app.js";
-import { db, usuarios } from "@workspace/db";
+// @ts-ignore
+import * as dbModule from "@workspace/db";
+const { db, usuariosTable, usuarios } = dbModule as any;
 import { eq } from "drizzle-orm";
 
-// Alias para evitar erro de exportação se a Vercel se confundir com o nome
-const usuariosTable = usuarios;
+// Usar o que estiver disponível
+const table = usuariosTable || usuarios;
 
 const PORT = process.env.PORT || 8080;
 
@@ -17,10 +19,10 @@ async function setup() {
   console.log("Verificando usuários do sistema...");
   try {
     // @ts-ignore - Suprimir erro de tipo temporariamente para deploy
-    const existing = await db.select().from(usuariosTable).where(eq(usuariosTable.login, "admin")).limit(1);
+    const existing = await db.select().from(table).where(eq(table.login, "admin")).limit(1);
     if (existing.length === 0) {
       // @ts-ignore
-      await db.insert(usuariosTable).values({
+      await db.insert(table).values({
         nomeCompleto: "Administrador Geral",
         login: "admin",
         senha: "admin", 
@@ -30,10 +32,10 @@ async function setup() {
     }
 
     // @ts-ignore
-    const lucas = await db.select().from(usuariosTable).where(eq(usuariosTable.login, "lucas")).limit(1);
+    const lucas = await db.select().from(table).where(eq(table.login, "lucas")).limit(1);
     if (lucas.length === 0) {
       // @ts-ignore
-      await db.insert(usuariosTable).values({
+      await db.insert(table).values({
         nomeCompleto: "Lucas Machado de Oliveira",
         login: "lucas",
         senha: "lucas",
