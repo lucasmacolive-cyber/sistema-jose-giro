@@ -1,4 +1,4 @@
-import express, { type Express } from "express";
+import express from "express";
 import cors from "cors";
 import pinoHttp from "pino-http";
 import session from "express-session";
@@ -6,21 +6,21 @@ import connectPgSimple from "connect-pg-simple";
 import router from "./routes/index.js";
 import { pool } from "@workspace/db";
 
-const PgSession = connectPgSimple(session);
+const PgSession = (connectPgSimple as any)(session);
 
-const app: Express = express();
+const app = (express as any)();
 
 app.use(
-  pinoHttp({
+  (pinoHttp as any)({
     serializers: {
-      req(req) {
+      req(req: any) {
         return {
           id: req.id,
           method: req.method,
           url: req.url?.split("?")[0],
         };
       },
-      res(res) {
+      res(res: any) {
         return {
           statusCode: res.statusCode,
         };
@@ -43,7 +43,7 @@ app.use(
     cookie: {
       maxAge: 30 * 24 * 60 * 60 * 1000,
       httpOnly: true,
-      secure: false, // Set to true if using HTTPS
+      secure: false, 
     },
   })
 );
@@ -51,3 +51,4 @@ app.use(
 app.use("/api", router);
 
 export default app;
+
