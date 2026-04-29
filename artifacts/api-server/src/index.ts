@@ -5,8 +5,11 @@ import path from "path";
 dotenv.config();
 
 import app from "./app.js";
-import { db, usuariosTable } from "@workspace/db";
+import { db, usuarios } from "@workspace/db";
 import { eq } from "drizzle-orm";
+
+// Alias para evitar erro de exportação se a Vercel se confundir com o nome
+const usuariosTable = usuarios;
 
 const PORT = process.env.PORT || 8080;
 
