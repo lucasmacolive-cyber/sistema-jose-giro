@@ -8,7 +8,7 @@
     "build": "node ./build.mjs",
     "start": "node --enable-source-maps ./dist/index.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "vercel-build": "node ./build.mjs"
+    "vercel-build": "rm -f tsconfig.json && rm -f ../../lib/db/tsconfig.json && node ./build.mjs"
   },
   "dependencies": {
     "@google-cloud/storage": "^7.19.0",
