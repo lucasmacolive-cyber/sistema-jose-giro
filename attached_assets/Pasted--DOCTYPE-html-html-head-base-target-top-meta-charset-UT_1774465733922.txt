@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <base target="_top">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        :root { --bg: #0f172a; --sidebar: #1e293b; --text: #f8fafc; --accent: #3b82f6; --topbar: #1e293b; }
+        body { font-family: 'Segoe UI', sans-serif; margin: 0; background: var(--bg); color: var(--text); overflow-x: hidden; }
+
+        /* FAIXA SUPERIOR PADRONIZADA COM LOGO */
+        .topbar {
+            position: fixed; top: 0; left: 0; right: 0; height: 50px;
+            background: var(--topbar); border-bottom: 1px solid rgba(255,255,255,0.05);
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 0 20px; z-index: 1100;
+        }
+        .logo-topbar { display: flex; align-items: center; gap: 10px; }
+        .logo-topbar img { width: 30px; height: 30px; object-fit: contain; }
+        .logo-topbar span { font-weight: bold; font-size: 0.9rem; color: var(--accent); }
+        .info-clima { display: flex; align-items: center; gap: 15px; font-size: 0.85rem; color: rgba(248, 250, 252, 0.8); font-style: italic; }
+
+        .container { padding: 80px 30px 30px; }
+        .header-pag { display: flex; justify-content: space-between; align-items: center; margin-bottom: 40px; }
+        h1 { font-size: 3rem; margin: 0; font-weight: 800; color: white; letter-spacing: -1px; }
+        .btn-voltar { background: rgba(255,255,255,0.05); padding: 12px 24px; border-radius: 15px; cursor: pointer; color: var(--accent); font-weight: bold; border: 1px solid rgba(59, 130, 246, 0.2); }
+
+        .grid-turmas { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 25px; }
+        .balao-capsula { display: flex; align-items: center; height: 100px; border-radius: 60px 20px 20px 60px; color: white; padding: 10px; cursor: pointer; transition: 0.4s; box-shadow: 0 15px 35px rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); }
+        .circulo-icon { width: 80px; height: 80px; border-radius: 50%; background: rgba(255,255,255,0.25); display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 1.8rem; margin-right: 20px; flex-shrink: 0; }
+        .info-balao { display: flex; flex-direction: column; justify-content: center; overflow: hidden; }
+        .nome-turma { font-weight: 800; font-size: 1.4rem; }
+        .docente-nome { font-size: 0.85rem; opacity: 0.9; font-style: italic; }
+        .turno-label { font-size: 0.7rem; font-weight: 900; background: rgba(0,0,0,0.2); padding: 3px 10px; border-radius: 10px; width: fit-content; margin-top: 5px; text-transform: uppercase; }
+
+        .cor-0 { background: linear-gradient(90deg, #3b82f6, #1d4ed8); }
+        .cor-1 { background: linear-gradient(90deg, #ef4444, #b91c1c); }
+        .cor-2 { background: linear-gradient(90deg, #8b5cf6, #6d28d9); }
+        .cor-3 { background: linear-gradient(90deg, #10b981, #047857); }
+        .cor-4 { background: linear-gradient(90deg, #f59e0b, #b45309); }
+    </style>
+</head>
+<body>
+
+    <header class="topbar">
+        <div class="logo-topbar">
+            <img src="https://i.postimg.cc/bwn72w4F/So-logo-sem-fundo.png">
+            <span>E. M. José Giró Faísca</span>
+        </div>
+        <div class="info-clima">
+            <span id="data-hoje"></span>
+            <span id="clima-local">---</span>
+        </div>
+    </header>
+
+    <div class="container">
+        <div class="header-pag">
+            <h1>Turmas</h1>
+            <div class="btn-voltar" onclick="voltar()">← VOLTAR</div>
+        </div>
+        <div class="grid-turmas" id="grid"></div>
+    </div>
+
+    <script>
+        window.onload = function() {
+            atualizarInfo();
+            obterClima();
+            google.script.run.withSuccessHandler(function(turmas) {
+                const grid = document.getElementById('grid');
+                if (!turmas || turmas.length === 0) return;
+                turmas.forEach((t, i) => {
+                    const cor = "cor-" + (i % 5);
+                    const nomeT = t["Nome_Turma"] || "S/N";
+                    grid.innerHTML += `<div class="balao-capsula ${cor}"><div class="circulo-icon">${nomeT.toString()[0]}</div><div class="info-balao"><div class="nome-turma">${nomeT}</div><div class="docente-nome">👤 ${t["Professor_Responsavel"] || "A definir"}</div><div class="turno-label">${t["Turno"] || "Geral"}</div></div></div>`;
+                });
+            }).buscarTudoParaTurmas();
+        };
+
+        function atualizarInfo() {
+            const dias = ['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'];
+            const agora = new Date();
+            document.getElementById('data-hoje').innerText = `${dias[agora.getDay()]}, ${agora.toLocaleDateString()}`;
+        }
+
+        async function obterClima() {
+            try {
+                const res = await fetch('https://ipapi.co/json/');
+                const local = await res.json();
+                document.getElementById('clima-local').innerText = `☀️ 26°C em ${local.city}`;
+            } catch (e) { document.getElementById('clima-local').innerText = "☀️ 27°C"; }
+        }
+
+        function voltar() { google.script.run.withSuccessHandler(url => window.top.location.href = url + "?page=Dashboard").pegarLinkDoApp(); }
+    </script>
+</body>
+</html>

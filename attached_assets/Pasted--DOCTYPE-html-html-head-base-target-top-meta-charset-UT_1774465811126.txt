@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <base target="_top">
+    <meta charset="UTF-8">
+    <style>
+        :root { --bg: #0f172a; --card: #1e293b; --accent: #3b82f6; --text: #f8fafc; }
+        body { font-family: 'Segoe UI', sans-serif; margin: 0; background: var(--bg); color: var(--text); padding-top: 60px; }
+        .topbar { position: fixed; top: 0; left: 0; right: 0; height: 50px; background: #1e293b; display: flex; align-items: center; justify-content: space-between; padding: 0 20px; z-index: 100; border-bottom: 1px solid rgba(255,255,255,0.05); }
+        .container { max-width: 1100px; margin: 0 auto; padding: 20px; }
+        .config-card { background: var(--card); padding: 25px; border-radius: 15px; border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 10px 30px rgba(0,0,0,0.3); }
+        .flex-row { display: flex; gap: 15px; margin-bottom: 20px; }
+        select { flex: 1; padding: 12px; border-radius: 8px; background: #0f172a; color: white; border: 1px solid #334155; font-size: 1rem; }
+        
+        /* Destaque para o botão principal */
+        .btn-gerar { background: var(--accent); color: white; border: none; padding: 0 40px; border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 1.1rem; text-transform: uppercase; letter-spacing: 1px; transition: 0.3s; }
+        .btn-gerar:hover { filter: brightness(1.2); transform: scale(1.02); }
+        
+        .secao-titulo { font-size: 0.85rem; color: var(--accent); margin-bottom: 12px; font-weight: bold; text-transform: uppercase; letter-spacing: 1.5px; border-bottom: 1px solid rgba(59, 130, 246, 0.2); padding-bottom: 8px; }
+        .grid-opcoes { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 8px; padding: 15px; background: rgba(0,0,0,0.3); border-radius: 10px; margin-bottom: 20px; }
+        
+        /* Área destacada para o Cabeçalho */
+        .area-cabecalho { background: rgba(59, 130, 246, 0.05); border: 1px solid rgba(59, 130, 246, 0.2); padding: 15px; border-radius: 10px; margin-bottom: 20px; }
+        
+        .chk-label { font-size: 0.85rem; display: flex; align-items: center; gap: 10px; cursor: pointer; padding: 5px; color: #cbd5e1; }
+        .chk-label:hover { color: white; background: rgba(255,255,255,0.05); border-radius: 4px; }
+        input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent); }
+    </style>
+</head>
+<body>
+    <header class="topbar">
+        <span>SISTEMA DE EMISSÃO DE LISTAGENS FLEGÍVEIS</span>
+        <button onclick="voltar()" style="background:none; border:1px solid var(--accent); color:var(--accent); cursor:pointer; padding:5px 15px; border-radius:5px; font-weight:bold;">Voltar</button>
+    </header>
+
+    <div class="container">
+        <div class="config-card">
+            <div class="flex-row">
+                <select id="selTurma"><option>Carregando turmas...</option></select>
+                <button class="btn-gerar" onclick="prepararGeracao()">VISUALIZAR E GERAR DOCUMENTO</button>
+            </div>
+            
+            <div class="area-cabecalho">
+                <p class="secao-titulo">⚙️ Configurações do Cabeçalho (Topo da Folha)</p>
+                <div style="display: flex; gap: 20px; flex-wrap: wrap;">
+                    <label class="chk-label"><input type="checkbox" id="headProfessor" checked> Incluir Nome do Professor (Puxa da aba Turmas)</label>
+                    <label class="chk-label"><input type="checkbox" id="headTurma" checked> Incluir Nome/Código da Turma</label>
+                </div>
+            </div>
+
+            <p class="secao-titulo">📋 Selecione as Colunas da Tabela</p>
+            <div class="grid-opcoes" id="areaChecks">
+                <label class="chk-label"><input type="checkbox" data-ref="Matrícula"> Matrícula</label>
+                <label class="chk-label"><input type="checkbox" data-ref="Matrícula no SUAP"> Matrícula no SUAP</label>
+                <label class="chk-label"><input type="checkbox" data-ref="Ano Letivo de Integralização"> Ano Letivo de Integralização</label>
+                <label class="chk-label"><input type="checkbox" data-ref="CPF" checked> CPF</label>
+                <label class="chk-label"><input type="checkbox" data-ref="CPF do Responsável"> CPF do Responsável</label>
+                <label class="chk-label"><input type="checkbox" data-ref="Código Educacenso"> Código Educacenso</label>
+                <label class="chk-label"><input type="checkbox" data-ref="Data de Matrícula"> Data de Matrícula</label>
+                <label class="chk-label"><input type="checkbox" data-ref="Data de Nascimento" checked> Data de Nascimento</label>
+                <label class="chk-label"><input type="checkbox" data-ref="Email Pessoal"> Email Pessoal</label>
+                <label class="chk-label"><input type="checkbox" data-ref="Email do Responsável"> Email do Responsável</label>
+                <label class="chk-label"><input type="checkbox" data-ref="Endereço"> Endereço</label>
+                <label class="chk-label"><input type="checkbox" data-ref="Estado"> Estado</label>
+                <label class="chk-label"><input type="checkbox" data-ref="Estado Civil"> Estado Civil</label>
+                <label class="chk-label"><input type="checkbox" data-ref="Etnia/Raça"> Etnia/Raça</label>
+                <label class="chk-label"><input type="checkbox" data-ref="Município de Residência"> Município de Residência</label>
+                <label class="chk-label"><input type="checkbox" data-ref="Nacionalidade"> Nacionalidade</label>
+                <label class="chk-label"><input type="checkbox" data-ref="Naturalidade"> Naturalidade</label>
+                <label class="chk-label"><input type="checkbox" data-ref="Nome da Mãe" checked> Nome da Mãe</label>
+                <label class="chk-label"><input type="checkbox" data-ref="Nome do Pai"> Nome do Pai</label>
+                <label class="chk-label"><input type="checkbox" data-ref="Nível de Ensino"> Nível de Ensino</label>
+                <label class="chk-label"><input type="checkbox" data-ref="Período Atual"> Período Atual</label>
+                <label class="chk-label"><input type="checkbox" data-ref="RG"> RG</label>
+                <label class="chk-label"><input type="checkbox" data-ref="Responsável"> Responsável</label>
+                <label class="chk-label"><input type="checkbox" data-ref="Sexo"> Sexo</label>
+                <label class="chk-label"><input type="checkbox" data-ref="Telefone" checked> Telefone</label>
+                <label class="chk-label"><input type="checkbox" data-ref="Zona Residencial"> Zona Residencial</label>
+                <label class="chk-label"><input type="checkbox" id="assinatura"> Campo para Assinatura</label>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        window.onload = function() {
+            google.script.run.withSuccessHandler(turmas => {
+                const s = document.getElementById('selTurma');
+                s.innerHTML = '<option value="">Selecione a Turma...</option>';
+                turmas.forEach(t => { 
+                    let o = document.createElement('option'); o.value = t; o.text = "TURMA: " + t; s.add(o); 
+                });
+            }).listarTurmasUnicas();
+        };
+
+        function prepararGeracao() {
+            const turma = document.getElementById('selTurma').value;
+            if(!turma) return alert("Por favor, selecione uma turma primeiro!");
+
+            // Captura opções do Cabeçalho
+            const showProfessor = document.getElementById('headProfessor').checked;
+            const showTurma = document.getElementById('headTurma').checked;
+
+            // Captura quais colunas da tabela foram marcadas
+            const checkboxes = document.querySelectorAll('#areaChecks input:checked');
+            let colunasEscolhidas = [{label: "Nº", ref: "n"}, {label: "NOME DO ALUNO", ref: "Nome do aluno"}];
+            
+            checkboxes.forEach(ck => {
+                if(ck.id === 'assinatura') colunasEscolhidas.push({label: "ASSINATURA", ref: "vazio"});
+                else colunasEscolhidas.push({label: ck.parentElement.innerText.trim().toUpperCase(), ref: ck.getAttribute('data-ref')});
+            });
+
+            // Chama o servidor para buscar os alunos E o nome do professor
+            google.script.run.withSuccessHandler(function(alunos) {
+                if(!alunos || alunos.length === 0) return alert("Nenhum aluno encontrado para (" + turma + ").");
+                
+                if(showProfessor) {
+                    // Se pediu professor, faz uma segunda chamada para buscar o nome dele
+                    google.script.run.withSuccessHandler(function(nomeProfessor) {
+                        abrirJanelaImpressao(turma, colunasEscolhidas, alunos, {showProfessor, showTurma, nomeProfessor});
+                    }).obterProfessorDaTurma(turma);
+                } else {
+                    // Se não pediu professor, gera direto
+                    abrirJanelaImpressao(turma, colunasEscolhidas, alunos, {showProfessor, showTurma, nomeProfessor: ""});
+                }
+                
+            }).buscarAlunosPorTurma(turma);
+        }
+
+        function abrirJanelaImpressao(turma, colunas, alunos, configCabecalho) {
+            const win = window.open("", "_blank");
+            const hoje = new Date().toLocaleDateString('pt-BR');
+            
+            let html = `
+                <html>
+                <head>
+                    <title>Lista - ${turma}</title>
+                    <style>
+                        body { font-family: sans-serif; padding: 20px; color: #000; background: white; }
+                        
+                        /* ESTILO DO CABEÇALHO OFICIAL COM LOGO */
+                        .cabecalho-container { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #000; margin-bottom: 20px; padding-bottom: 15px; }
+                        .textos-prefeitura { text-align: left; }
+                        .textos-prefeitura p { margin: 2px 0; font-weight: bold; text-transform: uppercase; font-size: 13px; }
+                        .logo-escola { width: 90px; height: 90px; object-fit: contain; }
+                        
+                        /* Área Dinâmica do Professor/Turma */
+                        .info-dinamica { text-align: left; margin-top: 10px; font-size: 12px; border-top: 1px solid #eee; padding-top: 5px;}
+                        .info-dinamica span { font-weight: bold; text-transform: uppercase; margin-right: 20px;}
+
+                        table { width: 100%; border-collapse: collapse; margin-top: 10px; table-layout: auto;}
+                        th, td { border: 1px solid #000; padding: 6px; font-size: 10px; text-align: left; word-wrap: break-word;}
+                        th { background: #f2f2f2; text-transform: uppercase; font-weight: bold;}
+                        
+                        .no-print { display: flex; gap: 10px; margin-bottom: 20px; padding: 10px; background: #f0f0f0; border-radius: 5px; border: 1px solid #ccc;}
+                        button { padding: 10px 20px; cursor: pointer; font-weight: bold; border-radius: 5px; border: 1px solid #000; }
+                        .btn-imp { background: #10b981; color: #fff; border: none; }
+                        .btn-env { background: #3b82f6; color: #fff; border: none; }
+                        
+                        @media print { 
+                            .no-print { display: none !important; } 
+                            body { padding: 0; }
+                            table { page-break-inside: auto; }
+                            tr { page-break-inside: avoid; page-break-after: auto; }
+                        }
+                    </style>
+                </head>
+                <body>
+                    <div class="no-print">
+                        <button class="btn-imp" onclick="window.print()">🖨️ CONFIRMAR E IMPRIMIR</button>
+                        <button class="btn-env" onclick="alert('Funcionalidade de envio/salvamento em PDF em desenvolvimento...')">📧 SALVAR/ENVIAR (PDF)</button>
+                    </div>
+                    
+                    <div class="cabecalho-container">
+                        <div class="textos-prefeitura">
+                            <p>Prefeitura do Município de Campos dos Goytacazes</p>
+                            <p>Secretaria Municipal de Educação, Ciência e Tecnologia</p>
+                            <p>E. M. José Giró Faísca</p>
+                            
+                            <div class="info-dinamica">
+                                ${configCabecalho.showProfessor ? `<span>PROFESSOR(A): ${configCabecalho.nomeProfessor}</span>` : ""}
+                                ${configCabecalho.showTurma ? `<span>TURMA: ${turma}</span>` : ""}
+                                <span>EMISSÃO: ${hoje}</span>
+                            </div>
+                        </div>
+                        <img src="https://i.postimg.cc/bwn72w4F/So-logo-sem-fundo.png" class="logo-escola" alt="Logo Escola">
+                    </div>
+
+                    <table>
+                        <thead><tr>${colunas.map(c => `<th>${c.label}</th>`).join("")}</tr></thead>
+                        <tbody>
+                            ${alunos.map((a, i) => `
+                                <tr>
+                                    ${colunas.map(c => {
+                                        if(c.ref === 'n') return `<td>${i+1}</td>`;
+                                        if(c.ref === 'vazio') return `<td style="color:#ccc">_______________________</td>`;
+                                        return `<td>${a[c.ref] || ""}</td>`;
+                                    }).join("")}
+                                </tr>
+                            `).join("")}
+                        </tbody>
+                    </table>
+                </body>
+                </html>
+            `;
+            win.document.write(html);
+            win.document.close();
+        }
+
+        function voltar() {
+            google.script.run.withSuccessHandler(url => window.top.location.href = url + "?page=Dashboard").pegarLinkDoApp();
+        }
+    </script>
+</body>
+</html>

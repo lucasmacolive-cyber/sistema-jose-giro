@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <base target="_top">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        :root { --bg: #0f172a; --card: #1e293b; --accent: #3b82f6; --text: #f8fafc; --topbar: #1e293b; --label: #94a3b8; }
+        body { font-family: 'Segoe UI', sans-serif; margin: 0; background: var(--bg); color: var(--text); padding-top: 60px; }
+
+        .topbar { position: fixed; top: 0; left: 0; right: 0; height: 50px; background: var(--topbar); border-bottom: 1px solid rgba(255,255,255,0.05); display: flex; align-items: center; justify-content: space-between; padding: 0 20px; z-index: 1100; }
+        .logo-topbar { display: flex; align-items: center; gap: 10px; }
+        .logo-topbar img { width: 30px; height: 30px; }
+        .logo-topbar span { font-weight: bold; font-size: 0.9rem; color: var(--accent); }
+
+        .container { max-width: 1000px; margin: 0 auto; padding: 20px; }
+
+        .search-section { background: var(--card); padding: 20px; border-radius: 16px; margin-bottom: 25px; display: flex; gap: 10px; border: 1px solid rgba(255,255,255,0.05); box-shadow: 0 4px 15px rgba(0,0,0,0.2); }
+        input { flex: 1; padding: 12px; border-radius: 8px; border: 1px solid #334155; background: #0f172a; color: white; outline: none; font-size: 1rem; }
+        input:focus { border-color: var(--accent); }
+        .btn-busca { background: var(--accent); color: white; border: none; padding: 0 25px; border-radius: 8px; cursor: pointer; font-weight: bold; transition: 0.3s; }
+        .btn-busca:hover { filter: brightness(1.2); }
+
+        /* GRID DE CARDS ESTILO TURMAS */
+        .perfil-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px; display: none; }
+        .info-card { background: var(--card); padding: 25px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.08); box-shadow: 0 10px 30px rgba(0,0,0,0.3); transition: 0.3s; }
+        .info-card:hover { transform: translateY(-5px); border-color: var(--accent); }
+        .info-card h3 { margin-top: 0; color: var(--accent); font-size: 0.85rem; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 20px; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 10px; }
+        
+        .campo { margin-bottom: 15px; }
+        .label { display: block; font-size: 0.7rem; color: var(--label); font-weight: 700; text-transform: uppercase; margin-bottom: 4px; }
+        .valor { font-size: 1.05rem; color: #fff; font-weight: 500; }
+
+        .status-msg { text-align: center; padding: 50px; color: var(--label); font-style: italic; font-size: 1.1rem; }
+    </style>
+</head>
+<body>
+    <header class="topbar">
+        <div class="logo-topbar"><img src="https://i.postimg.cc/bwn72w4F/So-logo-sem-fundo.png"><span>PERFIL DO ALUNO</span></div>
+        <button onclick="voltar()" style="background:none; border:1px solid var(--accent); color:var(--accent); padding: 6px 16px; border-radius:8px; cursor:pointer; font-weight:bold;">Sair</button>
+    </header>
+
+    <div class="container">
+        <div class="search-section">
+            <input type="text" id="inputBusca" list="listaAlunos" placeholder="Digite o nome, CPF ou Data de Nascimento..." oninput="verificarInput(this.value)">
+            <datalist id="listaAlunos"></datalist>
+            <button class="btn-busca" onclick="pesquisar()">BUSCAR</button>
+        </div>
+
+        <div id="msgStatus" class="status-msg">Aguardando pesquisa para carregar os dados...</div>
+
+        <div id="areaPerfil" class="perfil-grid">
+            <div class="info-card">
+                <h3>🎓 Acadêmico / Escolar</h3>
+                <div class="campo"><span class="label">Matrícula</span><span class="valor" id="val-Matricula"></span></div>
+                <div class="campo"><span class="label">Turma Atual</span><span class="valor" id="val-Turma"></span></div>
+                <div class="campo"><span class="label">Turno</span><span class="valor" id="val-Turno"></span></div>
+                <div class="campo"><span class="label">Situação no Curso</span><span class="valor" id="val-Situacao"></span></div>
+            </div>
+
+            <div class="info-card">
+                <h3>👤 Dados Pessoais</h3>
+                <div class="campo"><span class="label">Nome Completo</span><span class="valor" id="val-Nome"></span></div>
+                <div class="campo"><span class="label">Data de Nascimento</span><span class="valor" id="val-Nascimento"></span></div>
+                <div class="campo"><span class="label">CPF</span><span class="valor" id="val-CPF"></span></div>
+                <div class="campo"><span class="label">RG</span><span class="valor" id="val-RG"></span></div>
+            </div>
+
+            <div class="info-card">
+                <h3>🏠 Contato e Família</h3>
+                <div class="campo"><span class="label">Nome da Mãe</span><span class="valor" id="val-Mae"></span></div>
+                <div class="campo"><span class="label">Nome do Pai</span><span class="valor" id="val-Pai"></span></div>
+                <div class="campo"><span class="label">Telefone</span><span class="valor" id="val-Telefone"></span></div>
+                <div class="campo"><span class="label">Endereço Completo</span><span class="valor" id="val-Endereco"></span></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let nomesAlunos = [];
+        window.onload = function() {
+            google.script.run.withSuccessHandler(function(nomes) {
+                nomesAlunos = nomes;
+                const dl = document.getElementById('listaAlunos');
+                nomes.forEach(n => { const opt = document.createElement('option'); opt.value = n; dl.appendChild(opt); });
+            }).listarNomesAlunos();
+        };
+
+        function verificarInput(val) { if(nomesAlunos.includes(val)) pesquisar(); }
+
+        function pesquisar() {
+            const busca = document.getElementById('inputBusca').value;
+            if(!busca) return;
+            document.getElementById('msgStatus').innerText = "Buscando registro...";
+            google.script.run.withSuccessHandler(function(aluno) {
+                if(aluno) {
+                    document.getElementById('msgStatus').style.display = 'none';
+                    document.getElementById('areaPerfil').style.display = 'grid';
+                    document.getElementById('val-Matricula').innerText = aluno["Matrícula"] || "---";
+                    document.getElementById('val-Turma').innerText = aluno["Turma Atual"] || "---";
+                    document.getElementById('val-Turno').innerText = aluno["Turno"] || "---";
+                    document.getElementById('val-Situacao').innerText = aluno["Situação no Curso"] || "---";
+                    document.getElementById('val-Nome').innerText = aluno["Nome do aluno"] || "---";
+                    document.getElementById('val-Nascimento').innerText = aluno["Data de Nascimento"] || "---";
+                    document.getElementById('val-CPF').innerText = aluno["CPF"] || "---";
+                    document.getElementById('val-RG').innerText = aluno["RG"] || "---";
+                    document.getElementById('val-Mae').innerText = aluno["Nome da mãe"] || "---";
+                    document.getElementById('val-Pai').innerText = aluno["Nome do pai"] || "---";
+                    document.getElementById('val-Telefone').innerText = aluno["Telefone"] || "---";
+                    document.getElementById('val-Endereco').innerText = aluno["Endereço"] || "---";
+                } else { 
+                    document.getElementById('areaPerfil').style.display = 'none';
+                    document.getElementById('msgStatus').style.display = 'block';
+                    document.getElementById('msgStatus').innerText = "❌ Aluno não encontrado.";
+                }
+            }).obterDadosAluno(busca);
+        }
+        function voltar() { google.script.run.withSuccessHandler(url => window.top.location.href = url + "?page=Dashboard").pegarLinkDoApp(); }
+    </script>
+</body>
+</html>

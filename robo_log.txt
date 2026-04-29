@@ -1,0 +1,23 @@
+[19:15:15] === ROBO INICIADO ===
+[19:15:15] Conectando em: http://localhost:8080
+[19:15:15] Listando impressoras disponiveis no Windows:
+[19:15:16]  - Enviar para o OneNote 2013
+[19:15:16]  - EPSON3974D2 (L3250 Series)
+[19:15:16]  - Fax
+[19:15:16]  - Microsoft Print to PDF
+[19:15:16]  - Microsoft XPS Document Writer
+[19:15:16]  - RICOH SP 3710SF PCL 6
+[19:15:16]  - RICOH SP 3710SF PS
+[19:15:17] Processando: images.png
+[19:15:17] Convertendo imagem para PDF...
+[19:15:18] Impressora selecionada: RICOH SP 3710SF PCL 6
+[19:15:18] Usando metodo alternativo (PowerShell)...
+[19:15:20] PowerShell enviou com sucesso.
+[19:15:20] Processo finalizado.
+[19:17:47] Processando: images.png
+[19:17:47] Convertendo imagem para PDF...
+[19:17:48] Impressora selecionada: RICOH SP 3710SF PCL 6
+[19:17:48] Usando metodo alternativo (PowerShell)...
+[19:17:51] PowerShell enviou com sucesso.
+[19:17:51] Processo finalizado.
+[19:20:56] Falha de conexao no heartbeat: HTTPConnectionPool(host='localhost', port=8080): Max retries exceeded with url: /api/impressoes/heartbeat (Caused by NewConnectionError("HTTPConnection(host='localhost', port=8080): Failed to establish a new connection: [WinError 10061] Nenhuma conexão pôde ser feita porque a máquina de destino as recusou ativamente"))

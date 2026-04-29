@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="pt-PT">
+<head>
+    <base target="_top">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Painel - EM José Giró Faísca</title>
+    <style>
+        :root {
+            --bg-color: #f4f7f6;
+            --sidebar-bg: #2c3e50;
+            --sidebar-text: #ecf0f1;
+            --topbar-bg: #ffffff;
+            --text-color: #333333;
+            --accent-color: #e0a96d;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            display: flex;
+            height: 100vh;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+        }
+
+        /* Menu Lateral */
+        .sidebar {
+            width: 250px;
+            background-color: var(--sidebar-bg);
+            color: var(--sidebar-text);
+            display: flex;
+            flex-direction: column;
+            transition: all 0.3s;
+        }
+
+        .sidebar-header {
+            padding: 20px;
+            text-align: center;
+            border-bottom: 1px solid #34495e;
+        }
+
+        .sidebar-header h3 {
+            margin: 0;
+            font-size: 1.2rem;
+            color: var(--accent-color);
+        }
+
+        .menu-items {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        .menu-items li {
+            padding: 15px 20px;
+            cursor: pointer;
+            border-bottom: 1px solid #34495e;
+            transition: background 0.3s;
+        }
+
+        .menu-items li:hover {
+            background-color: #34495e;
+            border-left: 4px solid var(--accent-color);
+        }
+
+        /* Área de Conteúdo */
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Barra Superior */
+        .topbar {
+            height: 60px;
+            background-color: var(--topbar-bg);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 20px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        }
+
+        .user-info {
+            font-weight: bold;
+            color: var(--sidebar-bg);
+        }
+
+        .btn-sair {
+            background-color: #e74c3c;
+            color: white;
+            border: none;
+            padding: 8px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+
+        /* Conteúdo do Painel */
+        .dashboard-cards {
+            padding: 20px;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+        }
+
+        .card {
+            background-color: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+            text-align: center;
+        }
+
+        .card h4 {
+            margin-top: 0;
+            color: var(--sidebar-bg);
+        }
+
+        /* Responsividade para o telemóvel */
+        @media (max-width: 768px) {
+            .sidebar {
+                position: fixed;
+                left: -250px; /* Esconde o menu no telemóvel inicialmente */
+                height: 100%;
+                z-index: 1000;
+            }
+            .sidebar.active {
+                left: 0;
+            }
+            .menu-toggle {
+                display: block;
+                background: none;
+                border: none;
+                font-size: 1.5rem;
+                cursor: pointer;
+            }
+        }
+        @media (min-width: 769px) {
+            .menu-toggle {
+                display: none;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <nav class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <h3>EM José Giró Faísca</h3>
+        </div>
+        <ul class="menu-items">
+            <li>🏠 Início</li>
+            <li>👥 Alunos e Turmas</li>
+            <li>🖨️ Central de Impressões</li>
+            <li>📂 Documentos</li>
+            <li>⚙️ Configurações</li>
+        </ul>
+    </nav>
+
+    <div class="main-content">
+        
+        <header class="topbar">
+            <button class="menu-toggle" onclick="toggleMenu()">☰</button>
+            <div class="user-info" id="mensagem-boas-vindas">
+                A carregar...
+            </div>
+            <button class="btn-sair" onclick="fazerLogout()">Sair</button>
+        </header>
+
+        <div class="dashboard-cards">
+            <div class="card">
+                <h4>Avisos da Direção</h4>
+                <p>Nenhum aviso novo hoje.</p>
+            </div>
+            <div class="card">
+                <h4>Atalhos Rápidos</h4>
+                <p>Em breve...</p>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        // Função para mostrar/esconder o menu no telemóvel
+        function toggleMenu() {
+            document.getElementById('sidebar').classList.toggle('active');
+        }
+
+        // Função para sair do sistema
+        function fazerLogout() {
+            localStorage.clear();
+            // Pede ao Google o link do sistema para voltar ao Login
+            google.script.run.withSuccessHandler(function(url) {
+                window.top.location.href = url + "?page=Index";
+            }).pegarLinkDoApp();
+        }
+
+        // Quando a página carregar, puxa o nome da pessoa da memória
+        window.onload = function() {
+            const nome = localStorage.getItem('usuarioLogado');
+            const perfil = localStorage.getItem('perfilUsuario');
+            const genero = localStorage.getItem('generoUsuario');
+
+            const saudacao = document.getElementById('mensagem-boas-vindas');
+
+            if (!nome) {
+                // Se não houver ninguém logado, expulsa de volta para o login!
+                fazerLogout();
+            } else {
+                // Monta a mensagem personalizada (Ex: Bem-vinda, Diretora Maria)
+                let pronome = (genero === 'F' || genero === 'f') ? 'Bem-vinda' : 'Bem-vindo';
+                saudacao.innerText = `${pronome}, ${nome} (${perfil})`;
+            }
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,293 @@
+/************************************************
+ * FUNDAMENTAL – CURSOU (SEPARADO)
+ *
+ * - EDITAR: gera DOC e abre
+ * - IMPRIMIR: gera SOMENTE PDF (DOC temp vai pra lixeira) e abre
+ *
+ * Menu:
+ *  B16 = situação (precisa ser "cursou")
+ *  B20 = ano letivo
+ *  B21 = ano de escolaridade
+ *  B22 = resultado final
+ *  B24 = data de transferência (se resultado = Transferido)
+ *
+ * ✅ Mantido:
+ *  - OBJETIVO substitui
+ *  - CURSOU preenche ano letivo e ano escolar normalmente
+ *
+ * ✅ Alteração pedida:
+ *  - Na linha "Reprovado por frequência – Reclassificado ... Amparado a cursar o/a __ ano de"
+ *    NUNCA preencher o ano. Sempre manter "__".
+ ************************************************/
+
+const MODELO_FUNDAMENTAL_CURSOU_ID_ = "1ZAqpLnfnRh3dg4uxOWaMG3OMpKJhtbKcjWbaKRJcT6I";
+const PASTA_DESTINO_FUNDAMENTAL_CURSOU_ID_ = "1kjte98CVU4rkzGpXIVHmj53vB1_UsE4E";
+
+const CELULA_SITUACAO_MENU_FUND_ = "B16";
+const CELULA_ANO_LETIVO_FUND_ = "B20";
+const CELULA_ANO_ESCOLAR_FUND_ = "B21";
+const CELULA_RESULTADO_FUND_ = "B22";
+const CELULA_DATA_TRANSFERENCIA_FUND_ = "B24";
+
+function processarDeclaracaoFundamentalCursou(modo) {
+  modo = (modo || "").toString().trim().toUpperCase();
+  if (!modo) modo = "EDITAR";
+
+  if (modo !== "IMPRIMIR" && modo !== "EDITAR") {
+    throw new Error(`Modo inválido. Use IMPRIMIR ou EDITAR. Valor recebido: "${modo || "(vazio)"}"`);
+  }
+
+  const ss   = SpreadsheetApp.getActive();
+  const menu = ss.getSheetByName(ABA_MENU);
+  const reg  = ss.getSheetByName(ABA_REGISTROS);
+
+  const situacao = textoLimpo_(menu.getRange(CELULA_SITUACAO_MENU_FUND_).getValue()).toLowerCase();
+  if (situacao !== "cursou") {
+    throw new Error('Para usar "Fundamental Cursou", a célula B16 deve estar como "cursou".');
+  }
+
+  const nomeAluno = obterAlunoSelecionado_();
+  if (!nomeAluno) throw new Error("Selecione um aluno no Menu.");
+
+  const objetivo   = textoLimpo_(menu.getRange(CELULA_OBJETIVO_INF).getValue());
+  const anoLetivo  = textoLimpo_(menu.getRange(CELULA_ANO_LETIVO_FUND_).getValue());
+  const anoEscolar = textoLimpo_(menu.getRange(CELULA_ANO_ESCOLAR_FUND_).getValue());
+  const resultado  = textoLimpo_(menu.getRange(CELULA_RESULTADO_FUND_).getValue());
+  const dataTransf = menu.getRange(CELULA_DATA_TRANSFERENCIA_FUND_).getValue();
+
+  if (!anoLetivo)  throw new Error("Preencha o Ano Letivo do Fundamental (B20).");
+  if (!anoEscolar) throw new Error("Preencha o Ano de Escolaridade do Fundamental (B21).");
+  if (!resultado)  throw new Error("Selecione o Resultado Final do Fundamental (B22).");
+
+  const dados   = reg.getDataRange().getValues();
+  const headers = dados[0].map(h => (h || "").toString().trim());
+  const col     = t => headers.indexOf(t);
+
+  const obrigatorias = [
+    "Nome do aluno", "Descrição do Curso",
+    "Naturalidade", "Data de Nascimento",
+    "Nome da Mãe", "Nome do Pai"
+  ];
+  const faltando = obrigatorias.filter(h => col(h) === -1);
+  if (faltando.length) throw new Error("Colunas faltando em Registros: " + faltando.join(", "));
+
+  const linha = dados.find((r, i) => i > 0 && textoLimpo_(r[col("Nome do aluno")]) === nomeAluno);
+  if (!linha) throw new Error("Aluno não encontrado em Registros.");
+
+  const curso = textoLimpo_(linha[col("Descrição do Curso")]).toLowerCase();
+  if (!curso.includes("fundamental")) {
+    throw new Error("O aluno selecionado não é do Ensino Fundamental (verifique 'Descrição do Curso').");
+  }
+
+  const d = {
+    nome: textoLimpo_(linha[col("Nome do aluno")]),
+    naturalidade: textoLimpo_(linha[col("Naturalidade")]),
+    nascimento: linha[col("Data de Nascimento")],
+    mae: textoLimpo_(linha[col("Nome da Mãe")]),
+    pai: textoLimpo_(linha[col("Nome do Pai")]),
+    objetivo,
+    anoLetivo,
+    anoEscolar,
+    resultado,
+    dataTransf
+  };
+
+  if (modo === "EDITAR") {
+    const docId = gerarDocFundamentalCursou_(d);
+    abrirArquivo(docId);
+    return;
+  }
+
+  const pdfId = gerarPdfFundamentalCursou_SemSalvarDoc_(d);
+  abrirArquivo(pdfId);
+}
+
+function gerarDocFundamentalCursou_(d) {
+  const pasta = DriveApp.getFolderById(PASTA_DESTINO_FUNDAMENTAL_CURSOU_ID_);
+
+  const docFile = DriveApp.getFileById(MODELO_FUNDAMENTAL_CURSOU_ID_)
+    .makeCopy(`Declaração - ${d.nome}`, pasta);
+
+  preencherFundamentalCursou_(docFile.getId(), d);
+  return docFile.getId();
+}
+
+function gerarPdfFundamentalCursou_SemSalvarDoc_(d) {
+  const pasta = DriveApp.getFolderById(PASTA_DESTINO_FUNDAMENTAL_CURSOU_ID_);
+
+  const tempDoc = DriveApp.getFileById(MODELO_FUNDAMENTAL_CURSOU_ID_)
+    .makeCopy(`(TEMP) Declaração - ${d.nome}`, pasta);
+
+  preencherFundamentalCursou_(tempDoc.getId(), d);
+
+  const pdf = pasta.createFile(tempDoc.getAs(MimeType.PDF))
+    .setName(`Declaração - ${d.nome}.pdf`);
+
+  tempDoc.setTrashed(true);
+  return pdf.getId();
+}
+
+function preencherFundamentalCursou_(docId, d) {
+  const doc  = DocumentApp.openById(docId);
+  const body = doc.getBody();
+
+  // OBJETIVO
+  body.replaceText("\\{\\{OBJETIVO\\}\\}", d.objetivo || "");
+
+  // demais placeholders
+  body.replaceText("\\{\\{Nome\\}\\}", d.nome || "");
+  body.replaceText("\\{\\{Naturalidade\\}\\}", d.naturalidade || "");
+  body.replaceText("\\{\\{Data de Nascimento\\}\\}", formatarData(d.nascimento));
+  body.replaceText("\\{\\{Nome da Mãe\\}\\}", d.mae || "");
+  body.replaceText("\\{\\{Nome do Pai\\}\\}", d.pai || "");
+  body.replaceText("\\{\\{Data Atual\\}\\}", dataPorExtenso());
+
+  // CURSOU (não mexer)
+  marcarLinhaCursouFundamental_(body, d.anoLetivo, d.anoEscolar);
+
+  // Resultado final
+  marcarResultadoFinalFundamental_(body, d.resultado, d.dataTransf);
+
+  // ✅ TRAVA ABSOLUTA:
+  // Mesmo que algum outro replace do projeto tente preencher,
+  // aqui a gente garante que fica "__" nessa linha.
+  garantirReclassificadoNaoPreencherAno_(body);
+
+  doc.saveAndClose();
+}
+
+function marcarLinhaCursouFundamental_(body, anoLetivo, anoEscolar) {
+  const anoEscFmt = normalizarAnoEscolar_(anoEscolar);
+
+  body.replaceText("\\(\\s*\\)\\s*Cursou no ano letivo de", "(x) Cursou no ano letivo de");
+
+  body.replaceText(
+    "Cursou no ano letivo de\\s*___\\s*\\(ano/semestre\\)",
+    `Cursou no ano letivo de ${anoLetivo} (ano/semestre)`
+  );
+
+  body.replaceText(
+    "o/a\\s*___\\s*ano de escolaridade/fase do Ensino Fundamental",
+    `o/a ${anoEscFmt || "___"} ano de escolaridade/fase do Ensino Fundamental`
+  );
+}
+
+function marcarResultadoFinalFundamental_(body, resultado, dataTransferencia) {
+  const r = (resultado || "").toString().trim().toLowerCase();
+  const dataFmt = dataTransferencia ? formatarData(dataTransferencia) : "";
+
+  const resetExato_ = (regexTexto) => {
+    body.replaceText("\\(\\s*x\\s*\\)\\s*" + regexTexto, "(   ) " + regexTexto.replace(/\\\./g, "."));
+  };
+
+  resetExato_("Em Continuidade de Estudo");
+  resetExato_("Aprovado\\(a\\)");
+  resetExato_("Aprovado com Progressão Parcial");
+  resetExato_("Reprovado\\.");
+  resetExato_("Reprovado");
+  resetExato_("Reprovado por frequ[eê]ncia\\.");
+  resetExato_("Reprovado por frequ[eê]ncia\\s*[–-]\\s*Reclassificado");
+  resetExato_("Deixou de frequentar\\.");
+  resetExato_("Transferido em");
+
+  if (r === "em continuidade de estudo") {
+    body.replaceText("\\(\\s*\\)\\s*Em Continuidade de Estudo", "(x) Em Continuidade de Estudo");
+    return;
+  }
+
+  if (r === "aprovado(a)") {
+    body.replaceText("\\(\\s*\\)\\s*Aprovado\\(a\\)", "(x) Aprovado(a)");
+    return;
+  }
+
+  if (r.startsWith("aprovado com progressão parcial")) {
+    body.replaceText("\\(\\s*\\)\\s*Aprovado com Progressão Parcial", "(x) Aprovado com Progressão Parcial");
+    return;
+  }
+
+  if (r === "reprovado") {
+    body.replaceText("\\(\\s*\\)\\s*Reprovado\\s*$", "(x) Reprovado");
+    return;
+  }
+
+  if (r === "reprovado por frequência.") {
+    body.replaceText("\\(\\s*\\)\\s*Reprovado por frequ[eê]ncia\\.", "(x) Reprovado por frequência.");
+    return;
+  }
+
+  // Reclassificado: marca só o X (não mexe no resto)
+  if (r.includes("reprovado por frequência") && r.includes("reclassificado")) {
+    body.replaceText(
+      "\\(\\s*\\)\\s*Reprovado por frequ[eê]ncia\\s*[–-]\\s*Reclassificado",
+      "(x) Reprovado por frequência – Reclassificado"
+    );
+    return;
+  }
+
+  if (r === "deixou de frequentar." || r === "deixou de frequentar") {
+    body.replaceText("\\(\\s*\\)\\s*Deixou de frequentar\\.", "(x) Deixou de frequentar.");
+    return;
+  }
+
+  if (r === "transferido") {
+    body.replaceText("\\(\\s*\\)\\s*Transferido em", "(x) Transferido em");
+
+    if (dataFmt) {
+      body.replaceText("Transferido em\\s*___/___/___\\.", `Transferido em ${dataFmt}.`);
+      body.replaceText("Transferido em\\s*___/___/___", `Transferido em ${dataFmt}`);
+    }
+    return;
+  }
+
+  throw new Error(
+    `Resultado final (B22) não reconhecido: "${resultado}". ` +
+    `Confira se o texto está exatamente como as opções.`
+  );
+}
+
+/************************************************
+ * ✅ GARANTIA: nunca preencher o ano na linha do Reclassificado
+ * Você mudou o placeholder para "__" (dois underscores), então:
+ * - Se tiver "o/a 2º ano de" ou "o/a 2 ano de" -> volta pra "o/a __ ano de"
+ * - Se tiver "o/a ___ ano de" -> volta pra "o/a __ ano de"
+ ************************************************/
+function garantirReclassificadoNaoPreencherAno_(body) {
+  // Só mexe se for a linha do Reclassificado/Amparado
+  // (tolerante a hífen e variações)
+  // 1) garante placeholder "__" se tiver ___
+  body.replaceText(
+    "(Amparado a cursar o\\/a\\s*)___(\\s*ano de)",
+    "$1__ $2"
+  );
+
+  // 2) desfaz qualquer preenchimento numérico (1º, 2º, 3, 4 etc)
+  body.replaceText(
+    "(Amparado a cursar o\\/a\\s*)([0-9]{1,2}\\s*º?)(\\s*ano de)",
+    "$1__ $3"
+  );
+
+  // 3) desfaz caso tenha ficado "o/a Xº ano de" sem espaço
+  body.replaceText(
+    "(Amparado a cursar o\\/a\\s*)([0-9]{1,2}º)(\\s*ano de)",
+    "$1__ $3"
+  );
+}
+
+function normalizarAnoEscolar_(v) {
+  const s = (v || "").toString().trim();
+  const m = s.match(/([1-9])/);
+  if (!m) return s;
+  return `${m[1]}º`;
+}
+
+function obterAlunoSelecionado_() {
+  const ss = SpreadsheetApp.getActive();
+  try {
+    const v = ss.getRangeByName("AlunoFundamental").getValue();
+    const nome = textoLimpo_(v);
+    if (nome) return nome;
+  } catch (e) {}
+
+  const menu = ss.getSheetByName(ABA_MENU);
+  return textoLimpo_(menu.getRange(CELULA_ALUNO_INF).getValue());
+}

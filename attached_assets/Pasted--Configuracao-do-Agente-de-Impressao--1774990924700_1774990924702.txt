@@ -1,0 +1,36 @@
+
+ ========================================================
+   Configuracao do Agente de Impressao Automatica                                                                          E.M. Jose Giro Faisca - Campos dos Goytacazes / RJ                                                                    ========================================================                                                                                                                                                                                       [1/4] Python instalado com sucesso
+[1/4] Python: OK
+[2/4] Baixando arquivos atualizados do servidor...
+      impressora_escola.py: OK
+      impressora_loop.vbs: OK
+[2/5] Arquivos: OK
+[3/6] Instalando dependencias Python (requests, img2pdf)...
+
+[notice] A new release of pip is available: 25.3 -> 26.0.1
+[notice] To update, run: python.exe -m pip install --upgrade pip
+[3/6] Dependencias: OK
+[3b/6] Verificando SumatraPDF (necessario para impressao silenciosa)...
+[3b/6] SumatraPDF: ja presente na pasta do agente. OK
+[4/5] Detectando impressora...
+[4/5] Impressora detectada automaticamente: RICOH SP 3710SF PCL 6
+[5/5] Configurando inicio automatico com o Windows...
+[5/5] Inicio automatico: CONFIGURADO
+
+ Iniciando agente em segundo plano (sem janela)...
+Esta versão de C:\Users\kjvtr\OneDrive\Documentos\impressora_escola\wscript.exe não é compatível com a versão do Windows sendo executada. Verifique as informações de sistema do computador e contate o fornecedor do software.
+
+ ========================================================
+  PRONTO Configuracao concluida com sucesso.
+
+  O agente esta rodando em SEGUNDO PLANO, sem janela.
+  Sera iniciado automaticamente a cada login no Windows.
+
+  A partir de agora, qualquer pedido de impressao enviado
+  pelos professores sera impresso AUTOMATICAMENTE no
+  horario agendado. Nao e necessario fazer nada.
+
+ ========================================================
+
+ Pressione qualquer tecla para fechar esta janela...

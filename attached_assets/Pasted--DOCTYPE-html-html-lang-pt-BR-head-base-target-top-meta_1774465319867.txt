@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <base target="_top">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - E. M. José Giró Faísca</title>
+    <style>
+        :root { 
+            --bg: #0f172a; 
+            --card: #1e293b; 
+            --accent: #3b82f6; 
+            --text: #f8fafc; 
+            --topbar: #1e293b; 
+        }
+        
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            margin: 0; 
+            background: var(--bg); 
+            color: var(--text); 
+            display: flex; 
+            flex-direction: column;
+            align-items: center; 
+            justify-content: center; 
+            height: 100vh; 
+            overflow: hidden; 
+        }
+
+        /* FAIXA SUPERIOR PADRONIZADA COM LOGO */
+        .topbar {
+            position: fixed; top: 0; left: 0; right: 0; height: 50px;
+            background: var(--topbar); border-bottom: 1px solid rgba(255,255,255,0.05);
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 0 20px; z-index: 1100;
+        }
+        .logo-topbar { display: flex; align-items: center; gap: 10px; }
+        .logo-topbar img { width: 30px; height: 30px; object-fit: contain; }
+        .logo-topbar span { font-weight: bold; font-size: 0.9rem; color: var(--accent); text-transform: uppercase; letter-spacing: 1px; }
+        .info-data { font-size: 0.85rem; color: rgba(248, 250, 252, 0.8); font-style: italic; }
+
+        /* CARD DE LOGIN */
+        .login-card {
+            background: var(--card);
+            padding: 40px;
+            border-radius: 24px;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+            width: 90%;
+            max-width: 350px;
+            text-align: center;
+            border: 1px solid rgba(255,255,255,0.05);
+            z-index: 100;
+            transition: 0.3s;
+        }
+
+        .login-card img.logo-central { width: 80px; margin-bottom: 20px; filter: drop-shadow(0 0 10px rgba(59, 130, 246, 0.3)); }
+        .login-card h2 { margin: 0 0 10px; font-size: 1.5rem; font-weight: 800; }
+        .login-card p { opacity: 0.6; font-size: 0.9rem; margin-bottom: 30px; }
+
+        .input-group { margin-bottom: 20px; text-align: left; }
+        .input-group label { display: block; font-size: 0.75rem; margin-bottom: 8px; opacity: 0.8; font-weight: bold; color: var(--accent); margin-left: 5px; }
+        
+        input {
+            width: 100%;
+            padding: 14px 15px;
+            border-radius: 12px;
+            border: 1px solid rgba(255,255,255,0.1);
+            background: rgba(15, 23, 42, 0.7);
+            color: white;
+            box-sizing: border-box;
+            outline: none;
+            transition: 0.3s;
+            font-size: 1rem;
+        }
+        input:focus { border-color: var(--accent); background: rgba(15, 23, 42, 0.9); box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.15); }
+
+        .btn-login {
+            width: 100%;
+            padding: 16px;
+            border-radius: 12px;
+            border: none;
+            background: var(--accent);
+            color: white;
+            font-weight: 800;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: 0.3s;
+            margin-top: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .btn-login:hover { filter: brightness(1.2); transform: translateY(-2px); box-shadow: 0 10px 20px rgba(59, 130, 246, 0.3); }
+        .btn-login:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+        #mensagem { margin-top: 20px; font-size: 0.85rem; min-height: 20px; font-weight: 500; }
+        .erro { color: #f87171; }
+        .sucesso { color: #34d399; }
+
+        /* EFEITO DE FUNDO */
+        .bg-glow {
+            position: absolute; width: 400px; height: 400px;
+            background: var(--accent); filter: blur(150px);
+            opacity: 0.15; border-radius: 50%; z-index: 1;
+        }
+    </style>
+</head>
+<body>
+
+    <header class="topbar">
+        <div class="logo-topbar">
+            <img src="https://i.postimg.cc/bwn72w4F/So-logo-sem-fundo.png" alt="Logo">
+            <span>Gestão Escolar</span>
+        </div>
+        <div class="info-data" id="data-top"></div>
+    </header>
+
+    <div class="bg-glow"></div>
+
+    <div class="login-card">
+        <img src="https://i.postimg.cc/bwn72w4F/So-logo-sem-fundo.png" class="logo-central" alt="Escola">
+        <h2>Acesso ao Painel</h2>
+        <p>E. M. José Giró Faísca</p>
+
+        <div class="input-group">
+            <label>USUÁRIO / LOGIN</label>
+            <input type="text" id="usuario" placeholder="Seu login da planilha" autocomplete="username">
+        </div>
+
+        <div class="input-group">
+            <label>SENHA</label>
+            <input type="password" id="senha" placeholder="••••••••" autocomplete="current-password">
+        </div>
+
+        <button class="btn-login" onclick="realizarLogin()" id="btnEntrar">ENTRAR NO SISTEMA</button>
+        <div id="mensagem"></div>
+    </div>
+
+    <script>
+        // Formata a data na Topbar automaticamente
+        document.getElementById('data-top').innerText = new Date().toLocaleDateString('pt-BR', {
+            weekday: 'long', day: 'numeric', month: 'long'
+        });
+
+        function realizarLogin() {
+            const user = document.getElementById('usuario').value.trim();
+            const pass = document.getElementById('senha').value.trim();
+            const msg = document.getElementById('mensagem');
+            const btn = document.getElementById('btnEntrar');
+
+            if (!user || !pass) {
+                msg.className = "erro";
+                msg.innerText = "⚠️ Por favor, preencha todos os campos.";
+                return;
+            }
+
+            // Inicia estado visual de carregamento
+            btn.innerText = "VERIFICANDO...";
+            btn.disabled = true;
+            msg.innerText = "";
+
+            // COMUNICAÇÃO COM O SERVIDOR (Login.gs -> processarLogin)
+            google.script.run.withSuccessHandler(function(res) {
+                if (res.sucesso) {
+                    msg.className = "sucesso";
+                    msg.innerText = "✅ Acesso permitido! Entrando...";
+                    
+                    // Guarda os dados para usar no Dashboard
+                    localStorage.setItem('nomeUsuario', res.nome);
+                    localStorage.setItem('generoUsuario', res.genero);
+                    
+                    // Busca a URL do App e redireciona
+                    google.script.run.withSuccessHandler(function(url) {
+                        window.top.location.href = url + "?page=Dashboard";
+                    }).pegarLinkDoApp();
+                } else {
+                    msg.className = "erro";
+                    msg.innerText = "❌ " + (res.mensagem || "Login ou senha incorretos.");
+                    btn.innerText = "ENTRAR NO SISTEMA";
+                    btn.disabled = false;
+                }
+            }).withFailureHandler(function(err) {
+                msg.className = "erro";
+                msg.innerText = "❌ Erro crítico no servidor. Tente novamente.";
+                btn.innerText = "ENTRAR NO SISTEMA";
+                btn.disabled = false;
+            }).processarLogin(user, pass); // Chama a função correta no Login.gs
+        }
+
+        // Atalho teclado: Tecla Enter aciona o botão
+        document.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') realizarLogin();
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <base target="_top">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        :root { --bg: #0f172a; --sidebar: #1e293b; --accent: #3b82f6; --text: #f8fafc; --topbar: #1e293b; }
+        body { font-family: 'Segoe UI', sans-serif; margin: 0; background: var(--bg); color: var(--text); display: flex; height: 100vh; overflow: hidden; }
+
+        /* FAIXA SUPERIOR PERMANENTE */
+        .topbar {
+            position: fixed; top: 0; left: 0; right: 0; height: 50px;
+            background: var(--topbar); border-bottom: 1px solid rgba(255,255,255,0.05);
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 0 20px; z-index: 1100;
+        }
+        .logo-topbar { display: flex; align-items: center; gap: 10px; }
+        .logo-topbar img { width: 30px; height: 30px; object-fit: contain; }
+        .logo-topbar span { font-weight: bold; font-size: 0.9rem; color: var(--accent); }
+        .info-clima { display: flex; align-items: center; gap: 15px; font-size: 0.85rem; color: rgba(248, 250, 252, 0.8); font-style: italic; }
+
+        /* SIDEBAR */
+        .sidebar { 
+            width: 260px; height: 100%; background: var(--sidebar); 
+            border-right: 1px solid rgba(255,255,255,0.05); position: fixed;
+            left: 0; top: 0; transition: 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            z-index: 1000; display: flex; flex-direction: column; padding: 70px 10px 20px; box-sizing: border-box;
+        }
+        .sidebar.oculta { left: -260px; }
+        .toggle-tab { position: absolute; right: -20px; top: 50%; transform: translateY(-50%); width: 20px; height: 45px; background: var(--sidebar); border: 1px solid rgba(255,255,255,0.05); border-left: none; border-radius: 0 8px 8px 0; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--accent); z-index: 1200; }
+
+        .conteudo-principal { flex: 1; margin-left: 260px; margin-top: 50px; transition: 0.4s; padding: 40px; overflow-y: auto; }
+        .conteudo-principal.expandido { margin-left: 0; }
+
+        /* MENU ESTILIZADO */
+        .menu-lista { list-style: none; padding: 0; margin: 0; flex: 1; overflow-y: auto; }
+        .menu-item { padding: 10px 15px; border-radius: 10px; margin-bottom: 3px; cursor: pointer; display: flex; align-items: center; gap: 10px; font-size: 0.9rem; color: rgba(248, 250, 252, 0.7); transition: 0.2s; }
+        .menu-item:hover { background: rgba(59, 130, 246, 0.1); color: var(--accent); }
+        .divisor { height: 1px; background: rgba(255,255,255,0.1); margin: 15px 10px; }
+
+        .boas-vindas-container { margin-bottom: 30px; }
+        .saudacao-tempo { font-size: 2.5rem; font-weight: 800; margin: 0; }
+        .nome-usuario-destaque { font-size: 1.8rem; font-style: italic; color: var(--accent); margin: 5px 0 0 0; font-weight: 500; }
+    </style>
+</head>
+<body>
+
+    <header class="topbar">
+        <div class="logo-topbar">
+            <img src="https://i.postimg.cc/bwn72w4F/So-logo-sem-fundo.png">
+            <span>E. M. José Giró Faísca</span>
+        </div>
+        <div class="info-clima">
+            <span id="data-hoje"></span>
+            <span id="clima-local">---</span>
+        </div>
+    </header>
+
+    <nav class="sidebar" id="sidebar">
+        <div class="toggle-tab" onclick="toggleSidebar()" id="btnSeta">◀</div>
+        <ul class="menu-lista">
+            <li class="menu-item" onclick="navegar('Escola')">🏢 Escola</li>
+            <li class="menu-item" onclick="navegar('Perfil')">👤 Meu Perfil</li>
+            <li class="menu-item" onclick="navegar('perfil_aluno')">🎓 Prontuário Alunos</li>
+            <li class="menu-item" onclick="navegar('Turmas')">📂 Turmas</li>
+            <li class="menu-item" onclick="navegar('presenca')">📝 Lista de Presença</li>
+            <li class="menu-item" onclick="navegar('professores')">👨‍🏫 Professores</li>
+            <li class="menu-item" onclick="navegar('Documentos')">📄 Documentos</li>
+            <li class="menu-item" onclick="navegar('Alertas')">🖨️ Alertas de Impressão</li>
+            <div class="divisor"></div>
+            <li class="menu-item" onclick="navegar('Funcionarios')">👥 Funcionários</li>
+            <li class="menu-item" onclick="navegar('Ajustes')">⚙️ Ajustes</li>
+            <li class="menu-item" onclick="navegar('Sobre')">ℹ️ Sobre</li>
+            <div class="divisor"></div>
+            <li class="menu-item" style="color:#ef4444;" onclick="sair()">🚪 Sair</li>
+        </ul>
+    </nav>
+
+    <main class="conteudo-principal" id="main">
+        <div class="boas-vindas-container">
+            <h1 class="saudacao-tempo" id="txtSaudacao">...</h1>
+            <p class="nome-usuario-destaque" id="txtNomeUsuario"></p>
+        </div>
+    </main>
+
+    <script>
+        function toggleSidebar() {
+            const side = document.getElementById('sidebar');
+            const main = document.getElementById('main');
+            const seta = document.getElementById('btnSeta');
+            side.classList.toggle('oculta');
+            main.classList.toggle('expandido');
+            seta.innerText = side.classList.contains('oculta') ? "▶" : "◀";
+        }
+
+        function atualizarInfo() {
+            const dias = ['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'];
+            const meses = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+            const agora = new Date();
+            document.getElementById('data-hoje').innerText = `${dias[agora.getDay()]}, ${agora.getDate()} de ${meses[agora.getMonth()]}`;
+            
+            const hora = agora.getHours();
+            let s = hora < 5 ? "Boa madrugada" : hora < 12 ? "Bom dia" : hora < 18 ? "Boa tarde" : "Boa noite";
+            document.getElementById('txtSaudacao').innerText = s + ",";
+
+            const nome = localStorage.getItem('nomeUsuario');
+            const gen = localStorage.getItem('generoUsuario');
+            if (nome && nome !== "null") {
+                const prefixo = (gen === 'F' || gen === 'FEMININO') ? 'Tia' : 'Tio';
+                document.getElementById('txtNomeUsuario').innerText = `${prefixo} ${nome.split(' ')[0]}`;
+            }
+        }
+
+        async function obterClima() {
+            try {
+                const res = await fetch('https://ipapi.co/json/');
+                const local = await res.json();
+                document.getElementById('clima-local').innerText = `☀️ 26°C em ${local.city}`;
+            } catch (e) { document.getElementById('clima-local').innerText = "☀️ 27°C"; }
+        }
+
+        function navegar(pg) { 
+            google.script.run.withSuccessHandler(url => window.top.location.href = url + "?page=" + pg).pegarLinkDoApp(); 
+        }
+        
+        function sair() { 
+            localStorage.clear(); 
+            google.script.run.withSuccessHandler(url => window.top.location.href = url).pegarLinkDoApp(); 
+        }
+
+        window.onload = function() { 
+            atualizarInfo(); 
+            obterClima(); 
+        };
+    </script>
+</body>
+</html>

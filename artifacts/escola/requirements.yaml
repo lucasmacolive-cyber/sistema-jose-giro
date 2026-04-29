@@ -1,0 +1,21 @@
+packages:
+  "framer-motion": "Animations and page transitions for a premium feel"
+  "recharts": "Data visualization for the dashboard"
+  "react-hook-form": "Form state management"
+  "@hookform/resolvers": "Zod validation resolver for forms"
+  "date-fns": "Date formatting for prints and sync status"
+  "clsx": "Utility for constructing className strings conditionally"
+  "tailwind-merge": "Utility for merging tailwind classes safely"
+
+images:
+  - path: "artifacts/escola/public/images/login-bg.png"
+    description: "Dark, abstract, premium navy blue background with subtle electric blue glowing geometric lines and very subtle glowing dots, modern tech aesthetic for a school management system"
+    aspect_ratio: "16:9"
+  - path: "artifacts/escola/public/images/hero-abstract.png"
+    description: "Subtle 3D glassmorphism spheres floating in a dark navy void with an electric blue backlight, highly polished"
+    aspect_ratio: "16:9"
+
+notes:
+  - Hooks and types imported from @workspace/api-client-react
+  - React Query and Wouter used for data and routing
+  - Dark mode specific aesthetic implemented via Tailwind v4 CSS variables

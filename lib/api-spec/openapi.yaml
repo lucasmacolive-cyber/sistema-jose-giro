@@ -1,0 +1,1001 @@
+openapi: 3.1.0
+info:
+  title: Api
+  version: 0.1.0
+  description: API do Sistema de Gestão Escolar - E. M. José Giró Faísca
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: Storage
+    description: Object storage upload and serving endpoints.
+  - name: arquivo-morto
+    description: Arquivo morto de alunos
+  - name: health
+    description: Health operations
+  - name: auth
+    description: Autenticação
+  - name: alunos
+    description: Gestão de alunos
+  - name: turmas
+    description: Gestão de turmas
+  - name: professores
+    description: Gestão de professores
+  - name: funcionarios
+    description: Gestão de funcionários
+  - name: impressoes
+    description: Central de impressões
+  - name: documentos
+    description: Geração de documentos
+  - name: sync
+    description: Sincronização com SUAP
+  - name: escola
+    description: Configurações da escola
+  - name: alertas
+    description: Alertas e notificações
+
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+
+  /auth/login:
+    post:
+      operationId: login
+      tags: [auth]
+      summary: Login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginInput"
+      responses:
+        "200":
+          description: Login bem-sucedido
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+        "401":
+          description: Credenciais inválidas
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/me:
+    get:
+      operationId: getMe
+      tags: [auth]
+      summary: Dados do usuário logado
+      responses:
+        "200":
+          description: Dados do usuário
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Usuario"
+        "401":
+          description: Não autenticado
+
+  /auth/logout:
+    post:
+      operationId: logout
+      tags: [auth]
+      summary: Logout
+      responses:
+        "200":
+          description: Logout realizado
+
+  /alunos:
+    get:
+      operationId: listarAlunos
+      tags: [alunos]
+      summary: Listar todos os alunos
+      parameters:
+        - name: turma
+          in: query
+          schema:
+            type: string
+        - name: busca
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Lista de alunos
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Aluno"
+
+  /alunos/{id}:
+    get:
+      operationId: getAluno
+      tags: [alunos]
+      summary: Perfil de um aluno
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Dados do aluno
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Aluno"
+        "404":
+          description: Aluno não encontrado
+
+  /turmas:
+    get:
+      operationId: listarTurmas
+      tags: [turmas]
+      summary: Listar todas as turmas
+      responses:
+        "200":
+          description: Lista de turmas
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Turma"
+
+  /turmas/{id}:
+    get:
+      operationId: getTurma
+      tags: [turmas]
+      summary: Dados de uma turma
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Dados da turma
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TurmaDetalhes"
+
+  /professores:
+    get:
+      operationId: listarProfessores
+      tags: [professores]
+      summary: Listar professores
+      responses:
+        "200":
+          description: Lista de professores
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Professor"
+
+  /professores/{id}:
+    get:
+      operationId: getProfessor
+      tags: [professores]
+      summary: Perfil de um professor
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Dados do professor
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Professor"
+
+  /funcionarios:
+    get:
+      operationId: listarFuncionarios
+      tags: [funcionarios]
+      summary: Listar funcionários
+      responses:
+        "200":
+          description: Lista de funcionários
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Funcionario"
+
+  /funcionarios/{id}:
+    get:
+      operationId: getFuncionario
+      tags: [funcionarios]
+      summary: Perfil de um funcionário
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Dados do funcionário
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Funcionario"
+
+  /impressoes:
+    get:
+      operationId: listarImpressoes
+      tags: [impressoes]
+      summary: Listar pedidos de impressão
+      responses:
+        "200":
+          description: Lista de pedidos
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Impressao"
+    post:
+      operationId: criarImpressao
+      tags: [impressoes]
+      summary: Criar pedido de impressão
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CriarImpressaoInput"
+      responses:
+        "201":
+          description: Pedido criado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Impressao"
+
+  /impressoes/{id}/status:
+    patch:
+      operationId: atualizarStatusImpressao
+      tags: [impressoes]
+      summary: Atualizar status de uma impressão
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AtualizarStatusInput"
+      responses:
+        "200":
+          description: Status atualizado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Impressao"
+
+  /documentos/tipos:
+    get:
+      operationId: listarTiposDocumento
+      tags: [documentos]
+      summary: Listar tipos de documento disponíveis
+      responses:
+        "200":
+          description: Lista de tipos
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TipoDocumento"
+
+  /documentos/gerar:
+    post:
+      operationId: gerarDocumento
+      tags: [documentos]
+      summary: Gerar documento para um aluno
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GerarDocumentoInput"
+      responses:
+        "200":
+          description: Documento gerado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentoGerado"
+
+  /documentos/listas:
+    post:
+      operationId: gerarLista
+      tags: [documentos]
+      summary: Gerar lista de alunos, funcionários ou assinatura
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GerarListaInput"
+      responses:
+        "200":
+          description: Lista gerada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentoGerado"
+
+  /sync/status:
+    get:
+      operationId: getSyncStatus
+      tags: [sync]
+      summary: Status da sincronização com SUAP
+      responses:
+        "200":
+          description: Status da sync
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SyncStatus"
+
+  /sync/trigger:
+    post:
+      operationId: triggerSync
+      tags: [sync]
+      summary: Disparar sincronização manual
+      responses:
+        "200":
+          description: Sincronização iniciada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SyncStatus"
+
+  /escola:
+    get:
+      operationId: getEscola
+      tags: [escola]
+      summary: Dados da escola
+      responses:
+        "200":
+          description: Dados da escola
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Escola"
+
+  /alertas:
+    get:
+      operationId: listarAlertas
+      tags: [alertas]
+      summary: Listar alertas não lidos
+      responses:
+        "200":
+          description: Lista de alertas
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Alerta"
+
+  /alertas/{id}/lido:
+    patch:
+      operationId: marcarAlertaLido
+      tags: [alertas]
+      summary: Marcar alerta como lido
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Alerta marcado como lido
+
+  /dashboard/stats:
+    get:
+      operationId: getDashboardStats
+      tags: [escola]
+      summary: Estatísticas do dashboard
+      responses:
+        "200":
+          description: Estatísticas gerais
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardStats"
+
+  /storage/uploads/request-url:
+    post:
+      tags: [Storage]
+      operationId: requestUploadUrl
+      summary: Solicitar URL de upload
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UploadUrlRequest"
+      responses:
+        "200":
+          description: URL de upload gerada
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadUrlResponse"
+
+  /arquivo-morto:
+    get:
+      tags: [arquivo-morto]
+      operationId: listarArquivoMorto
+      summary: Listar alunos do arquivo morto
+      responses:
+        "200":
+          description: Lista de alunos
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ArquivoMortoAluno"
+    post:
+      tags: [arquivo-morto]
+      operationId: criarArquivoMortoAluno
+      summary: Adicionar aluno ao arquivo morto
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ArquivoMortoAlunoInput"
+      responses:
+        "201":
+          description: Aluno criado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ArquivoMortoAluno"
+
+  /arquivo-morto/{id}:
+    get:
+      tags: [arquivo-morto]
+      operationId: obterArquivoMortoAluno
+      summary: Obter aluno do arquivo morto com documentos
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Aluno com documentos
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ArquivoMortoAlunoDetalhado"
+    delete:
+      tags: [arquivo-morto]
+      operationId: deletarArquivoMortoAluno
+      summary: Remover aluno do arquivo morto
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Aluno removido
+
+  /arquivo-morto/{id}/documentos:
+    post:
+      tags: [arquivo-morto]
+      operationId: adicionarDocumentoArquivoMorto
+      summary: Adicionar documento ao aluno
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ArquivoMortoDocumentoInput"
+      responses:
+        "201":
+          description: Documento adicionado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ArquivoMortoDocumento"
+
+  /arquivo-morto/documentos/{docId}:
+    delete:
+      tags: [arquivo-morto]
+      operationId: deletarDocumentoArquivoMorto
+      summary: Remover documento
+      parameters:
+        - name: docId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Documento removido
+
+components:
+  schemas:
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required: [status]
+
+    LoginInput:
+      type: object
+      properties:
+        login:
+          type: string
+        senha:
+          type: string
+      required: [login, senha]
+
+    LoginResponse:
+      type: object
+      properties:
+        sucesso:
+          type: boolean
+        usuario:
+          $ref: "#/components/schemas/Usuario"
+        mensagem:
+          type: string
+      required: [sucesso]
+
+    ErrorResponse:
+      type: object
+      properties:
+        erro:
+          type: string
+        mensagem:
+          type: string
+      required: [erro, mensagem]
+
+    Usuario:
+      type: object
+      properties:
+        id:
+          type: integer
+        nomeCompleto:
+          type: string
+        login:
+          type: string
+        perfil:
+          type: string
+          enum: [Master, Direção, Professor]
+        genero:
+          type: string
+      required: [id, nomeCompleto, login, perfil]
+
+    Aluno:
+      type: object
+      properties:
+        id:
+          type: integer
+        matricula:
+          type: string
+        nomeCompleto:
+          type: string
+        dataNascimento:
+          type: string
+        turmaAtual:
+          type: string
+        turno:
+          type: string
+        nomeMae:
+          type: string
+        nomePai:
+          type: string
+        responsavel:
+          type: string
+        telefone:
+          type: string
+        emailPessoal:
+          type: string
+        emailResponsavel:
+          type: string
+        endereco:
+          type: string
+        situacao:
+          type: string
+        sexo:
+          type: string
+        etnia:
+          type: string
+        anoIngresso:
+          type: string
+        nivelEnsino:
+          type: string
+        descricaoCurso:
+          type: string
+        zonaResidencial:
+          type: string
+      required: [id, matricula, nomeCompleto]
+
+    Turma:
+      type: object
+      properties:
+        id:
+          type: integer
+        nomeTurma:
+          type: string
+        turno:
+          type: string
+        professorResponsavel:
+          type: string
+        totalAlunos:
+          type: integer
+      required: [id, nomeTurma, turno]
+
+    TurmaDetalhes:
+      type: object
+      properties:
+        id:
+          type: integer
+        nomeTurma:
+          type: string
+        turno:
+          type: string
+        professorResponsavel:
+          type: string
+        alunos:
+          type: array
+          items:
+            $ref: "#/components/schemas/Aluno"
+      required: [id, nomeTurma, turno, alunos]
+
+    Professor:
+      type: object
+      properties:
+        id:
+          type: integer
+        nome:
+          type: string
+        cpf:
+          type: string
+        matricula:
+          type: string
+        turmaManha:
+          type: string
+        turmaTarde:
+          type: string
+        turno:
+          type: string
+        telefone:
+          type: string
+        vinculo:
+          type: string
+        email:
+          type: string
+        identificacaoCenso:
+          type: string
+        dataNascimento:
+          type: string
+      required: [id, nome]
+
+    Funcionario:
+      type: object
+      properties:
+        id:
+          type: integer
+        nomeCompleto:
+          type: string
+        cpf:
+          type: string
+        funcao:
+          type: string
+        turno:
+          type: string
+        telefoneContato:
+          type: string
+        contatoEmergencia:
+          type: string
+        dataAdmissao:
+          type: string
+        vinculo:
+          type: string
+        status:
+          type: string
+      required: [id, nomeCompleto]
+
+    Impressao:
+      type: object
+      properties:
+        id:
+          type: integer
+        dataPedido:
+          type: string
+        professorSolicitante:
+          type: string
+        linkArquivo:
+          type: string
+        quantidadeCopias:
+          type: integer
+        dataParaUso:
+          type: string
+        status:
+          type: string
+          enum: [Pendente, Impresso, Cancelado]
+        lido:
+          type: boolean
+      required: [id, professorSolicitante, status]
+
+    CriarImpressaoInput:
+      type: object
+      properties:
+        professorSolicitante:
+          type: string
+        linkArquivo:
+          type: string
+        quantidadeCopias:
+          type: integer
+        dataParaUso:
+          type: string
+      required: [professorSolicitante, linkArquivo, quantidadeCopias]
+
+    AtualizarStatusInput:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [Pendente, Impresso, Cancelado]
+      required: [status]
+
+    TipoDocumento:
+      type: object
+      properties:
+        id:
+          type: string
+        titulo:
+          type: string
+        descricao:
+          type: string
+      required: [id, titulo]
+
+    GerarDocumentoInput:
+      type: object
+      properties:
+        tipoDocumento:
+          type: string
+        alunoId:
+          type: integer
+        observacoes:
+          type: string
+      required: [tipoDocumento, alunoId]
+
+    GerarListaInput:
+      type: object
+      properties:
+        tipo:
+          type: string
+          enum: [alunos, funcionarios, assinatura_reuniao]
+        turmaId:
+          type: integer
+        titulo:
+          type: string
+      required: [tipo]
+
+    DocumentoGerado:
+      type: object
+      properties:
+        conteudo:
+          type: string
+        nomeArquivo:
+          type: string
+        tipo:
+          type: string
+      required: [conteudo, nomeArquivo, tipo]
+
+    SyncStatus:
+      type: object
+      properties:
+        ultimaSync:
+          type: string
+        status:
+          type: string
+          enum: [idle, running, success, error]
+        mensagem:
+          type: string
+        totalAlunos:
+          type: integer
+      required: [status]
+
+    Escola:
+      type: object
+      properties:
+        nome:
+          type: string
+        logoUrl:
+          type: string
+      required: [nome]
+
+    Alerta:
+      type: object
+      properties:
+        id:
+          type: integer
+        tipo:
+          type: string
+        mensagem:
+          type: string
+        criadoEm:
+          type: string
+        lido:
+          type: boolean
+        dados:
+          type: object
+      required: [id, tipo, mensagem, lido]
+
+    DashboardStats:
+      type: object
+      properties:
+        totalAlunos:
+          type: integer
+        totalTurmas:
+          type: integer
+        totalProfessores:
+          type: integer
+        totalFuncionarios:
+          type: integer
+        impressoesPendentes:
+          type: integer
+        alertasNaoLidos:
+          type: integer
+      required: [totalAlunos, totalTurmas, totalProfessores, totalFuncionarios, impressoesPendentes, alertasNaoLidos]
+
+    UploadUrlRequest:
+      type: object
+      required: [name, size, contentType]
+      properties:
+        name:
+          type: string
+        size:
+          type: integer
+        contentType:
+          type: string
+
+    UploadUrlResponse:
+      type: object
+      required: [uploadURL, objectPath]
+      properties:
+        uploadURL:
+          type: string
+        objectPath:
+          type: string
+
+    ArquivoMortoAluno:
+      type: object
+      properties:
+        id:
+          type: integer
+        nomeAluno:
+          type: string
+        matricula:
+          type: string
+        anoSaida:
+          type: string
+        turma:
+          type: string
+        observacoes:
+          type: string
+        totalDocumentos:
+          type: integer
+        criadoEm:
+          type: string
+      required: [id, nomeAluno]
+
+    ArquivoMortoAlunoInput:
+      type: object
+      required: [nomeAluno]
+      properties:
+        nomeAluno:
+          type: string
+        matricula:
+          type: string
+        anoSaida:
+          type: string
+        turma:
+          type: string
+        observacoes:
+          type: string
+
+    ArquivoMortoDocumento:
+      type: object
+      properties:
+        id:
+          type: integer
+        arquivoMortoId:
+          type: integer
+        nomeArquivo:
+          type: string
+        objectPath:
+          type: string
+        tamanhoBytes:
+          type: integer
+        criadoEm:
+          type: string
+      required: [id, arquivoMortoId, nomeArquivo, objectPath]
+
+    ArquivoMortoDocumentoInput:
+      type: object
+      required: [nomeArquivo, objectPath]
+      properties:
+        nomeArquivo:
+          type: string
+        objectPath:
+          type: string
+        tamanhoBytes:
+          type: integer
+
+    ArquivoMortoAlunoDetalhado:
+      type: object
+      properties:
+        id:
+          type: integer
+        nomeAluno:
+          type: string
+        matricula:
+          type: string
+        anoSaida:
+          type: string
+        turma:
+          type: string
+        observacoes:
+          type: string
+        criadoEm:
+          type: string
+        documentos:
+          type: array
+          items:
+            $ref: "#/components/schemas/ArquivoMortoDocumento"
+      required: [id, nomeAluno, documentos]

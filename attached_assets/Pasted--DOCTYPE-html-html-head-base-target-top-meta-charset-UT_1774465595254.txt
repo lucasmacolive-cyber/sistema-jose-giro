@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <base target="_top">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        :root { --bg: #0f172a; --sidebar: #1e293b; --text: #f8fafc; --accent: #3b82f6; --topbar: #1e293b; }
+        body { font-family: 'Segoe UI', sans-serif; margin: 0; background: var(--bg); color: var(--text); overflow-x: hidden; }
+
+        /* TOPBAR PADRONIZADA */
+        .topbar {
+            position: fixed; top: 0; left: 0; right: 0; height: 50px;
+            background: var(--topbar); border-bottom: 1px solid rgba(255,255,255,0.05);
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 0 20px; z-index: 1100;
+        }
+        .logo-topbar { display: flex; align-items: center; gap: 10px; }
+        .logo-topbar img { width: 30px; height: 30px; object-fit: contain; }
+        .logo-topbar span { font-weight: bold; font-size: 0.9rem; color: var(--accent); }
+
+        .container { padding: 80px 30px 30px; }
+        .header-pag { display: flex; justify-content: space-between; align-items: center; margin-bottom: 40px; }
+        h1 { font-size: 2.8rem; margin: 0; font-weight: 800; color: white; letter-spacing: -1px; }
+        
+        .btn-voltar { 
+            background: rgba(255,255,255,0.05); padding: 12px 24px; border-radius: 15px; 
+            cursor: pointer; color: var(--accent); font-weight: bold; transition: 0.3s; 
+            border: 1px solid rgba(59, 130, 246, 0.2); 
+        }
+        .btn-voltar:hover { background: var(--accent); color: white; }
+
+        /* GRID DE PROFESSORES (CÁPSULAS) */
+        .grid-prof { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 20px; }
+        
+        .balao-capsula {
+            display: flex; align-items: center; height: 95px; 
+            border-radius: 50px 15px 15px 50px; color: white; padding: 10px;
+            cursor: pointer; transition: 0.4s; box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        .balao-capsula:hover { transform: translateY(-5px); filter: brightness(1.1); }
+
+        .circulo-icon {
+            width: 70px; height: 70px; border-radius: 50%;
+            background: rgba(255,255,255,0.25); display: flex; 
+            align-items: center; justify-content: center;
+            font-weight: 900; font-size: 1.6rem; margin-right: 20px; flex-shrink: 0;
+            text-transform: uppercase;
+        }
+
+        .info-balao { display: flex; flex-direction: column; justify-content: center; overflow: hidden; }
+        .nome-prof { font-weight: 800; font-size: 1.1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .detalhe-prof { font-size: 0.8rem; opacity: 0.9; font-style: italic; }
+        .tag-turma { font-size: 0.65rem; font-weight: 900; background: rgba(0,0,0,0.2); padding: 2px 8px; border-radius: 8px; width: fit-content; margin-top: 4px; }
+
+        /* CORES DAS CÁPSULAS */
+        .cor-0 { background: linear-gradient(90deg, #3b82f6, #1d4ed8); }
+        .cor-1 { background: linear-gradient(90deg, #ef4444, #b91c1c); }
+        .cor-2 { background: linear-gradient(90deg, #8b5cf6, #6d28d9); }
+        .cor-3 { background: linear-gradient(90deg, #10b981, #047857); }
+        .cor-4 { background: linear-gradient(90deg, #f59e0b, #b45309); }
+    </style>
+</head>
+<body>
+
+    <header class="topbar">
+        <div class="logo-topbar">
+            <img src="https://i.postimg.cc/bwn72w4F/So-logo-sem-fundo.png">
+            <span>E. M. José Giró Faísca</span>
+        </div>
+    </header>
+
+    <div class="container">
+        <div class="header-pag">
+            <h1>Professores</h1>
+            <div class="btn-voltar" onclick="voltar()">← VOLTAR</div>
+        </div>
+        <div class="grid-prof" id="grid"></div>
+    </div>
+
+    <script>
+        window.onload = function() {
+            google.script.run.withSuccessHandler(function(professores) {
+                const grid = document.getElementById('grid');
+                if (!professores || professores.length === 0) {
+                    grid.innerHTML = "<p style='opacity:0.5'>Nenhum professor encontrado na aba 'Professores'.</p>";
+                    return;
+                }
+
+                professores.forEach((p, i) => {
+                    const cor = "cor-" + (i % 5);
+                    // USANDO OS NOMES EXATOS DA SUA PLANILHA
+                    const nomeP = p["Professor"] || "Docente";
+                    const matP = p["Matrícula"] || "---";
+                    const turmaP = p["Turma Manhã"] || "S/T";
+
+                    grid.innerHTML += `
+                        <div class="balao-capsula ${cor}">
+                            <div class="circulo-icon">${nomeP.toString()[0]}</div>
+                            <div class="info-balao">
+                                <div class="nome-prof">${nomeP}</div>
+                                <div class="detalhe-prof">Matrícula: ${matP}</div>
+                                <div class="tag-turma">Manhã: ${turmaP}</div>
+                            </div>
+                        </div>
+                    `;
+                });
+            }).buscarProfessores();
+        };
+
+        function voltar() {
+            google.script.run.withSuccessHandler(url => window.top.location.href = url + "?page=Dashboard").pegarLinkDoApp();
+        }
+    </script>
+</body>
+</html>

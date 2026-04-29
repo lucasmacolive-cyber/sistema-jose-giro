@@ -1,0 +1,116 @@
+/**
+ * 🗂️ MOTOR DE REGISTROS - VERSÃO CABEÇALHO INTELIGENTE
+ */
+
+const ABA_REGISTROS = "Registros";
+const ABA_TURMAS = "Turmas"; // Nome da aba onde estão os professores
+
+// Função para extrair o código entre parênteses (ex: 3AM01)
+function extrairCodTurma(valor) {
+  if (!valor) return "";
+  const m = String(valor).match(/\(([^)]+)\)/);
+  return m ? m[1].toUpperCase().trim() : String(valor).toUpperCase().trim();
+}
+
+// 1. [NOVO] Busca o Nome do Professor na aba "Turmas" baseada no código (ex: 1AM01)
+function obterProfessorDaTurma(codigoTurma) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const shTurmas = ss.getSheetByName(ABA_TURMAS);
+  if (!shTurmas) return "Aba Turmas não encontrada";
+
+  const dados = shTurmas.getDataRange().getValues();
+  // Supomos que: Coluna A = Código da Turma, Coluna B = Nome do Professor
+  // Se for diferente na sua planilha, ajuste os índices [0] e [1] abaixo.
+
+  for (let i = 1; i < dados.length; i++) {
+    const codPlanilha = String(dados[i][0]).toUpperCase().trim(); // Coluna A
+    if (codPlanilha === codigoTurma.toUpperCase().trim()) {
+      return dados[i][1] || "Professor não cadastrado"; // Coluna B
+    }
+  }
+  return "Turma não encontrada na aba Turmas";
+}
+
+// 2. Busca os dados dos alunos filtrando pela turma selecionada
+function buscarAlunosPorTurma(turmaAlvo) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const shReg = ss.getSheetByName(ABA_REGISTROS);
+  if (!shReg) return [];
+
+  const dados = shReg.getDataRange().getValues();
+  const headers = dados[0].map(h => String(h).trim());
+  const headersKey = headers.map(h => h.toLowerCase());
+
+  const idxTurma = headersKey.indexOf("turma atual");
+  if (idxTurma === -1) return [];
+
+  const resultados = [];
+  const buscaLimpa = turmaAlvo.toUpperCase().trim();
+
+  for (let i = 1; i < dados.length; i++) {
+    const valorCelula = dados[i][idxTurma];
+    if (extrairCodTurma(valorCelula) === buscaLimpa) {
+      let obj = {};
+      headers.forEach((titulo, index) => {
+        let val = dados[i][index];
+        if (val instanceof Date) {
+          val = Utilities.formatDate(val, Session.getScriptTimeZone(), "dd/MM/yyyy");
+        }
+        obj[titulo] = val;
+      });
+      resultados.push(obj);
+    }
+  }
+  return resultados;
+}
+
+// 3. Gera a lista de turmas para o menu suspenso
+function listarTurmasUnicas() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const shReg = ss.getSheetByName(ABA_REGISTROS);
+  if (!shReg) return ["Erro: Aba não encontrada"];
+
+  const dados = shReg.getDataRange().getValues();
+  const headersKey = dados[0].map(h => String(h).toLowerCase().trim());
+  const idxTurma = headersKey.indexOf("turma atual");
+  
+  const set = {};
+  for (let i = 1; i < dados.length; i++) {
+    const cod = extrairCodTurma(dados[i][idxTurma]);
+    if (cod) set[cod] = true;
+  }
+  return Object.keys(set).sort();
+}
+
+// Funções para o Perfil do Aluno (Busca Preditiva)
+function listarNomesAlunos() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const shReg = ss.getSheetByName(ABA_REGISTROS);
+  if(!shReg) return [];
+  const dados = shReg.getDataRange().getValues();
+  const idxNome = dados[0].map(h => String(h).trim()).indexOf("Nome do aluno");
+  if(idxNome === -1) return [];
+  return dados.slice(1).map(r => r[idxNome]).filter(Boolean).sort();
+}
+
+function obterDadosAluno(identificador) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const shReg = ss.getSheetByName(ABA_REGISTROS);
+  if(!shReg) return null;
+  const dados = shReg.getDataRange().getValues();
+  const headers = dados[0].map(h => String(h).trim());
+  
+  const termo = String(identificador).toUpperCase().trim();
+  const idxNome = headers.indexOf("Nome do aluno");
+  const idxCpf = headers.indexOf("CPF");
+
+  const linha = dados.find((r, i) => {
+    if (i === 0) return false;
+    return String(r[idxNome]).toUpperCase() === termo || String(r[idxCpf]).replace(/\D/g,"") === termo.replace(/\D/g,"");
+  });
+
+  if (!linha) return null;
+  let obj = {};
+  headers.forEach((h, i) => obj[h] = linha[i]);
+  return obj;
+}

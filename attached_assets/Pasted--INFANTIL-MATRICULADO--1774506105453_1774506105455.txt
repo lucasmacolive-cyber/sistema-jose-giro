@@ -1,0 +1,159 @@
+/************************************************
+ * INFANTIL – MATRICULADO
+ ************************************************/
+
+function processarDeclaracaoInfantilMatriculado(modo) {
+
+  modo = (modo || "").toString().trim().toUpperCase();
+  if (modo !== "IMPRIMIR" && modo !== "EDITAR") {
+    throw new Error(
+      'Modo inválido. Use IMPRIMIR ou EDITAR. ' +
+      `Valor recebido: "${modo || "(vazio)"}"`
+    );
+  }
+
+  const ss   = SpreadsheetApp.getActive();
+  const menu = ss.getSheetByName(ABA_MENU);
+  const reg  = ss.getSheetByName(ABA_REGISTROS);
+
+  const nomeAluno = (menu.getRange(CELULA_ALUNO_INF).getValue() || "").toString().trim();
+  const objetivo  = (menu.getRange(CELULA_OBJETIVO_INF).getValue() || "").toString().trim();
+
+  if (!nomeAluno) throw new Error("Selecione um aluno.");
+
+  const dados   = reg.getDataRange().getValues();
+  const headers = dados[0].map(h => (h || "").toString().trim());
+  const col     = t => headers.indexOf(t);
+
+  const obrigatorias = [
+    "Nome do aluno","Naturalidade","Data de Nascimento",
+    "Nome da Mãe","Nome do Pai","Turma no Ano Selecionado"
+  ];
+  const faltando = obrigatorias.filter(h => col(h) === -1);
+  if (faltando.length) throw new Error("Colunas faltando em Registros: " + faltando.join(", "));
+
+  const linha = dados.find((r, i) =>
+    i > 0 && (r[col("Nome do aluno")] || "").toString().trim() === nomeAluno
+  );
+  if (!linha) throw new Error("Aluno não encontrado.");
+
+  const d = {
+    nome: (linha[col("Nome do aluno")] || "").toString().trim(),
+    naturalidade: (linha[col("Naturalidade")] || "").toString().trim(),
+    nascimento: linha[col("Data de Nascimento")],
+    mae: (linha[col("Nome da Mãe")] || "").toString().trim(),
+    pai: (linha[col("Nome do Pai")] || "").toString().trim(),
+    turma: (linha[col("Turma no Ano Selecionado")] || "").toString().trim(),
+    objetivo
+  };
+
+  if (modo === "EDITAR") {
+    const docId = gerarDocInfantilMatriculado_(d);
+    abrirArquivo(docId);
+    return;
+  }
+
+  // IMPRIMIR → PDF apenas (DOC temporário vai pra lixeira)
+  const pdfId = gerarPdfInfantilMatriculadoSemSalvarDoc_(d);
+  abrirArquivo(pdfId);
+}
+
+/************************************************
+ * EDITAR → gera DOC e retorna docId
+ ************************************************/
+function gerarDocInfantilMatriculado_(d) {
+  const pasta = DriveApp.getFolderById(PASTA_DESTINO_INFANTIL);
+
+  const docFile = DriveApp.getFileById(MODELO_INFANTIL_MATRICULADO)
+    .makeCopy(`Declaração - ${d.nome}`, pasta);
+
+  preencherInfantilMatriculado_(docFile.getId(), d);
+  return docFile.getId();
+}
+
+/************************************************
+ * IMPRIMIR → gera PDF e apaga DOC temporário
+ ************************************************/
+function gerarPdfInfantilMatriculadoSemSalvarDoc_(d) {
+  const pasta = DriveApp.getFolderById(PASTA_DESTINO_INFANTIL);
+
+  const tempDoc = DriveApp.getFileById(MODELO_INFANTIL_MATRICULADO)
+    .makeCopy(`(TEMP) Declaração - ${d.nome}`, pasta);
+
+  preencherInfantilMatriculado_(tempDoc.getId(), d);
+
+  const pdf = pasta.createFile(tempDoc.getAs(MimeType.PDF))
+    .setName(`Declaração - ${d.nome}.pdf`);
+
+  tempDoc.setTrashed(true);
+  return pdf.getId();
+}
+
+/************************************************
+ * Preenche e marca o documento
+ ************************************************/
+function preencherInfantilMatriculado_(docId, d) {
+  const doc  = DocumentApp.openById(docId);
+  const body = doc.getBody();
+
+  body.replaceText("{{Nome}}", d.nome || "");
+  body.replaceText("{{Naturalidade}}", d.naturalidade || "");
+  body.replaceText("{{Data de Nascimento}}", formatarData(d.nascimento));
+  body.replaceText("{{Nome da Mãe}}", d.mae || "");
+  body.replaceText("{{Nome do Pai}}", d.pai || "");
+  body.replaceText("{{OBJETIVO}}", d.objetivo || "");
+  body.replaceText("{{Data Atual}}", dataPorExtenso());
+
+  marcarSituacaoInfantilMatriculado_(body);
+  marcarSerieInfantil_(body, d.turma);
+
+  doc.saveAndClose();
+}
+
+/************************************************
+ * Marca situação (linha exata)
+ ************************************************/
+function marcarSituacaoInfantilMatriculado_(body) {
+  body.getParagraphs().forEach(p => {
+    const t = p.getText();
+    if (!t) return;
+
+    if (
+      t.includes("Encontra-se:") &&
+      t.includes("matriculado(a)") &&
+      t.includes("frequentando") &&
+      t.includes("cursou")
+    ) {
+      p.setText("Encontra-se: (x) matriculado(a)  (  ) matriculado e frequentando (  ) cursou");
+    }
+  });
+}
+
+/************************************************
+ * Marca série infantil (sem setText em parágrafo vazio)
+ ************************************************/
+function marcarSerieInfantil_(body, turma) {
+  if (!turma) return;
+
+  const m = turma.toString().toUpperCase().match(/G1|G2|G3|P1|P2/);
+  if (!m) return;
+
+  const serie = m[0];
+  const opcoes = ["G1","G2","G3","P1","P2"];
+
+  body.getParagraphs().forEach(p => {
+    const original = p.getText();
+    if (!original) return;
+
+    let novo = original;
+
+    opcoes.forEach(s => {
+      if (novo.includes(`(  ) ${s}`) || novo.includes(`(x) ${s}`)) {
+        novo = novo.replace(`(  ) ${s}`, s === serie ? `(x) ${s}` : `(  ) ${s}`);
+        novo = novo.replace(`(x) ${s}`, s === serie ? `(x) ${s}` : `(  ) ${s}`);
+      }
+    });
+
+    if (novo !== original) p.setText(novo);
+  });
+}

@@ -1,0 +1,98 @@
+function processarDeclaracaoInfantilFrequentando(modo) {
+
+  modo = (modo || "").toString().trim().toUpperCase();
+  if (!modo) modo = "EDITAR";
+
+  if (modo !== "IMPRIMIR" && modo !== "EDITAR") {
+    throw new Error('Modo inválido. Use IMPRIMIR ou EDITAR. Valor: "' + modo + '"');
+  }
+
+  const ss   = SpreadsheetApp.getActive();
+  const menu = ss.getSheetByName(ABA_MENU);
+  const reg  = ss.getSheetByName(ABA_REGISTROS);
+
+  const nomeAluno = textoLimpo_(menu.getRange(CELULA_ALUNO_INF).getValue());
+  const objetivo  = textoLimpo_(menu.getRange(CELULA_OBJETIVO_INF).getValue());
+
+  if (!nomeAluno) throw new Error("Selecione um aluno.");
+
+  const dados   = reg.getDataRange().getValues();
+  const headers = dados[0].map(h => (h || "").toString().trim());
+  const col     = t => headers.indexOf(t);
+
+  const linha = dados.find((r, i) => i > 0 && textoLimpo_(r[col("Nome do aluno")]) === nomeAluno);
+  if (!linha) throw new Error("Aluno não encontrado.");
+
+  const d = {
+    nome: textoLimpo_(linha[col("Nome do aluno")]),
+    naturalidade: textoLimpo_(linha[col("Naturalidade")]),
+    nascimento: linha[col("Data de Nascimento")],
+    mae: textoLimpo_(linha[col("Nome da Mãe")]),
+    pai: textoLimpo_(linha[col("Nome do Pai")]),
+    turma: textoLimpo_(linha[col("Turma no Ano Selecionado")]),
+    objetivo
+  };
+
+  if (modo === "EDITAR") {
+    const docId = gerarDocInfantilFrequentando_(d);
+    abrirArquivo(docId);
+    return;
+  }
+
+  const pdfId = gerarPdfInfantilFrequentandoSemSalvarDoc_(d);
+  abrirArquivo(pdfId);
+}
+
+function gerarDocInfantilFrequentando_(d) {
+  const pasta = DriveApp.getFolderById(PASTA_DESTINO_INFANTIL);
+
+  const docFile = DriveApp.getFileById(MODELO_INFANTIL_MATRICULADO)
+    .makeCopy(`Declaração - ${d.nome}`, pasta);
+
+  preencherInfantilFrequentando_(docFile.getId(), d);
+  return docFile.getId();
+}
+
+function gerarPdfInfantilFrequentandoSemSalvarDoc_(d) {
+  const pasta = DriveApp.getFolderById(PASTA_DESTINO_INFANTIL);
+
+  const tempDoc = DriveApp.getFileById(MODELO_INFANTIL_MATRICULADO)
+    .makeCopy(`(TEMP) Declaração - ${d.nome}`, pasta);
+
+  preencherInfantilFrequentando_(tempDoc.getId(), d);
+
+  const pdf = pasta.createFile(tempDoc.getAs(MimeType.PDF))
+    .setName(`Declaração - ${d.nome}.pdf`);
+
+  tempDoc.setTrashed(true);
+  return pdf.getId();
+}
+
+function preencherInfantilFrequentando_(docId, d) {
+  const doc  = DocumentApp.openById(docId);
+  const body = doc.getBody();
+
+  body.replaceText("{{Nome}}", d.nome || "");
+  body.replaceText("{{Naturalidade}}", d.naturalidade || "");
+  body.replaceText("{{Data de Nascimento}}", formatarData(d.nascimento));
+  body.replaceText("{{Nome da Mãe}}", d.mae || "");
+  body.replaceText("{{Nome do Pai}}", d.pai || "");
+  body.replaceText("{{OBJETIVO}}", d.objetivo || "");
+  body.replaceText("{{Data Atual}}", dataPorExtenso());
+
+  marcarSituacaoInfantilFrequentando_(body);
+  marcarSerieInfantil_(body, d.turma); // usa a função do Matriculado
+
+  doc.saveAndClose();
+}
+
+function marcarSituacaoInfantilFrequentando_(body) {
+  body.getParagraphs().forEach(p => {
+    const t = p.getText();
+    if (!t) return;
+
+    if (t.includes("Encontra-se:") && t.includes("matriculado(a)") && t.includes("frequentando") && t.includes("cursou")) {
+      p.setText("Encontra-se: (  ) matriculado(a)  (x) matriculado e frequentando (  ) cursou");
+    }
+  });
+}
