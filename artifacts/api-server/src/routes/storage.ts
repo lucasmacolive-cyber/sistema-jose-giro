@@ -4,7 +4,7 @@ import { Readable } from "stream";
 import {
   RequestUploadUrlBody,
   RequestUploadUrlResponse,
-} from "@workspace/api-zod";
+} from "../../lib/api-zod/src/index.ts";
 import { ObjectStorageService, ObjectNotFoundError } from "../lib/objectStorage";
 import { ObjectPermission } from "../lib/objectAcl";
 

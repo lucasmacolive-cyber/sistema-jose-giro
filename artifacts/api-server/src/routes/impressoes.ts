@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { Router, type IRouter } from "express";
-import { db } from "@workspace/db";
-import { impressoesTable, alertasTable, configuracoesTable } from "@workspace/db/schema";
+import { db } from "../../lib/db/src/index.ts";
+import { impressoesTable, alertasTable, configuracoesTable } from "../../lib/db/src/index.ts/schema";
 import { eq, desc, not, ne, inArray } from "drizzle-orm";
 import multer from "multer";
 import path from "path";

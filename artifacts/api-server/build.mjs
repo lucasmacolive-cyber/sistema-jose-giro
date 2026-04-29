@@ -21,10 +21,6 @@ async function buildAll() {
     format: "esm",
     outdir: distDir,
     outExtension: { ".js": ".mjs" },
-    alias: {
-      "@workspace/api-zod": path.resolve(artifactDir, "../../lib/api-zod/src/index.ts"),
-      "@workspace/db": path.resolve(artifactDir, "../../lib/db/src/index.ts"),
-    },
     logLevel: "info",
     // Some packages may not be bundleable, so we externalize them, we can add more here as needed.
     // Some of the packages below may not be imported or installed, but we're adding them in case they are in the future.

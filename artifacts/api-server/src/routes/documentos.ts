@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { Router, type IRouter } from "express";
-import { db } from "@workspace/db";
-import { alunosTable, turmasTable, funcionariosTable, diarioAulasTable } from "@workspace/db/schema";
+import { db } from "../../lib/db/src/index.ts";
+import { alunosTable, turmasTable, funcionariosTable, diarioAulasTable } from "../../lib/db/src/index.ts/schema";
 import { eq, and, asc, not, ilike } from "drizzle-orm";
 import { isDiaLetivo } from "../lib/calendario2026";
 

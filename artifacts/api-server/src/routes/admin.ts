@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { Router, type IRouter } from "express";
-import { pool } from "@workspace/db";
+import { pool } from "../../lib/db/src/index.ts";
 
 const router: IRouter = Router();
 

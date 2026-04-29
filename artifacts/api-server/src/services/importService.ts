@@ -1,7 +1,7 @@
 // @ts-nocheck
 import pkg from 'xlsx';
 const { readFile, utils } = pkg;
-import { db, alunos, turmasTable } from "@workspace/db";
+import { db, alunos, turmasTable } from "../../lib/db/src/index.ts";
 import { eq, or, and, notInArray, sql } from "drizzle-orm";
 
 export interface AlunoRow {
