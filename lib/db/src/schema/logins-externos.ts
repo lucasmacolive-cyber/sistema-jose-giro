@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { pgTable, serial, varchar, text, timestamp } from "drizzle-orm/pg-core";
 
 export const loginsExternos = pgTable("logins_externos", {

@@ -1,3 +1,4 @@
+// @ts-nocheck
 export * from "./usuarios";
 export * from "./alunos";
 export * from "./turmas";

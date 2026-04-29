@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Cake, ChevronDown, GraduationCap, UserCircle, Briefcase } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";

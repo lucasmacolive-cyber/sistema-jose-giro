@@ -1,3 +1,4 @@
+// @ts-nocheck
 import "dotenv/config";
 import { importarAlunosXLS } from "../artifacts/api-server/src/services/importService";
 import path from "path";

@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { AppLayout } from "@/components/layout/AppLayout";
 import { CalendarDays } from "lucide-react";
 

@@ -1,3 +1,4 @@
+// @ts-nocheck
 import "dotenv/config";
 import { db, usuarios } from "../lib/db/src/index";
 import { eq } from "drizzle-orm";

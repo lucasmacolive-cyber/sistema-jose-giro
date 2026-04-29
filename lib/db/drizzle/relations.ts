@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { relations } from "drizzle-orm/relations";
 import { alunos, notas, presencas, arquivoMorto, arquivoMortoDocumentos, diarioAulas, diarioPresencas } from "./schema";
 

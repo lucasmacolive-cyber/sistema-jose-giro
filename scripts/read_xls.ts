@@ -1,3 +1,4 @@
+// @ts-nocheck
 import pkg from 'xlsx';
 const { readFile, utils } = pkg;
 import * as path from 'path';

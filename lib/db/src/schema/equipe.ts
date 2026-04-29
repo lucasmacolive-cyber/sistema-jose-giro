@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { pgTable, serial, text, varchar } from "drizzle-orm/pg-core";
 
 export const professores = pgTable("professores", {

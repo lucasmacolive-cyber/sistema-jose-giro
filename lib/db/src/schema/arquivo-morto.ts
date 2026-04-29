@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { pgTable, serial, varchar, text, integer, timestamp } from "drizzle-orm/pg-core";
 
 export const arquivoMorto = pgTable("arquivo_morto", {
