@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { Router } from "express";
 import { db } from "../lib/db/index.ts";
-import { alunosTable, professoresTable, funcionariosTable } from "../lib/db/index.ts/schema";
+import { alunosTable, professoresTable, funcionariosTable } from "../lib/db/index.ts";
 import { isNotNull } from "drizzle-orm";
 import { DIAS_NAO_LETIVOS_2026 } from "../lib/calendario2026";
 

@@ -4,7 +4,7 @@ import { db } from "../lib/db/index.ts";
 import {
   diarioAulasTable, diarioPresencasTable, diarioConfiguracoesTable,
   turmasTable, alunosTable,
-} from "../lib/db/index.ts/schema";
+} from "../lib/db/index.ts";
 import { eq, and, inArray, or, sql } from "drizzle-orm";
 import { parseDiarioTexto } from "../lib/parseDiario";
 
