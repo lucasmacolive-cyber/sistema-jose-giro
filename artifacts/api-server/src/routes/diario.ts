@@ -1,10 +1,10 @@
 // @ts-nocheck
 import { Router } from "express";
-import { db } from "../../lib/db/src/index.ts";
+import { db } from "../lib/db/index.ts";
 import {
   diarioAulasTable, diarioPresencasTable, diarioConfiguracoesTable,
   turmasTable, alunosTable,
-} from "../../lib/db/src/index.ts/schema";
+} from "../lib/db/index.ts/schema";
 import { eq, and, inArray, or, sql } from "drizzle-orm";
 import { parseDiarioTexto } from "../lib/parseDiario";
 

@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { Router } from "express";
-import { db, professores, funcionarios } from "../../lib/db/src/index.ts";
+import { db, professores, funcionarios } from "../lib/db/index.ts";
 
 const router = Router();
 
