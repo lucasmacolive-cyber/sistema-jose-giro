@@ -21,6 +21,7 @@ export interface AlunoFrequencia {
   nome: string;
   frequencias: { data: string; status: "P" | "F" }[];
   totalFaltasPDF: number;
+  nota: number | null; // Adicionado campo de nota
 }
 
 export interface AtividadeDiario {
@@ -32,6 +33,7 @@ export interface AtividadeDiario {
 export interface SecaoDiario {
   turmaCodigo: string;   // ex: "1AM01"
   turmaLocal: string;    // ex: "1A"
+  disciplina: string;    // ex: "Língua Portuguesa"
   bimestre: number;
   ano: number;
   professorRegente: string;
@@ -123,22 +125,19 @@ function parseSecao(linhas: string[], erros: string[]): SecaoDiario | null {
   let ano = new Date().getFullYear();
   let professorRegente = "";
 
+  let disciplina = "";
+
   for (let i = 0; i < linhas.length; i++) {
     const l = linhas[i];
 
-    // Código de turma: "20261.1.03161.1M (1AM01)"
-    const mTurma = l.match(/\d{4,}\.\d+\.\d+\.\w+\s+\((\w+)\)/);
-    if (mTurma) turmaCodigo = mTurma[1];
-
-    // Ano letivo: "2026/1"
-    const mAno = l.match(/\b(20\d{2})\/\d/);
-    if (mAno) ano = parseInt(mAno[1]);
-
-    // Bimestre: número isolado no final da linha do diário
-    // Ex: "56202 - FUND.0148 - 1º Ano - ...   1"
-    if (/\d+ - FUND\.\d+/.test(l)) {
-      const mBim = l.match(/\b([1-4])\s*$/);
-      if (mBim) bimestre = parseInt(mBim[1]);
+    // Diário: "56202 - FUND.0148 - 1º Ano - Língua Portuguesa - 1AM01   1"
+    // Ou formato mais simples: "Diário: [NOME DA DISCIPLINA]"
+    const mDiario = l.match(/\d+ - FUND\.\d+ - .* - (.*?) - \w+\s+\d/);
+    if (mDiario) {
+      disciplina = mDiario[1].trim();
+    } else if (/Diário:\s*(.*)/i.test(l) && !disciplina) {
+      const match = l.match(/Diário:\s*(.*)/i);
+      if (match) disciplina = match[1].split("-")[0].trim();
     }
 
     // Professor Regente: aparece antes de "(Professor Regente)" na seção de assinatura
@@ -164,6 +163,7 @@ function parseSecao(linhas: string[], erros: string[]): SecaoDiario | null {
   return {
     turmaCodigo,
     turmaLocal: normalizarTurmaLocal(turmaCodigo),
+    disciplina,
     bimestre,
     ano,
     professorRegente,
@@ -266,20 +266,36 @@ function parsePresencas(
     const nome = nomeParts.join(" ").trim();
     const attTokens = tokens.slice(attStart);
 
-    // Separar attendance de faltas: attendance são ".", "-" e "1",
+    // Separar attendance de faltas e notas: attendance são ".", "-" e "1",
     // Nota (opcional) e faltas (último número) ficam no final
     const attValues: ("P" | "F")[] = [];
     let totalFaltasPDF = 0;
-    let passingFaltas = false;
+    let nota: number | null = null;
+    
+    // Filtramos apenas os tokens que são dados (presenças, notas ou faltas)
+    const dataTokens = attTokens.filter(tk => isAtt(tk) || /^\d+([,.]\d+)?$/.test(tk));
+    
+    // O último token numérico é sempre o total de faltas
+    if (dataTokens.length > 0) {
+      const lastToken = dataTokens[dataTokens.length - 1];
+      if (/^\d+$/.test(lastToken)) {
+        totalFaltasPDF = parseInt(lastToken);
+      }
+      
+      // O penúltimo token, se for numérico, pode ser a nota
+      if (dataTokens.length > 1) {
+        const preLastToken = dataTokens[dataTokens.length - 2];
+        // Se não for um marcador de presença/falta (., -, 1) e for número, é a nota
+        if (!isAtt(preLastToken) && /^\d+([,.]\d+)?$/.test(preLastToken)) {
+          nota = parseFloat(preLastToken.replace(",", "."));
+        }
+      }
+    }
 
     for (let t = 0; t < attTokens.length; t++) {
       const tk = attTokens[t];
-      if (!passingFaltas && isAtt(tk)) {
+      if (isAtt(tk)) {
         attValues.push(isPresenca(tk) ? "P" : "F");
-      } else if (/^\d+$/.test(tk)) {
-        // Último número ao final é o total de faltas
-        totalFaltasPDF = parseInt(tk);
-        passingFaltas = true;
       }
     }
 
@@ -289,7 +305,7 @@ function parsePresencas(
     );
 
     if (nome) {
-      alunos.push({ matricula, nome: normNome(nome), frequencias, totalFaltasPDF });
+      alunos.push({ matricula, nome: normNome(nome), frequencias, totalFaltasPDF, nota });
     }
   }
 

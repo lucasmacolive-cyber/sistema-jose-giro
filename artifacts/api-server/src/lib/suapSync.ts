@@ -253,166 +253,119 @@ export async function sincronizarSUAP(
 ): Promise<Buffer> {
   const jar = new CookieJar();
 
-  /* ── 1. Login ── */
-  onProgress(5, "Abrindo página de login do SUAP...");
-  const loginGet = await request("GET", "/accounts/login/", jar);
-  const csrfLogin = extractCsrf(loginGet.text, jar);
+  /* ── 1. Login com Persistência ── */
+  let loginSucesso = false;
+  for (let t = 1; t <= 3; t++) {
+    try {
+      onProgress(5, `Tentativa de login ${t}/3 no SUAP...`);
+      const loginGet = await request("GET", "/accounts/login/", jar);
+      const csrfLogin = extractCsrf(loginGet.text, jar);
 
-  if (!csrfLogin) {
-    throw new Error("Não foi possível obter token CSRF do SUAP.");
+      if (!csrfLogin) throw new Error("Token CSRF não encontrado.");
+
+      const loginBody = new URLSearchParams({
+        csrfmiddlewaretoken: csrfLogin,
+        this_is_the_login_form: "1",
+        next: "/",
+        username: usuario,
+        password: senha,
+      }).toString();
+
+      const loginResp = await request("POST", "/accounts/login/", jar, loginBody, {
+        Referer: `${SUAP_BASE}/accounts/login/`,
+      });
+
+      if (loginResp.status === 302 || !loginResp.text.includes("accounts/login")) {
+        loginSucesso = true;
+        break;
+      }
+    } catch (e) {
+      if (t === 3) throw e;
+      await sleep(2000);
+    }
   }
 
-  onProgress(10, "Autenticando no SUAP...");
-  const loginBody = new URLSearchParams({
-    csrfmiddlewaretoken: csrfLogin,
-    this_is_the_login_form: "1",
-    next: "/",
-    username: usuario,
-    password: senha,
-  }).toString();
-
-  const loginResp = await request("POST", "/accounts/login/", jar, loginBody, {
-    Referer: `${SUAP_BASE}/accounts/login/`,
-  });
-
-  if (loginResp.text.includes("accounts/login") && loginResp.status !== 302) {
-    throw new Error("Falha no login do SUAP. Verifique as credenciais.");
-  }
+  if (!loginSucesso) throw new Error("Falha ao autenticar no SUAP após 3 tentativas.");
 
   onProgress(20, "Login realizado. Acessando relatório de alunos...");
 
-  /* ── 2. Acessar o relatório com URL pré-configurada (GET) ── */
-  const reportResp = await request("GET", SUAP_RELATORIO_URL, jar, undefined, {
+  /* ── 2. Acessar o relatório ── */
+  const reportResp = await request("GET", SUAP_RELATORIO_URL, jar, {
     Referer: `${SUAP_BASE}/edu/relatorio/`,
   });
 
-  if (reportResp.status !== 200) {
-    throw new Error(`Falha ao acessar relatório SUAP (status ${reportResp.status}).`);
-  }
+  onProgress(35, "Relatório carregado. Iniciando exportação para XLS...");
 
-  onProgress(35, "Relatório carregado. Procurando link de exportação XLS...");
-
-  /* ── 3. Encontrar e acessar o botão "Exportar para XLS" ── */
-  let exportPath = encontrarLinkExport(reportResp.text);
-
-  if (!exportPath) {
-    // Fallback: usar URL do relatório + ?formato=xls
-    exportPath = "/edu/relatorio/?formato=xls";
-    onProgress(38, "Link de exportação não encontrado, tentando URL padrão...");
-  } else {
-    onProgress(38, `Link de exportação encontrado: ${exportPath}`);
-  }
-
-  // Garantir path absoluto
+  /* ── 3. Disparar Exportação ── */
+  // No SUAP, o botão verde "Exportar para XLS" geralmente é um link GET com formato=xls
+  let exportPath = encontrarLinkExport(reportResp.text) || "/edu/relatorio/?formato=xls";
+  
   if (exportPath.startsWith("http")) {
     exportPath = new URL(exportPath).pathname + new URL(exportPath).search;
   }
 
-  onProgress(40, "Solicitando geração do arquivo XLS...");
-
-  const exportResp = await request("GET", exportPath, jar, undefined, {
+  onProgress(40, "Solicitando geração do arquivo ao servidor SUAP...");
+  let currentResp = await request("GET", exportPath, jar, {
     Referer: `${SUAP_BASE}/edu/relatorio/`,
-    Accept: "application/vnd.ms-excel,application/octet-stream,text/html,*/*",
   });
 
-  /* ── 4. Verificar se já é o arquivo XLS ── */
-  const ct = exportResp.headers["content-type"] ?? "";
-
-  if (isXlsBuffer(exportResp.body, ct)) {
-    onProgress(85, "Arquivo XLS obtido diretamente!");
-    return exportResp.body;
-  }
-
-  /* ── 5. Exportação assíncrona — determinar URL da página intermediária ── */
-  onProgress(45, "Exportação iniciada. Identificando página de progresso...");
-
-  // Determinar URL da página intermediária (onde o SUAP mostra progresso e link de download)
-  let progressPath = exportPath; // padrão: reusar a mesma URL
-
-  if (exportResp.headers.location) {
-    // Redirect explícito → essa é a página intermediária
-    progressPath = resolverPath(exportResp.headers.location);
-    onProgress(46, `Redirecionado para: ${progressPath}`);
-  } else if (exportResp.text) {
-    // Procurar meta-refresh na resposta
-    const metaUrl = encontrarMetaRefresh(exportResp.text);
-    if (metaUrl) {
-      progressPath = resolverPath(metaUrl);
-      onProgress(46, `Página intermediária (meta-refresh): ${progressPath}`);
-    } else {
-      // Procurar link de tarefa/progresso no HTML
-      const taskHref = exportResp.text.match(
-        /href="([^"]*(?:tarefa|task|progresso|gerar|arquivo|relatorio)[^"]*)"/i
-      )?.[1];
-      if (taskHref) {
-        progressPath = resolverPath(taskHref);
-        onProgress(46, `Página intermediária (link): ${progressPath}`);
-      }
-    }
-  }
-
-  // Aguardar 30 segundos (mínimo exigido pelo SUAP para gerar o XLS)
-  onProgress(48, "Aguardando geração do arquivo (30s mínimo)...");
-  await sleep(30000);
-
-  // Polling: até 60 segundos adicionais (total ~90s)
-  for (let tentativa = 0; tentativa < 30; tentativa++) {
-    const pollResp = await request("GET", progressPath, jar, undefined, {
-      Accept: "text/html,application/octet-stream,*/*",
-    });
-
-    const pollCt = pollResp.headers["content-type"] ?? "";
-
-    // Arquivo recebido diretamente?
-    if (isXlsBuffer(pollResp.body, pollCt)) {
-      onProgress(85, "Arquivo XLS pronto!");
-      return pollResp.body;
+  /* ── 4. Loop de Monitoramento da Tarefa (O "Humano" esperando a barra) ── */
+  let attempts = 0;
+  const MAX_ATTEMPTS = 60; // Até 5 minutos de espera (5s por poll)
+  
+  while (attempts < MAX_ATTEMPTS) {
+    const ct = currentResp.headers["content-type"] ?? "";
+    
+    // Se já veio o arquivo (raro em relatórios grandes)
+    if (isXlsBuffer(currentResp.body, ct)) {
+      onProgress(95, "Arquivo XLS recebido!");
+      return currentResp.body;
     }
 
-    const pollText = pollResp.text;
-
-    // Link de download?
-    const dlLink = encontrarLinkDownload(pollText);
+    const html = currentResp.text;
+    
+    // 1. Verificar se há link de download final
+    const dlLink = encontrarLinkDownload(html);
     if (dlLink) {
-      const dlPath = resolverPath(dlLink);
-      onProgress(82, "Link de download encontrado. Baixando arquivo...");
-      const dlResp = await request("GET", dlPath, jar, undefined, {
-        Accept: "application/vnd.ms-excel,application/octet-stream,*/*",
-      });
-
-      if (dlResp.body.length > 1000) {
-        onProgress(85, "Arquivo XLS baixado com sucesso!");
+      onProgress(90, "Geração concluída! Baixando arquivo final...");
+      const dlResp = await request("GET", resolverPath(dlLink), jar);
+      if (isXlsBuffer(dlResp.body, dlResp.headers["content-type"] || "")) {
         return dlResp.body;
       }
     }
 
-    // A própria página intermediária redirecionou para outra?
-    if (pollResp.headers.location) {
-      progressPath = resolverPath(pollResp.headers.location);
-      onProgress(50 + Math.floor((tentativa / 30) * 30), `Seguindo redirect: ${progressPath}`);
-      continue;
+    // 2. Extrair porcentagem da página (ex: "5%", "Tarefa em 45%")
+    const pctMatch = html.match(/(\d+)\s*%/);
+    const pctMsg = pctMatch ? `Gerando XLS: ${pctMatch[1]}% concluído...` : "Processando tarefa no SUAP...";
+    onProgress(45 + Math.min(45, attempts * 1.5), pctMsg);
+
+    // 3. Descobrir para onde ir em seguida (meta refresh ou link de continuar)
+    let nextPath = encontrarMetaRefresh(html) || encontrarLinkDownload(html);
+    
+    if (!nextPath) {
+      // Se não achou link, tenta recarregar a URL atual da tarefa
+      if (currentResp.headers.location) {
+        nextPath = resolverPath(currentResp.headers.location);
+      } else {
+        // Se estamos em uma tarefa djtools, a URL costuma ser /djtools/process2/ID/
+        const taskUrlMatch = html.match(/\/djtools\/process2\/[a-f0-9-]+\//i);
+        if (taskUrlMatch) nextPath = taskUrlMatch[0];
+      }
     }
 
-    // Meta-refresh na página de polling
-    const pollMeta = encontrarMetaRefresh(pollText);
-    if (pollMeta && pollMeta !== progressPath) {
-      progressPath = resolverPath(pollMeta);
-      onProgress(50 + Math.floor((tentativa / 30) * 30), `Meta-refresh para: ${progressPath}`);
+    if (!nextPath) {
+      // Se realmente não tem pra onde ir, espera um pouco na mesma página
+      await sleep(5000);
+      currentResp = await request("GET", exportPath, jar);
+    } else {
+      await sleep(5000);
+      currentResp = await request("GET", resolverPath(nextPath), jar);
     }
 
-    // Extrair % de progresso se disponível
-    const pctStr = pollText.match(/(\d+)\s*%/)?.[1];
-    onProgress(
-      50 + Math.floor((tentativa / 30) * 30),
-      `Aguardando conclusão do XLS... ${pctStr ? pctStr + "%" : `tentativa ${tentativa + 1}/30`}`
-    );
-
-    await sleep(2000);
+    attempts++;
   }
 
-  throw new Error(
-    "Timeout: o SUAP não concluiu a exportação XLS em 90 segundos. Tente novamente em alguns minutos."
-  );
+  throw new Error("O SUAP demorou muito para gerar o arquivo (timeout de 5 minutos). Tente novamente.");
 }
 
 function sleep(ms: number) {

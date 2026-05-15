@@ -1,8 +1,8 @@
 // @ts-nocheck
 import { Router, type IRouter } from "express";
 import { db } from "../lib/db/index.js";
-import { syncStatusTable, alunosTable, configuracoesTable, diarioAulasTable, diarioPresencasTable, turmasTable, professoresTable } from "../lib/db/index.js";
-import { desc, eq, isNotNull } from "drizzle-orm";
+import { syncStatusTable, alunosTable, configuracoesTable, diarioAulasTable, diarioPresencasTable, turmasTable, professoresTable, notasTable } from "../lib/db/index.js";
+import { desc, eq, isNotNull, and } from "drizzle-orm";
 import * as XLSX from "xlsx";
 import archiver from "archiver";
 import path from "path";
@@ -1264,6 +1264,40 @@ async function importarSecao(
         presencasImportadas++;
       } catch (e: any) {
         erros.push(`Presença aluno ${alunoId} dia ${f.data}: ${e.message}`);
+      }
+    }
+
+    // 3. Importar Nota (se existir) → notasTable
+    if (aluno.nota !== null && secao.disciplina) {
+      try {
+        await db.insert(notasTable)
+          .values({
+            alunoId,
+            disciplina: secao.disciplina,
+            bimestre: secao.bimestre,
+            notaFinal: String(aluno.nota), // DECIMAL costuma ser string no JS/Drizzle
+            dataAtualizacao: new Date(),
+          })
+          .onConflictDoUpdate({
+            target: [notasTable.id], // TODO: check if there is a unique constraint on alunoId+disciplina+bimestre
+            set: {
+              notaFinal: String(aluno.nota),
+              dataAtualizacao: new Date(),
+            }
+          });
+          
+        // Fallback: se não houver constraint única no onConflict, fazemos um update manual
+        // ou garantimos que a tabela tenha essa constraint. 
+        // Para garantir, vamos fazer um update por filtros se o insert falhar.
+        await db.update(notasTable)
+          .set({ notaFinal: String(aluno.nota), dataAtualizacao: new Date() })
+          .where(and(
+            eq(notasTable.alunoId, alunoId),
+            eq(notasTable.disciplina, secao.disciplina),
+            eq(notasTable.bimestre, secao.bimestre)
+          ));
+      } catch (e: any) {
+        erros.push(`Nota aluno ${alunoId} (${secao.disciplina}): ${e.message}`);
       }
     }
   }
