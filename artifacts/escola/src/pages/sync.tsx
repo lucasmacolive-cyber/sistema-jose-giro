@@ -1178,7 +1178,10 @@ function SecaoSincronizacao() {
     try {
       const res = await apiFetch("/sync/limpar-duplicados", { method: "POST" });
       toast({ title: "Limpeza concluída!", description: res.mensagem });
-      apiFetch("/sync/status").then(setHistorico).catch(() => {});
+      // Atualizar histórico se existir
+      if (typeof setHistorico === "function") {
+        apiFetch("/sync/status").then(setHistorico).catch(() => {});
+      }
     } catch (e: any) {
       toast({ title: "Erro na limpeza", description: e.message, variant: "destructive" });
     } finally {
