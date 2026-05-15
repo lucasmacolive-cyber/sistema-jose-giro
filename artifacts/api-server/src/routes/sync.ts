@@ -51,6 +51,11 @@ router.get("/sync/status", async (_req, res) => {
   });
 });
 
+router.get("/sync/historico", async (_req, res) => {
+  const history = await db.select().from(syncStatusTable).orderBy(desc(syncStatusTable.id)).limit(20);
+  res.json(history);
+});
+
 /* ═══════════════════════════════════════════════════════════
    GET /api/sync/credenciais — retorna usuário salvo (senha mascarada)
 ════════════════════════════════════════════════════════════ */
@@ -442,6 +447,7 @@ router.post("/sync/auto", async (req, res) => {
         mensagem: `${result.adicionados} novos, ${result.atualizados} atualizados, ${result.transferidos} transferidos do SUAP.`,
         totalAlunos: String(result.adicionados + result.atualizados),
         ultimaSync: new Date(),
+        detalhes: JSON.stringify(result.detalhes),
       });
 
       autoSyncState = {
@@ -603,6 +609,7 @@ router.post("/sync/upload-alunos", async (req, res) => {
       mensagem: `Planilha importada: ${result.adicionados} novos, ${result.atualizados} atualizados, ${result.transferidos} transferidos.`,
       totalAlunos: String(result.adicionados + result.atualizados),
       ultimaSync: new Date(),
+      detalhes: JSON.stringify(result.detalhes),
     });
 
     res.json({

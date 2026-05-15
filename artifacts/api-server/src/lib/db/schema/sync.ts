@@ -10,6 +10,7 @@ export const syncStatusTable = pgTable("sync_status", {
   mensagem: text("mensagem"),
   totalAlunos: text("total_alunos"),
   totalRegistros: text("total_registros"),
+  detalhes: text("detalhes"),
 });
 
 export const insertSyncStatusSchema = createInsertSchema(syncStatusTable).omit({ id: true });

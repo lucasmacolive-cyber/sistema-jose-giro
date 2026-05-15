@@ -133,6 +133,23 @@ function BlocoUploadPDF({ apiBase }: { apiBase: string }) {
   const [verDetalhes, setVerDetalhes] = useState(false);
   const [drag, setDrag] = useState(false);
 
+  // Estados para histórico e log detalhado
+  const [historicoList, setHistoricoList] = useState<any[]>([]);
+  const [logAberto, setLogAberto] = useState<any | null>(null);
+
+  const carregarHistorico = useCallback(async () => {
+    try {
+      const data = await apiFetch("/sync/historico");
+      setHistoricoList(data);
+    } catch (e) {
+      console.error("Erro ao carregar histórico:", e);
+    }
+  }, [apiBase]);
+
+  useEffect(() => {
+    carregarHistorico();
+  }, [carregarHistorico]);
+
   const processarArquivos = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
     const pdfs = Array.from(files).filter(f => f.type === "application/pdf" || f.name.endsWith(".pdf"));
@@ -1969,33 +1986,152 @@ async function modoBrowser(){
 
       {/* ── Histórico ── */}
       <div className="bg-[#0f172a] rounded-2xl border border-white/[0.07] p-5">
-        <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-4">Histórico de Sincronização</h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="bg-white/5 rounded-xl p-4 border border-white/5">
-            <p className="text-[0.65rem] font-bold uppercase tracking-widest text-slate-400 mb-1">Última Sincronização</p>
-            <p className="text-sm font-semibold text-white">{formatarData(historico?.ultimaSync)}</p>
-          </div>
-          <div className="bg-white/5 rounded-xl p-4 border border-white/5">
-            <p className="text-[0.65rem] font-bold uppercase tracking-widest text-slate-400 mb-1">Status</p>
-            <p className="text-sm font-semibold">
-              {historico?.status === "idle"    && <span className="text-slate-400">Aguardando</span>}
-              {historico?.status === "running" && <span className="text-yellow-400">Em execução</span>}
-              {historico?.status === "success" && <span className="text-emerald-400">Concluída ✓</span>}
-              {historico?.status === "error"   && <span className="text-red-400">Erro</span>}
-              {!historico && <span className="text-slate-400">—</span>}
-            </p>
-          </div>
-          <div className="bg-white/5 rounded-xl p-4 border border-white/5">
-            <p className="text-[0.65rem] font-bold uppercase tracking-widest text-slate-400 mb-1">Alunos Importados</p>
-            <p className="text-2xl font-black text-white">{historico?.totalAlunos ?? "—"}</p>
-          </div>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400">Histórico de Sincronização</h3>
+          <button 
+            onClick={carregarHistorico}
+            className="text-[0.65rem] font-bold text-cyan-400 hover:text-cyan-300 flex items-center gap-1"
+          >
+            <RefreshCcw className="h-3 w-3" /> Atualizar Lista
+          </button>
         </div>
-        {historico?.mensagem && (
-          <p className="mt-3 text-xs text-muted-foreground bg-white/5 rounded-xl px-4 py-2 border border-white/5">
-            {historico.mensagem}
-          </p>
-        )}
+
+        <div className="overflow-hidden rounded-xl border border-white/5">
+          <table className="w-full text-left text-xs border-collapse">
+            <thead className="bg-white/5 text-slate-400 font-bold uppercase tracking-wider">
+              <tr>
+                <th className="px-4 py-3 border-b border-white/5">Data/Hora</th>
+                <th className="px-4 py-3 border-b border-white/5">Status</th>
+                <th className="px-4 py-3 border-b border-white/5">Resumo</th>
+                <th className="px-4 py-3 border-b border-white/5 text-center">Ações</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/5">
+              {historicoList.length === 0 ? (
+                <tr>
+                  <td colSpan={4} className="px-4 py-8 text-center text-slate-500 italic">
+                    Nenhuma sincronização registrada.
+                  </td>
+                </tr>
+              ) : (
+                historicoList.map((h) => (
+                  <tr key={h.id} className="hover:bg-white/[0.02] transition-colors">
+                    <td className="px-4 py-3 text-slate-300 font-medium">
+                      {new Date(h.ultimaSync).toLocaleString("pt-BR")}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={cn(
+                        "px-2 py-0.5 rounded-full text-[0.65rem] font-black uppercase tracking-tighter",
+                        h.status === "success" ? "bg-emerald-500/10 text-emerald-400" :
+                        h.status === "error" ? "bg-red-500/10 text-red-400" :
+                        "bg-slate-500/10 text-slate-400"
+                      )}>
+                        {h.status === "success" ? "Sucesso" : h.status === "error" ? "Erro" : h.status}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-slate-400 max-w-[300px] truncate">
+                      {h.mensagem}
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      {h.detalhes ? (
+                        <button
+                          onClick={() => {
+                            try {
+                              setLogAberto({ ...h, detalhes: JSON.parse(h.detalhes) });
+                            } catch {
+                              toast({ title: "Erro ao abrir log", variant: "destructive" });
+                            }
+                          }}
+                          className="px-3 py-1 rounded-lg bg-cyan-500/10 text-cyan-400 hover:bg-cyan-500/20 font-bold transition-all"
+                        >
+                          Ver Log
+                        </button>
+                      ) : (
+                        <span className="text-slate-600 text-[0.65rem] font-bold">Sem Detalhes</span>
+                      )}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
+
+      {/* Modal de Detalhes do Log */}
+      <Dialog open={!!logAberto} onOpenChange={() => setLogAberto(null)}>
+        <DialogContent className="bg-[#0f172a] border-white/10 text-white max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileSpreadsheet className="h-5 w-5 text-cyan-400" />
+              Relatório de Sincronização
+            </DialogTitle>
+            <p className="text-xs text-slate-400">
+              Sincronização realizada em {logAberto && new Date(logAberto.ultimaSync).toLocaleString("pt-BR")}
+            </p>
+          </DialogHeader>
+
+          <div className="flex-1 overflow-y-auto pr-2 space-y-4 py-4">
+            {logAberto?.detalhes && (
+              <>
+                {/* Novos */}
+                {logAberto.detalhes.adicionados?.length > 0 && (
+                  <div className="space-y-2">
+                    <h4 className="text-xs font-black uppercase tracking-widest text-emerald-400 flex items-center gap-2">
+                      <Plus className="h-3 w-3" /> Novos Alunos ({logAberto.detalhes.adicionados.length})
+                    </h4>
+                    <div className="bg-emerald-500/5 rounded-xl p-3 border border-emerald-500/10 grid grid-cols-2 gap-x-4 gap-y-1">
+                      {logAberto.detalhes.adicionados.map((nome: string, i: number) => (
+                        <div key={i} className="text-[11px] text-emerald-100/70 truncate">• {nome}</div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Atualizados */}
+                {logAberto.detalhes.atualizados?.length > 0 && (
+                  <div className="space-y-2">
+                    <h4 className="text-xs font-black uppercase tracking-widest text-blue-400 flex items-center gap-2">
+                      <RefreshCcw className="h-3 w-3" /> Dados Atualizados ({logAberto.detalhes.atualizados.length})
+                    </h4>
+                    <div className="bg-blue-500/5 rounded-xl p-3 border border-blue-500/10 grid grid-cols-2 gap-x-4 gap-y-1">
+                      {logAberto.detalhes.atualizados.map((nome: string, i: number) => (
+                        <div key={i} className="text-[11px] text-blue-100/70 truncate">• {nome}</div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Transferidos */}
+                {logAberto.detalhes.transferidos?.length > 0 && (
+                  <div className="space-y-2">
+                    <h4 className="text-xs font-black uppercase tracking-widest text-amber-400 flex items-center gap-2">
+                      <Trash2 className="h-3 w-3" /> Saídas/Transferidos ({logAberto.detalhes.transferidos.length})
+                    </h4>
+                    <div className="bg-amber-500/5 rounded-xl p-3 border border-amber-500/10 grid grid-cols-2 gap-x-4 gap-y-1">
+                      {logAberto.detalhes.transferidos.map((nome: string, i: number) => (
+                        <div key={i} className="text-[11px] text-amber-100/70 truncate">• {nome}</div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {(!logAberto.detalhes.adicionados?.length && !logAberto.detalhes.atualizados?.length && !logAberto.detalhes.transferidos?.length) && (
+                  <div className="text-center py-8 text-slate-500 text-sm">
+                    Nenhuma alteração de nomes detectada nesta sincronização.
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
+          <div className="flex justify-end pt-4 border-t border-white/5">
+            <Button onClick={() => setLogAberto(null)} className="bg-white/5 hover:bg-white/10 text-white">
+              Fechar Relatório
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

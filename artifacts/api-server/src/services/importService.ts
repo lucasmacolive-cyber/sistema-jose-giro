@@ -19,7 +19,7 @@ export interface ImportOptions {
 export async function processarImportacaoAlunos(rows: AlunoRow[], options: ImportOptions = {}) {
   const { substituirTudo = false, onProgress } = options;
   
-  if (rows.length === 0) return { sucesso: true, adicionados: 0, atualizados: 0 };
+  if (rows.length === 0) return { sucesso: true, adicionados: 0, atualizados: 0, detalhes: { adicionados: [], atualizados: [], transferidos: [] } };
 
   const colunas = Object.keys(rows[0]);
   const mapearColuna = (chaves: string[]): string | undefined => {
@@ -83,6 +83,9 @@ export async function processarImportacaoAlunos(rows: AlunoRow[], options: Impor
   let adicionados = 0;
   let atualizados = 0;
   let errosCount = 0;
+  const nomesAdicionados = [];
+  const nomesAtualizados = [];
+  const nomesTransferidos = [];
   
   const matriculasNoArquivo = new Set<string>();
   const nomesNoArquivo = new Set<string>();
@@ -149,9 +152,11 @@ export async function processarImportacaoAlunos(rows: AlunoRow[], options: Impor
       if (existingId) {
         await db.update(alunos).set(alunoData).where(eq(alunos.id, existingId));
         atualizados++;
+        nomesAtualizados.push(nomeCompleto);
       } else {
         await db.insert(alunos).values(alunoData);
         adicionados++;
+        nomesAdicionados.push(nomeCompleto);
       }
 
       if (onProgress && i % 20 === 0) {
@@ -184,6 +189,7 @@ export async function processarImportacaoAlunos(rows: AlunoRow[], options: Impor
         dataTransferencia: dataHoje
       }).where(eq(alunos.id, a.id));
       totalTransferidos++;
+      nomesTransferidos.push(a.nomeCompleto);
     }
   }
 
@@ -197,7 +203,18 @@ export async function processarImportacaoAlunos(rows: AlunoRow[], options: Impor
     }
   }
 
-  return { sucesso: true, adicionados, atualizados, transferidos: totalTransferidos, erros: errosCount };
+  return { 
+    sucesso: true, 
+    adicionados, 
+    atualizados, 
+    transferidos: totalTransferidos, 
+    erros: errosCount,
+    detalhes: {
+      adicionados: nomesAdicionados,
+      atualizados: nomesAtualizados,
+      transferidos: nomesTransferidos
+    }
+  };
 }
 
 export async function importarAlunosXLS(filePath: string) {
