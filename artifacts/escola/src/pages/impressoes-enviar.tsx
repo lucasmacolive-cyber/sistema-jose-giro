@@ -266,67 +266,24 @@ export default function ImpressoesEnviarPage() {
             />
           </div>
 
-          {/* Opções Master */}
-          {isMaster && (
-            <div className="space-y-3 pt-2 border-t border-white/10">
-              <div className="flex items-center gap-2 text-primary font-bold text-xs uppercase tracking-widest">
-                <ShieldCheck className="h-4 w-4" />
-                Controle Master de Impressão
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <Button 
-                  onClick={(e) => { 
-                    setImpressoraManual("RICOH"); 
-                    setColorida(false); 
-                    setImprimirAgora(true);
-                    setTimeout(() => enviar(e), 50); 
-                  }}
-                  disabled={enviando}
-                  className="bg-slate-700 hover:bg-slate-600 text-white h-14 flex flex-col gap-0.5"
-                >
-                  <span className="text-xs font-bold">IMPRIMIR NA</span>
-                  <span className="text-sm font-black">RICOH (P&B)</span>
-                </Button>
-                <Button 
-                  onClick={(e) => { 
-                    setImpressoraManual("EPSON"); 
-                    setColorida(true); 
-                    setImprimirAgora(true);
-                    setTimeout(() => enviar(e), 50); 
-                  }}
-                  disabled={enviando}
-                  className="bg-sky-700 hover:bg-sky-600 text-white h-14 flex flex-col gap-0.5"
-                >
-                  <span className="text-xs font-bold">IMPRIMIR NA</span>
-                  <span className="text-sm font-black">EPSON (COR)</span>
-                </Button>
-              </div>
-              <p className="text-[10px] text-white/30 text-center italic">
-                Atenção: Ao clicar, o arquivo será enviado diretamente para a impressora escolhida.
-              </p>
-            </div>
-          )}
 
           {erro && (
             <p className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">{erro}</p>
           )}
 
-          {/* Botão Padrão para Professores (Escondido para Master se ele preferir os botões acima) */}
-          {!isMaster && (
-            <Button onClick={enviar} disabled={enviando}
-              className={`w-full text-white h-11 text-sm font-semibold transition-all ${
-                imprimirAgora ? "bg-emerald-600 hover:bg-emerald-500" : "bg-sky-600 hover:bg-sky-500"
-              }`}
-            >
-              {enviando
-                ? <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                : imprimirAgora
-                  ? <Zap className="h-4 w-4 mr-2" />
-                  : <Printer className="h-4 w-4 mr-2" />
-              }
-              {imprimirAgora ? "Enviar e Imprimir Agora!" : "Enviar pedido de impressão"}
-            </Button>
-          )}
+          <Button onClick={enviar} disabled={enviando}
+            className={`w-full text-white h-11 text-sm font-semibold transition-all ${
+              imprimirAgora ? "bg-emerald-600 hover:bg-emerald-500" : "bg-sky-600 hover:bg-sky-500"
+            }`}
+          >
+            {enviando
+              ? <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              : imprimirAgora
+                ? <Zap className="h-4 w-4 mr-2" />
+                : <Printer className="h-4 w-4 mr-2" />
+            }
+            {imprimirAgora ? "Enviar e Imprimir Agora!" : "Enviar pedido de impressão"}
+          </Button>
         </div>
 
         <p className="text-center text-[11px] text-white/20">

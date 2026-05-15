@@ -87,8 +87,15 @@ router.get("/impressoes/pendentes", async (_req, res) => {
   const agora = new Date();
   const filtrados = jobs.filter(j => {
     if (!j.dataParaUso) return true;
-    const agendado = new Date(`${j.dataParaUso}T${j.horarioImpressao || "00:00"}:00`);
-    return agora >= agendado;
+    
+    // Obtém o horário atual em Brasília (UTC-3)
+    const agoraBr = new Date(new Date().getTime() - (3 * 60 * 60 * 1000));
+    
+    // Constrói a data agendada (YYYY-MM-DDTHH:mm:00)
+    const agendadoStr = `${j.dataParaUso}T${j.horarioImpressao || "00:00"}:00`;
+    const agendado = new Date(agendadoStr);
+    
+    return agoraBr >= agendado;
   });
   res.json(filtrados);
 });
