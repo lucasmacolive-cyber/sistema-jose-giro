@@ -2,7 +2,7 @@
 import { Router, type IRouter } from "express";
 import { db } from "../lib/db/index.js";
 import { syncStatusTable, alunosTable, configuracoesTable, diarioAulasTable, diarioPresencasTable, turmasTable, professoresTable, notasTable } from "../lib/db/index.js";
-import { desc, eq, isNotNull, and } from "drizzle-orm";
+import { desc, eq, isNotNull, and, inArray } from "drizzle-orm";
 import * as XLSX from "xlsx";
 import archiver from "archiver";
 import path from "path";
@@ -1216,5 +1216,79 @@ async function importarSecao(
 
   return { aulasImportadas, presencasImportadas, alunosNaoEncontrados, erros };
 }
+
+/* ═══════════════════════════════════════════════════════════
+   POST /api/sync/limpar-duplicados
+   Varre o banco em busca de alunos com mesmo CPF ou Nome e funde-os.
+════════════════════════════════════════════════════════════ */
+router.post("/sync/limpar-duplicados", async (_req, res) => {
+  try {
+    const todosAlunos = await db.select().from(alunosTable);
+    const gruposCPF = new Map<string, typeof todosAlunos>();
+    const gruposNome = new Map<string, typeof todosAlunos>();
+    const semCPF: typeof todosAlunos = [];
+
+    // 1. Agrupar por CPF e Nome
+    for (const a of todosAlunos) {
+      const cpf = a.cpf ? a.cpf.replace(/\D/g, "") : "";
+      if (cpf) {
+        const lista = gruposCPF.get(cpf) || [];
+        lista.push(a);
+        gruposCPF.set(cpf, lista);
+      } else {
+        semCPF.push(a);
+      }
+      const nomeNorm = a.nomeCompleto.toLowerCase().trim();
+      const listaNome = gruposNome.get(nomeNorm) || [];
+      listaNome.push(a);
+      gruposNome.set(nomeNorm, listaNome);
+    }
+
+    let totalRemovidos = 0;
+    const processados = new Set<number>();
+
+    // 2. Processar duplicatas de CPF
+    for (const [cpf, lista] of gruposCPF) {
+      if (lista.length > 1) {
+        lista.sort((a, b) => a.id - b.id); // Mais antigo primeiro
+        const sobrevivente = lista[0];
+        const duplicados = lista.slice(1);
+        const duplicadosIds = duplicados.map(d => d.id);
+
+        // Mover Notas e Presenças para o sobrevivente
+        await db.update(diarioPresencasTable).set({ alunoId: sobrevivente.id }).where(inArray(diarioPresencasTable.alunoId, duplicadosIds));
+        await db.update(notasTable).set({ alunoId: sobrevivente.id }).where(inArray(notasTable.alunoId, duplicadosIds));
+
+        // Remover duplicados
+        await db.delete(alunosTable).where(inArray(alunosTable.id, duplicadosIds));
+        totalRemovidos += duplicadosIds.length;
+        duplicadosIds.forEach(id => processados.add(id));
+        processados.add(sobrevivente.id);
+      }
+    }
+
+    // 3. Processar duplicatas de Nome (para quem não tem CPF ou não foi processado)
+    for (const [nome, lista] of gruposNome) {
+      const listaFiltrada = lista.filter(a => !processados.has(a.id));
+      if (listaFiltrada.length > 1) {
+        listaFiltrada.sort((a, b) => a.id - b.id);
+        const sobrevivente = listaFiltrada[0];
+        const duplicados = listaFiltrada.slice(1);
+        const duplicadosIds = duplicados.map(d => d.id);
+
+        await db.update(diarioPresencasTable).set({ alunoId: sobrevivente.id }).where(inArray(diarioPresencasTable.alunoId, duplicadosIds));
+        await db.update(notasTable).set({ alunoId: sobrevivente.id }).where(inArray(notasTable.alunoId, duplicadosIds));
+
+        await db.delete(alunosTable).where(inArray(alunosTable.id, duplicadosIds));
+        totalRemovidos += duplicadosIds.length;
+        duplicadosIds.forEach(id => processados.add(id));
+      }
+    }
+
+    res.json({ ok: true, mensagem: `Limpeza concluída! ${totalRemovidos} alunos duplicados foram removidos e seus dados foram mesclados.`, removidos: totalRemovidos });
+  } catch (e: any) {
+    res.status(500).json({ ok: false, mensagem: "Erro na limpeza: " + e.message });
+  }
+});
 
 export default router;

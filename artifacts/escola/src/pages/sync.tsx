@@ -1008,6 +1008,7 @@ function SecaoSincronizacao() {
   const [diariosMsg, setDiariosMsg] = useState("");
   const [diariosErro, setDiariosErro] = useState<string | null>(null);
   const [diariosConcluido, setDiariosConcluido] = useState(false);
+  const [limpando, setLimpando] = useState(false);
 
   const [historico, setHistorico] = useState<{
     status: string; ultimaSync?: string; mensagem?: string; totalAlunos?: number;
@@ -1168,6 +1169,20 @@ function SecaoSincronizacao() {
     } catch (e: any) {
       setAutoRodando(false);
       setAutoErro(e.message || "Erro ao iniciar sincronização.");
+    }
+  };
+
+  const limparDuplicados = async () => {
+    if (!confirm("O robô vai analisar todos os alunos e fundir registros duplicados (mesmo CPF ou Nome). Notas e presenças serão preservadas. Deseja continuar?")) return;
+    setLimpando(true);
+    try {
+      const res = await apiFetch("/sync/limpar-duplicados", { method: "POST" });
+      toast({ title: "Limpeza concluída!", description: res.mensagem });
+      apiFetch("/sync/status").then(setHistorico).catch(() => {});
+    } catch (e: any) {
+      toast({ title: "Erro na limpeza", description: e.message, variant: "destructive" });
+    } finally {
+      setLimpando(false);
     }
   };
 
@@ -1537,6 +1552,18 @@ async function modoBrowser(){
                   <><Check className="h-5 w-5" /> Sincronização Concluída!</>
                 ) : (
                   <><RefreshCcw className="h-5 w-5 group-hover:rotate-180 transition-transform duration-500" /> Sincronizar Dados dos Alunos</>
+                )}
+              </button>
+
+              <button
+                onClick={limpando ? undefined : limparDuplicados}
+                disabled={limpando || autoRodando}
+                className="flex items-center gap-2 px-6 py-3 rounded-2xl font-bold text-sm text-amber-400 border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 transition-all disabled:opacity-50"
+              >
+                {limpando ? (
+                  <><Loader2 className="h-4 w-4 animate-spin" /> Faxinando...</>
+                ) : (
+                  <><Trash2 className="h-4 w-4" /> Limpar Alunos Duplicados</>
                 )}
               </button>
             </div>
