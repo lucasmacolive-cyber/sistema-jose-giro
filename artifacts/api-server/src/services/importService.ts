@@ -75,9 +75,17 @@ export async function processarImportacaoAlunos(rows: AlunoRow[], options: Impor
   const val = (row: AlunoRow, col: string | undefined): string =>
     col ? String(row[col] ?? "").trim() : "";
 
-  const extrairTurma = (raw: string): string => {
+  const extrairTurma = (raw: string): string | null => {
+    if (!raw) return null;
     const m = raw.match(/\(([^)]+)\)/);
-    return m ? m[1].trim() : raw.trim();
+    if (m) return m[1].trim();
+    
+    // Se não tem parênteses, verificamos se é um código curto (ex: 5AM02)
+    // Se for o código longo (cheio de pontos e longo), ignoramos.
+    const clean = raw.trim();
+    if (clean.length <= 10 && !clean.includes(".")) return clean;
+    
+    return null; // Ignora códigos longos sem parênteses
   };
 
   let adicionados = 0;

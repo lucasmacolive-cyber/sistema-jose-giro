@@ -1224,6 +1224,18 @@ async function importarSecao(
 router.post("/sync/limpar-duplicados", async (_req, res) => {
   try {
     const todosAlunos = await db.select().from(alunosTable);
+    
+    // 0. Saneamento: Corrigir turmas "sujas" em todos os alunos antes de começar
+    for (const a of todosAlunos) {
+      if (a.turmaAtual && (a.turmaAtual.includes(".") || a.turmaAtual.length > 12)) {
+        // Tentar extrair se houver parênteses perdidos
+        const m = a.turmaAtual.match(/\(([^)]+)\)/);
+        const novaTurma = m ? m[1].trim() : null;
+        await db.update(alunosTable).set({ turmaAtual: novaTurma }).where(eq(alunosTable.id, a.id));
+        a.turmaAtual = novaTurma; // Atualizar na lista em memória para o agrupamento abaixo
+      }
+    }
+
     const gruposCPF = new Map<string, typeof todosAlunos>();
     const gruposNome = new Map<string, typeof todosAlunos>();
     const semCPF: typeof todosAlunos = [];
@@ -1255,6 +1267,20 @@ router.post("/sync/limpar-duplicados", async (_req, res) => {
         const duplicados = lista.slice(1);
         const duplicadosIds = duplicados.map(d => d.id);
 
+        // Fusão Inteligente: Se o sobrevivente não tem algum dado e o duplicado tem, copia.
+        for (const d of duplicados) {
+          const updateData: any = {};
+          if (!sobrevivente.cpf && d.cpf) updateData.cpf = d.cpf;
+          if (!sobrevivente.matricula && d.matricula) updateData.matricula = d.matricula;
+          if (!sobrevivente.turmaAtual && d.turmaAtual) updateData.turmaAtual = d.turmaAtual;
+          if (!sobrevivente.nomeMae && d.nomeMae) updateData.nomeMae = d.nomeMae;
+          
+          if (Object.keys(updateData).length > 0) {
+            await db.update(alunosTable).set(updateData).where(eq(alunosTable.id, sobrevivente.id));
+            Object.assign(sobrevivente, updateData);
+          }
+        }
+
         // Mover Notas e Presenças para o sobrevivente
         await db.update(diarioPresencasTable).set({ alunoId: sobrevivente.id }).where(inArray(diarioPresencasTable.alunoId, duplicadosIds));
         await db.update(notasTable).set({ alunoId: sobrevivente.id }).where(inArray(notasTable.alunoId, duplicadosIds));
@@ -1275,6 +1301,20 @@ router.post("/sync/limpar-duplicados", async (_req, res) => {
         const sobrevivente = listaFiltrada[0];
         const duplicados = listaFiltrada.slice(1);
         const duplicadosIds = duplicados.map(d => d.id);
+
+        // Fusão Inteligente: Se o sobrevivente não tem algum dado e o duplicado tem, copia.
+        for (const d of duplicados) {
+          const updateData: any = {};
+          if (!sobrevivente.cpf && d.cpf) updateData.cpf = d.cpf;
+          if (!sobrevivente.matricula && d.matricula) updateData.matricula = d.matricula;
+          if (!sobrevivente.turmaAtual && d.turmaAtual) updateData.turmaAtual = d.turmaAtual;
+          if (!sobrevivente.nomeMae && d.nomeMae) updateData.nomeMae = d.nomeMae;
+          
+          if (Object.keys(updateData).length > 0) {
+            await db.update(alunosTable).set(updateData).where(eq(alunosTable.id, sobrevivente.id));
+            Object.assign(sobrevivente, updateData);
+          }
+        }
 
         await db.update(diarioPresencasTable).set({ alunoId: sobrevivente.id }).where(inArray(diarioPresencasTable.alunoId, duplicadosIds));
         await db.update(notasTable).set({ alunoId: sobrevivente.id }).where(inArray(notasTable.alunoId, duplicadosIds));
