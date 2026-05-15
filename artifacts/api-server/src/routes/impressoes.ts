@@ -111,11 +111,14 @@ router.get("/impressoes/script-impressora", (req, res) => {
 router.get("/impressoes/impressora-loop.vbs", (_req, res) => {
   const vbs = `Dim WshShell, pyScript\nSet WshShell = CreateObject("WScript.Shell")\npyScript = WshShell.ExpandEnvironmentStrings("%USERPROFILE%") & "\\SistemaImpressao\\impressora_escola.py"\nDo\n    WshShell.Run "python " & Chr(34) & pyScript & Chr(34), 0, True\n    WScript.Sleep 5000\nLoop`;
   res.setHeader("Content-Type", "text/plain; charset=utf-8");
+  res.setHeader("Content-Disposition", "attachment; filename=\"impressora-loop.vbs\"");
   res.send(vbs);
 });
 
 router.get("/impressoes/iniciar-impressora.bat", (req, res) => {
   const b = getApiBase(req);
+  res.setHeader("Content-Type", "application/x-msdos-program");
+  res.setHeader("Content-Disposition", "attachment; filename=\"iniciar-impressora.bat\"");
   res.send(`@echo off
 title Robo de Impressao - EM Jose Giro
 echo ==================================================
