@@ -1250,7 +1250,8 @@ router.post("/sync/limpar-duplicados", async (_req, res) => {
       } else {
         semCPF.push(a);
       }
-      const nomeNorm = a.nomeCompleto.toLowerCase().trim();
+      // Normalização extra: remover espaços duplos
+      const nomeNorm = a.nomeCompleto.toLowerCase().trim().replace(/\s+/g, " ");
       const listaNome = gruposNome.get(nomeNorm) || [];
       listaNome.push(a);
       gruposNome.set(nomeNorm, listaNome);
