@@ -9,8 +9,17 @@ import { randomUUID } from "crypto";
 import fs from "fs";
 
 const router: IRouter = Router();
-const UPLOADS_DIR = path.join(process.cwd(), "uploads", "impressoes");
-if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+const UPLOADS_DIR = process.env.VERCEL 
+  ? path.join("/tmp", "uploads", "impressoes")
+  : path.join(process.cwd(), "uploads", "impressoes");
+
+try {
+  if (!fs.existsSync(UPLOADS_DIR)) {
+    fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+  }
+} catch (err) {
+  console.error("Aviso: Não foi possível criar a pasta de uploads (comum no Vercel):", err.message);
+}
 
 async function saveFile(buffer: Buffer, ext: string, mimeType: string): Promise<string> {
   const uuid = randomUUID();
