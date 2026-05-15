@@ -834,115 +834,27 @@ router.post("/sync/bookmarklet-upload", async (req, res) => {
       return;
     }
 
-    const primeiraLinha = rows[0];
-    const colunas = Object.keys(primeiraLinha);
-    const mapearColuna = (chaves: string[]): string | undefined => {
-      for (const k of chaves) {
-        const match = colunas.find(c => c.toLowerCase().includes(k.toLowerCase()));
-        if (match) return match;
-      }
-      return undefined;
-    };
-
-    const colMatricula    = mapearColuna(["matrícula", "matricula", "mat."]);
-    const colNome         = mapearColuna(["nome completo", "nome do aluno", "nome"]);
-    const colTurma        = mapearColuna(["turma", "turma/série"]);
-    const colTurno        = mapearColuna(["turno"]);
-    const colSituacao     = mapearColuna(["situação no curso", "situacao no curso", "situação no per", "situação", "situacao", "status"]);
-    const colNascimento   = mapearColuna(["data de nascimento", "nascimento", "data nasc"]);
-    const colCPF          = mapearColuna(["cpf"]);
-    const colRG           = mapearColuna(["rg"]);
-    const colMae          = mapearColuna(["nome da mãe", "nome da mae", "mãe", "mae"]);
-    const colPai          = mapearColuna(["nome do pai", "pai"]);
-    const colResponsavel  = mapearColuna(["responsável", "responsavel"]);
-    const colTelefone     = mapearColuna(["telefone", "celular", "fone"]);
-    const colEndereco     = mapearColuna(["endereço", "endereco", "logradouro"]);
-    const colZona         = mapearColuna(["zona", "zona residencial"]);
-    const colSexo         = mapearColuna(["sexo", "gênero", "genero"]);
-    const colEtnia        = mapearColuna(["etnia", "raça", "raca", "cor/raça"]);
-    const colEmailPessoal = mapearColuna(["e-mail", "email", "e-mail do aluno"]);
-    const colEmailResp    = mapearColuna(["e-mail do responsável", "email responsavel"]);
-    const colNivel        = mapearColuna(["nível de ensino", "nivel ensino", "nivel"]);
-
-    const formatarData = (val: any): string => {
-      if (!val) return "";
-      if (val instanceof Date) {
-        const d = val.getDate().toString().padStart(2, "0");
-        const m = (val.getMonth() + 1).toString().padStart(2, "0");
-        const a = val.getFullYear();
-        return `${d}/${m}/${a}`;
-      }
-      const s = String(val).trim();
-      if (!s) return "";
-      if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) return s;
-      if (/^\d{4}-\d{2}-\d{2}/.test(s)) {
-        const parts = s.split("T")[0].split("-");
-        return `${parts[2]}/${parts[1]}/${parts[0]}`;
-      }
-      return s;
-    };
-
-    let importados = 0;
-    let erros = 0;
-
-    for (const row of rows) {
-      try {
-        const matricula = colMatricula ? String(row[colMatricula] ?? "").trim() : "";
-        const nomeCompleto = colNome ? String(row[colNome] ?? "").trim() : "";
-        if (!nomeCompleto) continue;
-
-        const alunoData = {
-          matricula,
-          nomeCompleto,
-          nomeTurma: colTurma ? String(row[colTurma] ?? "").trim() : "",
-          turno: colTurno ? String(row[colTurno] ?? "").trim() : "",
-          situacao: colSituacao ? String(row[colSituacao] ?? "").trim() : "Matriculado",
-          dataNascimento: colNascimento ? formatarData(row[colNascimento]) : "",
-          cpf: colCPF ? String(row[colCPF] ?? "").trim() : "",
-          rg: colRG ? String(row[colRG] ?? "").trim() : "",
-          nomeMae: colMae ? String(row[colMae] ?? "").trim() : "",
-          nomePai: colPai ? String(row[colPai] ?? "").trim() : "",
-          responsavel: colResponsavel ? String(row[colResponsavel] ?? "").trim() : "",
-          telefone: colTelefone ? String(row[colTelefone] ?? "").trim() : "",
-          endereco: colEndereco ? String(row[colEndereco] ?? "").trim() : "",
-          zonaResidencial: colZona ? String(row[colZona] ?? "").trim() : "",
-          sexo: colSexo ? String(row[colSexo] ?? "").trim() : "",
-          etnia: colEtnia ? String(row[colEtnia] ?? "").trim() : "",
-          emailPessoal: colEmailPessoal ? String(row[colEmailPessoal] ?? "").trim() : "",
-          emailResponsavel: colEmailResp ? String(row[colEmailResp] ?? "").trim() : "",
-          nivelEnsino: colNivel ? String(row[colNivel] ?? "").trim() : "",
-        };
-
-        const existing = matricula
-          ? await db.select().from(alunosTable).where(eq(alunosTable.matricula, matricula)).limit(1)
-          : [];
-
-        if (existing.length > 0) {
-          await db.update(alunosTable).set(alunoData).where(eq(alunosTable.matricula, matricula));
-        } else {
-          await db.insert(alunosTable).values(alunoData);
-        }
-        importados++;
-      } catch (e) {
-        erros++;
-      }
-    }
+    // Importar alunos usando o serviço centralizado (Garante limpeza de duplicados)
+    const result = await processarImportacaoAlunos(rows, { substituirTudo: false });
 
     bookmarkletTokens.delete(token); // invalidar token após uso
 
     await db.insert(syncStatusTable).values({
       status: "success",
-      mensagem: `${importados} alunos importados via Bookmarklet SUAP (${erros} erros).`,
-      totalAlunos: String(importados),
+      mensagem: `${result.adicionados} novos, ${result.atualizados} atualizados via Bookmarklet SUAP.`,
+      totalAlunos: String(result.adicionados + result.atualizados),
       ultimaSync: new Date(),
+      detalhes: JSON.stringify(result.detalhes),
     });
 
     res.json({
       ok: true,
-      importados,
-      erros,
+      adicionados: result.adicionados,
+      atualizados: result.atualizados,
+      transferidos: result.transferidos,
+      erros: result.erros,
       total: rows.length,
-      mensagem: `${importados} alunos importados com sucesso via Bookmarklet!`,
+      mensagem: `Importação via Bookmarklet: ${result.adicionados} novos, ${result.atualizados} atualizados.`,
     });
 
   } catch (e: any) {

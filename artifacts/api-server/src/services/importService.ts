@@ -91,15 +91,17 @@ export async function processarImportacaoAlunos(rows: AlunoRow[], options: Impor
   const nomesNoArquivo = new Set<string>();
   const turmasEncontradas = new Set<string>();
 
-  // Pré-carregar dados para matching
+  // Pré-carregar dados para matching inteligente (Evita duplicados)
   const existentes = await db.select({
     id: alunos.id,
     matricula: alunos.matricula,
     nomeCompleto: alunos.nomeCompleto,
+    cpf: alunos.cpf,
   }).from(alunos);
   
-  const mapMatricula = new Map(existentes.map(a => [a.matricula, a.id]));
-  const mapNome = new Map(existentes.map(a => [a.nomeCompleto.toLowerCase(), a.id]));
+  const mapMatricula = new Map(existentes.filter(a => a.matricula).map(a => [a.matricula, a.id]));
+  const mapNome = new Map(existentes.map(a => [a.nomeCompleto.toLowerCase().trim(), a.id]));
+  const mapCPF = new Map(existentes.filter(a => a.cpf).map(a => [a.cpf!.replace(/\D/g, ""), a.id]));
 
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
@@ -147,7 +149,18 @@ export async function processarImportacaoAlunos(rows: AlunoRow[], options: Impor
         arquivoMorto: 0, // Garante que volta ao arquivo ativo se estiver no XLS
       };
 
-      let existingId = matricula ? mapMatricula.get(matricula) : mapNome.get(nomeCompleto.toLowerCase());
+      const cpfLimpo = alunoData.cpf ? alunoData.cpf.replace(/\D/g, "") : "";
+      
+      // Lógica de matching prioritária (Evita duplicados)
+      let existingId: number | undefined = undefined;
+
+      if (cpfLimpo && mapCPF.has(cpfLimpo)) {
+        existingId = mapCPF.get(cpfLimpo);
+      } else if (matricula && mapMatricula.has(matricula)) {
+        existingId = mapMatricula.get(matricula);
+      } else if (mapNome.has(nomeCompleto.toLowerCase().trim())) {
+        existingId = mapNome.get(nomeCompleto.toLowerCase().trim());
+      }
 
       if (existingId) {
         await db.update(alunos).set(alunoData).where(eq(alunos.id, existingId));

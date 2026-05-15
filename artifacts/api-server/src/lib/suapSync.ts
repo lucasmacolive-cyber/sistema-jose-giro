@@ -290,7 +290,7 @@ export async function sincronizarSUAP(
   onProgress(20, "Login realizado. Acessando relatório de alunos...");
 
   /* ── 2. Acessar o relatório ── */
-  const reportResp = await request("GET", SUAP_RELATORIO_URL, jar, {
+  const reportResp = await request("GET", SUAP_RELATORIO_URL, jar, undefined, {
     Referer: `${SUAP_BASE}/edu/relatorio/`,
   });
 
@@ -305,7 +305,7 @@ export async function sincronizarSUAP(
   }
 
   onProgress(40, "Solicitando geração do arquivo ao servidor SUAP...");
-  let currentResp = await request("GET", exportPath, jar, {
+  let currentResp = await request("GET", exportPath, jar, undefined, {
     Referer: `${SUAP_BASE}/edu/relatorio/`,
   });
 
