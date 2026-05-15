@@ -1187,13 +1187,15 @@ function SecaoSincronizacao() {
   };
 
   const limparDuplicados = async () => {
-    if (!confirm("O robô vai analisar todos os alunos e fundir registros duplicados (mesmo CPF ou Nome). Notas e presenças serão preservadas. Deseja continuar?")) return;
+    console.log("Iniciando limpeza de duplicados...");
     setLimpando(true);
     try {
       const res = await apiFetch("/sync/limpar-duplicados", { method: "POST" });
+      console.log("Limpeza concluída:", res);
       toast({ title: "Limpeza concluída!", description: res.mensagem });
       carregarHistorico();
     } catch (e: any) {
+      console.error("Erro na limpeza:", e);
       toast({ title: "Erro na limpeza", description: e.message, variant: "destructive" });
     } finally {
       setLimpando(false);
