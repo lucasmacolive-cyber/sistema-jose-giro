@@ -2,7 +2,7 @@
 import { Router, type IRouter } from "express";
 import { db } from "../lib/db/index.js";
 import { impressoesTable, alertasTable, configuracoesTable } from "../lib/db/index.js";
-import { eq, desc, not, ne, inArray } from "drizzle-orm";
+import { eq, desc, not, ne, inArray, like } from "drizzle-orm";
 import multer from "multer";
 import path from "path";
 import { randomUUID } from "crypto";
@@ -52,15 +52,34 @@ router.post("/impressoes", multer({ storage: multer.memoryStorage() }).single("a
       quantidadeCopias: Number(quantidadeCopias), duplex: duplex === "true" || duplex === true,
       colorida: colorida === "true" || colorida === true,
       impressoraNome,
-      dataParaUso, horarioImpressao, status: "Pendente", lido: false
+      dataParaUso, horarioImpressao, status: "Pendente", lido: false,
+      arquivoConteudo: req.file ? req.file.buffer.toString("base64") : null
     }).returning();
     res.status(201).json(nova);
   } catch (err: any) { res.status(500).json({ erro: err.message }); }
 });
 
-router.get("/impressoes/arquivo/:filename", (req, res) => {
-  const p = path.join(UPLOADS_DIR, req.params.filename);
-  if (fs.existsSync(p)) res.sendFile(p); else res.status(404).send("Not found");
+router.get("/impressoes/arquivo/:filename", async (req, res) => {
+  const { filename } = req.params;
+  const p = path.join(UPLOADS_DIR, filename);
+  
+  // Se existir localmente (ambiente dev), manda direto
+  if (fs.existsSync(p)) return res.sendFile(p); 
+
+  // Se não, busca no banco de dados (ambiente Vercel)
+  try {
+    const jobs = await db.select().from(impressoesTable).where(like(impressoesTable.linkArquivo, `%${filename}%`)).limit(1);
+    const job = jobs[0];
+
+    if (job && job.arquivoConteudo) {
+      const buffer = Buffer.from(job.arquivoConteudo, "base64");
+      res.setHeader("Content-Type", job.tipoArquivo || "application/octet-stream");
+      return res.send(buffer);
+    }
+    res.status(404).send("Arquivo não encontrado no banco nem no disco.");
+  } catch (err) {
+    res.status(500).send("Erro ao buscar arquivo: " + err.message);
+  }
 });
 
 router.get("/impressoes/pendentes", async (_req, res) => {
@@ -155,7 +174,7 @@ if not exist "%SYS_DIR%\\SumatraPDF.exe" (
 
 echo.
 echo 5. Verificando bibliotecas...
-python -m pip install requests img2pdf pdfplumber --quiet
+python -m pip install requests img2pdf pdfplumber Pillow --quiet
 
 echo.
 echo ==================================================
@@ -252,10 +271,25 @@ def proc(job):
         if not is_pdf:
             log("Convertendo imagem para PDF...")
             pdf_path = print_file + ".pdf"
-            with open(print_file, "rb") as f_in, open(pdf_path, "wb") as f_out:
-                f_out.write(img2pdf.convert(f_in))
-            os.unlink(print_file)
-            print_file = pdf_path
+            try:
+                from PIL import Image
+                log("Usando Pillow para processar imagem...")
+                with Image.open(print_file) as img:
+                    # Converte para RGB para garantir compatibilidade maxima com img2pdf
+                    img.convert("RGB").save(print_file + ".jpg", "JPEG", quality=90)
+                
+                with open(print_file + ".jpg", "rb") as f_in, open(pdf_path, "wb") as f_out:
+                    f_out.write(img2pdf.convert(f_in))
+                
+                os.unlink(print_file + ".jpg")
+                os.unlink(print_file)
+                print_file = pdf_path
+            except Exception as e:
+                log(f"Falha ao processar imagem com Pillow: {e}. Tentando conversao direta...")
+                with open(print_file, "rb") as f_in, open(pdf_path, "wb") as f_out:
+                    f_out.write(img2pdf.convert(f_in))
+                os.unlink(print_file)
+                print_file = pdf_path
 
         requests.patch(f"{API}/api/impressoes/{jid}/status", json={"status":"Imprimindo","progresso":70,"mensagemStatus":"Enviando para a impressora..."})
         

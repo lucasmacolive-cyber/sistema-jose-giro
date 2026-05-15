@@ -20,9 +20,10 @@ export const impressoesTable = pgTable("impressoes", {
   imprimiuEm: timestamp("imprimiu_em"),
   progresso: integer("progresso").default(0),
   mensagemStatus: text("mensagem_status"),
-  colorida: boolean("colorida").default(false),
-  impressoraNome: varchar("impressora_nome", { length: 50 }),
-});
+   colorida: boolean("colorida").default(false),
+   impressoraNome: varchar("impressora_nome", { length: 50 }),
+   arquivoConteudo: text("arquivo_conteudo"),
+ });
 
 export const insertImpressaoSchema = createInsertSchema(impressoesTable).omit({ id: true, dataPedido: true });
 export type InsertImpressao = z.infer<typeof insertImpressaoSchema>;
