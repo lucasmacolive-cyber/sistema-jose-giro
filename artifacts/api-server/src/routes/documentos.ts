@@ -1,9 +1,9 @@
 // @ts-nocheck
 import { Router, type IRouter } from "express";
-import { db } from "../lib/db/index";
-import { alunosTable, turmasTable, funcionariosTable, diarioAulasTable } from "../lib/db/index";
+import { db } from "../lib/db/index.js";
+import { alunosTable, turmasTable, funcionariosTable, diarioAulasTable } from "../lib/db/index.js";
 import { eq, and, asc, not, ilike } from "drizzle-orm";
-import { isDiaLetivo } from "../lib/calendario2026";
+import { isDiaLetivo } from "../lib/calendario2026.js";
 
 const router: IRouter = Router();
 

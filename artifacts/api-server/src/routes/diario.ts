@@ -1,12 +1,12 @@
 // @ts-nocheck
 import { Router } from "express";
-import { db } from "../lib/db/index";
+import { db } from "../lib/db/index.js";
 import {
   diarioAulasTable, diarioPresencasTable, diarioConfiguracoesTable,
   turmasTable, alunosTable,
-} from "../lib/db/index";
+} from "../lib/db/index.js";
 import { eq, and, inArray, or, sql } from "drizzle-orm";
-import { parseDiarioTexto } from "../lib/parseDiario";
+import { parseDiarioTexto } from "../lib/parseDiario.js";
 
 const router = Router();
 

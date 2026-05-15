@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { Router } from "express";
-import { db } from "../lib/db/index";
-import { alunosTable, professoresTable, funcionariosTable } from "../lib/db/index";
+import { db } from "../lib/db/index.js";
+import { alunosTable, professoresTable, funcionariosTable } from "../lib/db/index.js";
 import { isNotNull } from "drizzle-orm";
 
 const router = Router();

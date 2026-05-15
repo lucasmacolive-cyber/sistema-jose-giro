@@ -2,7 +2,7 @@
 import { pgTable, serial, integer, varchar, decimal, timestamp } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
-import { alunosTable } from "./alunos";
+import { alunosTable } from "./alunos.js";
 
 export const presencasTable = pgTable("presencas", {
   id: serial("id").primaryKey(),

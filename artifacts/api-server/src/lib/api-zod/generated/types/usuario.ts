@@ -6,7 +6,7 @@
  * API do Sistema de Gestão Escolar - E. M. José Giró Faísca
  * OpenAPI spec version: 0.1.0
  */
-import type { UsuarioPerfil } from "./usuarioPerfil";
+import type { UsuarioPerfil } from "./usuarioPerfil.js";
 
 export interface Usuario {
   id: number;

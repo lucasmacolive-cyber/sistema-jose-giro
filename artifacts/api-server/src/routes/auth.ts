@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { Router, type IRouter } from "express";
-import { db } from "../lib/db/index";
-import { usuariosTable, alertasTable } from "../lib/db/index";
+import { db } from "../lib/db/index.js";
+import { usuariosTable, alertasTable } from "../lib/db/index.js";
 import { eq } from "drizzle-orm";
 
 const router: IRouter = Router();

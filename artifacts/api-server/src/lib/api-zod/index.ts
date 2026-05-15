@@ -1,3 +1,3 @@
 // @ts-nocheck
-export * from "./generated/api";
-// export * from "./generated/types"; // Conflito com a exportação acima
+export * from "./generated/api.js";
+// export * from "./generated/types.js"; // Conflito com a exportação acima

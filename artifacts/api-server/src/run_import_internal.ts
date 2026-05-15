@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { importarAlunosXLS } from './services/importService';
+import { importarAlunosXLS } from './services/importService.js';
 import path from 'path';
 
 async function run() {

@@ -4,9 +4,9 @@ import { Readable } from "stream";
 import {
   RequestUploadUrlBody,
   RequestUploadUrlResponse,
-} from "../lib/api-zod/index";
-import { ObjectStorageService, ObjectNotFoundError } from "../lib/objectStorage";
-import { ObjectPermission } from "../lib/objectAcl";
+} from "../lib/api-zod/index.js";
+import { ObjectStorageService, ObjectNotFoundError } from "../lib/objectStorage.js";
+import { ObjectPermission } from "../lib/objectAcl.js";
 
 const router: IRouter = Router();
 const objectStorageService = new ObjectStorageService();

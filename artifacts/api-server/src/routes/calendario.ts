@@ -1,9 +1,9 @@
 // @ts-nocheck
 import { Router } from "express";
-import { db } from "../lib/db/index";
-import { alunosTable, professoresTable, funcionariosTable } from "../lib/db/index";
+import { db } from "../lib/db/index.js";
+import { alunosTable, professoresTable, funcionariosTable } from "../lib/db/index.js";
 import { isNotNull } from "drizzle-orm";
-import { DIAS_NAO_LETIVOS_2026 } from "../lib/calendario2026";
+import { DIAS_NAO_LETIVOS_2026 } from "../lib/calendario2026.js";
 
 const router = Router();
 
