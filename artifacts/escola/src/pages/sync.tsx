@@ -1028,6 +1028,19 @@ function SecaoSincronizacao() {
   const [bookmarkStatus, setBookmarkStatus]   = useState<"idle"|"gerando"|"pronto"|"erro">("idle");
   const [bookmarkCopiado, setBookmarkCopiado] = useState(false);
   const bookmarkLinkRef = useRef<HTMLAnchorElement>(null);
+
+  // Histórico de Sincronização e Logs
+  const [historicoList, setHistoricoList] = useState<any[]>([]);
+  const [logAberto, setLogAberto] = useState<any | null>(null);
+
+  const carregarHistorico = useCallback(async () => {
+    try {
+      const data = await apiFetch("/sync/historico");
+      setHistoricoList(data);
+    } catch (e) {
+      console.error("Erro ao carregar histórico:", e);
+    }
+  }, []);
   // Definir href via DOM para bypass da validação do React (que bloqueia javascript: URLs)
   useEffect(() => {
     if (bookmarkLinkRef.current && bookmarkHref) {
@@ -1039,11 +1052,12 @@ function SecaoSincronizacao() {
   useEffect(() => {
     setExtensaoInstalada(document.documentElement.hasAttribute("data-suap-sync"));
     apiFetch("/sync/status").then(setHistorico).catch(() => {});
+    carregarHistorico();
     apiFetch("/sync/credenciais").then((d) => {
       if (d.usuario) setCredUsuario(d.usuario);
       setCredTemSenha(!!d.temSenha);
     }).catch(() => {});
-  }, []);
+  }, [carregarHistorico]);
 
   // Polling do sync automático (dados de alunos)
   useEffect(() => {
@@ -1178,10 +1192,7 @@ function SecaoSincronizacao() {
     try {
       const res = await apiFetch("/sync/limpar-duplicados", { method: "POST" });
       toast({ title: "Limpeza concluída!", description: res.mensagem });
-      // Atualizar histórico se existir
-      if (typeof setHistorico === "function") {
-        apiFetch("/sync/status").then(setHistorico).catch(() => {});
-      }
+      carregarHistorico();
     } catch (e: any) {
       toast({ title: "Erro na limpeza", description: e.message, variant: "destructive" });
     } finally {
@@ -1550,11 +1561,11 @@ async function modoBrowser(){
                 {autoRodando ? "Sincronizando..." : autoConcluido ? "Concluído!" : "Sincronizar Dados"}
               </button>
 
-              {/* Botão de Limpeza - Versão Simplificada */}
+              {/* Botão de Limpeza */}
               <button
                 onClick={limparDuplicados}
                 disabled={limpando || autoRodando}
-                className="flex items-center gap-2 px-6 py-3 rounded-2xl font-bold text-sm text-amber-400 border border-amber-500/30 bg-amber-500/10"
+                className="flex items-center gap-2 px-6 py-3 rounded-2xl font-bold text-sm text-amber-400 border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 transition-all"
               >
                 {limpando ? "Limpando..." : "Limpar Alunos Duplicados"}
               </button>
