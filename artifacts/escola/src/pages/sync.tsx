@@ -1532,42 +1532,31 @@ async function modoBrowser(){
               </div>
             )}
 
-            {/* Botão Único solicitado pelo usuário */}
             <div className="flex flex-wrap gap-2">
+              {/* Botão de Sincronização */}
               <button
                 onClick={autoRodando || diariosRodando ? undefined : () => {
                   setAutoErro(null); setAutoConcluido(false);
-                  setModoCompleto(true); // Sincroniza tudo por padrão conforme solicitado
+                  setModoCompleto(true);
                   setDiariosErro(null); setDiariosConcluido(false);
                   iniciarSyncAuto();
                 }}
                 disabled={autoRodando || diariosRodando}
-                className="flex items-center gap-3 px-8 py-3.5 rounded-2xl font-black text-base text-white transition-all disabled:cursor-not-allowed group"
+                className="flex items-center gap-3 px-8 py-3.5 rounded-2xl font-black text-base text-white transition-all disabled:opacity-50 group"
                 style={{
                   background: autoRodando ? "#1e293b" : `linear-gradient(135deg, #10b981, #059669)`,
-                  boxShadow: autoRodando ? "none" : "0 8px 30px rgba(16, 185, 129, 0.4)",
-                  opacity: autoRodando || diariosRodando ? 0.7 : 1,
                 }}
               >
-                {autoRodando ? (
-                  <><Loader2 className="h-5 w-5 animate-spin" /> Sincronizando Dados...</>
-                ) : (autoConcluido) ? (
-                  <><Check className="h-5 w-5" /> Sincronização Concluída!</>
-                ) : (
-                  <><RefreshCcw className="h-5 w-5 group-hover:rotate-180 transition-transform duration-500" /> Sincronizar Dados dos Alunos</>
-                )}
+                {autoRodando ? "Sincronizando..." : autoConcluido ? "Concluído!" : "Sincronizar Dados"}
               </button>
 
+              {/* Botão de Limpeza - Versão Simplificada */}
               <button
-                onClick={limpando ? undefined : limparDuplicados}
+                onClick={limparDuplicados}
                 disabled={limpando || autoRodando}
-                className="flex items-center gap-2 px-6 py-3 rounded-2xl font-bold text-sm text-amber-400 border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 transition-all disabled:opacity-50"
+                className="flex items-center gap-2 px-6 py-3 rounded-2xl font-bold text-sm text-amber-400 border border-amber-500/30 bg-amber-500/10"
               >
-                {limpando ? (
-                  <><Loader2 className="h-4 w-4 animate-spin" /> Faxinando...</>
-                ) : (
-                  <><Trash2 className="h-4 w-4" /> Limpar Alunos Duplicados</>
-                )}
+                {limpando ? "Limpando..." : "Limpar Alunos Duplicados"}
               </button>
             </div>
           </div>
