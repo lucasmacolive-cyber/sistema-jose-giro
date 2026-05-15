@@ -91,10 +91,15 @@ router.patch("/impressoes/:id/status", async (req, res) => {
 });
 
 router.post("/impressoes/heartbeat", async (req, res) => {
-  const agora = new Date().toISOString();
-  await db.insert(configuracoesTable).values({ chave: "last_heartbeat_impressora", valor: agora })
-    .onConflictDoUpdate({ target: configuracoesTable.chave, set: { valor: agora, atualizadoEm: new Date() } });
-  res.json({ ok: true });
+  try {
+    const agora = new Date().toISOString();
+    await db.insert(configuracoesTable).values({ chave: "last_heartbeat_impressora", valor: agora })
+      .onConflictDoUpdate({ target: configuracoesTable.chave, set: { valor: agora, atualizadoEm: new Date() } });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("Erro no heartbeat:", err);
+    res.status(500).json({ ok: false, error: err.message });
+  }
 });
 
 router.get("/impressoes/status-agente", async (_req, res) => {
@@ -185,6 +190,7 @@ router.delete("/impressoes/:id", async (req, res) => {
 });
 
 function getApiBase(req: any) {
+  if (process.env.VERCEL) return "https://sistema-jose-giro-api-server.vercel.app";
   const host = req.get("x-forwarded-host") || req.get("host") || "localhost";
   return (host.includes("localhost") ? "http" : "https") + "://" + host;
 }
