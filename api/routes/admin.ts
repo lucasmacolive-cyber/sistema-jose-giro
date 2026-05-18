@@ -62,7 +62,13 @@ router.get("/admin/:tabela", requireMaster, async (req, res) => {
     }
 
     const selectQuery = tabela === "turmas"
-      ? `SELECT *, (SELECT COUNT(*)::int FROM alunos a WHERE a.turma_atual = turmas.nome_turma AND COALESCE(a.arquivo_morto, 0) = 0) AS qtd_alunos FROM turmas`
+      ? `SELECT *, 
+           (SELECT COUNT(*)::int FROM alunos a WHERE a.turma_atual = turmas.nome_turma AND COALESCE(a.arquivo_morto, 0) = 0) AS qtd_alunos,
+           COALESCE(
+             (SELECT string_agg(nome, ', ') FROM professores p WHERE p.turma_manha = turmas.nome_turma OR p.turma_tarde = turmas.nome_turma),
+             professor_responsavel
+           ) AS professor_responsavel
+         FROM turmas`
       : `SELECT * FROM ${tabela}`;
 
     const dataRes = await pool.query(

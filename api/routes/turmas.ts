@@ -1,8 +1,8 @@
 // @ts-nocheck
 import { Router, type IRouter } from "express";
 import { db } from "../lib/db/index.ts";
-import { turmasTable, alunosTable } from "../lib/db/index.ts";
-import { eq, and } from "drizzle-orm";
+import { turmasTable, alunosTable, professoresTable } from "../lib/db/index.ts";
+import { eq, and, or } from "drizzle-orm";
 import { sql } from "drizzle-orm";
 
 const router: IRouter = Router();
@@ -16,7 +16,24 @@ router.get("/turmas", async (req, res) => {
         .select({ count: sql<number>`count(*)` })
         .from(alunosTable)
         .where(and(eq(alunosTable.turmaAtual, turma.nomeTurma), eq(alunosTable.arquivoMorto, 0)));
-      return { ...turma, totalAlunos: Number(result[0]?.count ?? 0) };
+      
+      const profs = await db.select({ nome: professoresTable.nome })
+        .from(professoresTable)
+        .where(
+          or(
+            eq(professoresTable.turmaManha, turma.nomeTurma),
+            eq(professoresTable.turmaTarde, turma.nomeTurma)
+          )
+        );
+      const professorResponsavel = profs.length > 0 
+        ? profs.map(p => p.nome).join(", ") 
+        : turma.professorResponsavel;
+
+      return { 
+        ...turma, 
+        professorResponsavel,
+        totalAlunos: Number(result[0]?.count ?? 0) 
+      };
     })
   );
 
@@ -30,11 +47,25 @@ router.get("/turmas/:id", async (req, res) => {
   const turmas = await db.select().from(turmasTable).where(eq(turmasTable.id, id));
   if (!turmas[0]) { res.status(404).json({ erro: "nao_encontrado", mensagem: "Turma não encontrada" }); return; }
 
+  const turma = turmas[0];
+
+  const profs = await db.select({ nome: professoresTable.nome })
+    .from(professoresTable)
+    .where(
+      or(
+        eq(professoresTable.turmaManha, turma.nomeTurma),
+        eq(professoresTable.turmaTarde, turma.nomeTurma)
+      )
+    );
+  const professorResponsavel = profs.length > 0 
+    ? profs.map(p => p.nome).join(", ") 
+    : turma.professorResponsavel;
+
   const alunos = await db.select().from(alunosTable)
-    .where(and(eq(alunosTable.turmaAtual, turmas[0].nomeTurma), eq(alunosTable.arquivoMorto, 0)))
+    .where(and(eq(alunosTable.turmaAtual, turma.nomeTurma), eq(alunosTable.arquivoMorto, 0)))
     .orderBy(alunosTable.nomeCompleto);
 
-  res.json({ ...turmas[0], alunos });
+  res.json({ ...turma, professorResponsavel, alunos });
 });
 
 router.patch("/turmas/:id", async (req, res) => {
