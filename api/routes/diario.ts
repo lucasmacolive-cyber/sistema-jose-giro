@@ -30,8 +30,17 @@ router.get("/diario/turmas", requireAuth, async (req, res) => {
       if (r.turmaAtual) countMap[r.turmaAtual] = r.total;
     }
 
+    const { professoresTable } = require("../lib/db/index.ts");
+    const profs = await db.select().from(professoresTable);
+    const profsMap: Record<string, string> = {};
+    for (const p of profs) {
+      if (p.turmaManha) profsMap[p.turmaManha] = profsMap[p.turmaManha] ? profsMap[p.turmaManha] + ", " + p.nome : p.nome;
+      if (p.turmaTarde) profsMap[p.turmaTarde] = profsMap[p.turmaTarde] ? profsMap[p.turmaTarde] + ", " + p.nome : p.nome;
+    }
+
     const result = turmas.map((t) => ({
       ...t,
+      professorResponsavel: profsMap[t.nomeTurma] || t.professorResponsavel,
       totalAlunos: countMap[t.nomeTurma] ?? 0,
     })).filter(t => t.totalAlunos > 0);
 
