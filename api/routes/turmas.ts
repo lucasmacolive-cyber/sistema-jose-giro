@@ -20,7 +20,7 @@ router.get("/turmas", async (req, res) => {
     })
   );
 
-  res.json(turmasComCount);
+  res.json(turmasComCount.filter(t => t.totalAlunos > 0));
 });
 
 router.get("/turmas/:id", async (req, res) => {

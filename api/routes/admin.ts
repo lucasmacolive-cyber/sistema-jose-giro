@@ -51,16 +51,39 @@ router.get("/admin/:tabela", requireMaster, async (req, res) => {
       }
     }
 
+    let whereQuery = whereClause;
+    if (tabela === "turmas") {
+      const activeCondition = `(SELECT COUNT(*)::int FROM alunos a WHERE a.turma_atual = turmas.nome_turma AND COALESCE(a.arquivo_morto, 0) = 0) > 0`;
+      if (whereQuery) {
+        whereQuery = `${whereQuery} AND ${activeCondition}`;
+      } else {
+        whereQuery = `WHERE ${activeCondition}`;
+      }
+    }
+
+    const selectQuery = tabela === "turmas"
+      ? `SELECT *, (SELECT COUNT(*)::int FROM alunos a WHERE a.turma_atual = turmas.nome_turma AND COALESCE(a.arquivo_morto, 0) = 0) AS qtd_alunos FROM turmas`
+      : `SELECT * FROM ${tabela}`;
+
     const dataRes = await pool.query(
-      `SELECT * FROM ${tabela} ${whereClause} ORDER BY id LIMIT $1 OFFSET $2`,
+      `${selectQuery} ${whereQuery} ORDER BY id LIMIT $1 OFFSET $2`,
       params
     );
 
+    let countQuery = `SELECT COUNT(*) FROM ${tabela} ${whereClause.replace(/\$\d+/g, search ? `$1` : "")}`;
+    if (tabela === "turmas") {
+      let countWhere = whereClause.replace(/\$\d+/g, search ? `$1` : "");
+      const activeCondition = `(SELECT COUNT(*)::int FROM alunos a WHERE a.turma_atual = turmas.nome_turma AND COALESCE(a.arquivo_morto, 0) = 0) > 0`;
+      if (countWhere) {
+        countWhere = `${countWhere} AND ${activeCondition}`;
+      } else {
+        countWhere = `WHERE ${activeCondition}`;
+      }
+      countQuery = `SELECT COUNT(*) FROM turmas ${countWhere}`;
+    }
+
     const countParams = search ? [params[params.length - 1]] : [];
-    const countRes = await pool.query(
-      `SELECT COUNT(*) FROM ${tabela} ${whereClause.replace(/\$\d+/g, search ? `$1` : "")}`,
-      countParams
-    );
+    const countRes = await pool.query(countQuery, countParams);
 
     res.json({ rows: dataRes.rows, total: parseInt(countRes.rows[0].count), page, limit });
   } catch (e: any) {

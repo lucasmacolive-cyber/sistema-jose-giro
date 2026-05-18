@@ -33,7 +33,7 @@ router.get("/diario/turmas", requireAuth, async (req, res) => {
     const result = turmas.map((t) => ({
       ...t,
       totalAlunos: countMap[t.nomeTurma] ?? 0,
-    }));
+    })).filter(t => t.totalAlunos > 0);
 
     res.json(result);
   } catch (e: any) {

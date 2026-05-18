@@ -43,7 +43,7 @@ const TABELA_KEY: Record<string, string> = {
 
 const COLUNAS_DESTAQUE: Record<string, string[]> = {
   alunos:       ["id","matricula","nome_completo","turma_atual","turno","situacao"],
-  turmas:       ["id","nome_turma","turno","professor_responsavel","prof_complementador","prof_educacao_fisica"],
+  turmas:       ["id","nome_turma","turno","qtd_alunos","professor_responsavel","prof_complementador","prof_educacao_fisica"],
   professores:  ["id","nome","turno","turma_manha","turma_tarde","telefone","vinculo"],
   funcionarios: ["id","matricula","nome_completo","funcao","turno","status","vinculo"],
   usuarios:     ["id","nome_completo","login","senha","perfil"],
@@ -52,7 +52,7 @@ const COLUNAS_DESTAQUE: Record<string, string[]> = {
 const LABEL: Record<string, string> = {
   id:"ID", matricula:"Matrícula", nome_completo:"Nome", nome:"Nome",
   turma_atual:"Turma", turno:"Turno", situacao:"Situação",
-  nome_turma:"Turma", professor_responsavel:"Prof. Responsável",
+  nome_turma:"Turma", qtd_alunos:"Alunos", professor_responsavel:"Prof. Responsável",
   vinculo:"Vínculo", email:"E-mail", funcao:"Função", status:"Status",
   login:"Login", perfil:"Perfil", senha:"Senha", cor:"Cor",
   data_nascimento:"Nascimento", nome_mae:"Mãe", nome_pai:"Pai",
@@ -3051,6 +3051,10 @@ function SecaoEditarTabela({ tabela }: { tabela: string }) {
                             <div className="w-5 h-5 rounded-md border border-white/20" style={{ background: row[col] ?? "#3b82f6" }} />
                             <span className="font-mono text-xs text-muted-foreground">{row[col] ?? "—"}</span>
                           </div>
+                        ) : col === "qtd_alunos" ? (
+                          <span className="font-bold text-slate-300 font-mono bg-white/5 border border-white/10 px-2.5 py-0.5 rounded-full text-xs">
+                            {row[col] ?? 0}
+                          </span>
                         ) : col === "senha" ? (
                           <span className="font-mono text-xs text-amber-300/90 tracking-wide">
                             {row[col] ?? "—"}

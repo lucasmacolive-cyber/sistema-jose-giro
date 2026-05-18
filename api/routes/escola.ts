@@ -21,7 +21,9 @@ router.get("/dashboard/stats", async (_req, res) => {
   const [totalTransferidos] = await db.select({ count: sql<number>`count(*)` }).from(alunosTable).where(
     and(eq(alunosTable.arquivoMorto, 0), ilike(alunosTable.situacao, "Transferido%"))
   );
-  const [totalTurmas] = await db.select({ count: sql<number>`count(*)` }).from(turmasTable);
+  const [totalTurmas] = await db.select({ count: sql<number>`count(distinct turma_atual)` })
+    .from(alunosTable)
+    .where(and(eq(alunosTable.arquivoMorto, 0), sql`turma_atual IS NOT NULL AND turma_atual <> ''`));
   const [totalProfessores] = await db.select({ count: sql<number>`count(*)` }).from(professoresTable);
   const [totalFuncionarios] = await db.select({ count: sql<number>`count(*)` }).from(funcionariosTable);
   const [impressoesPendentes] = await db.select({ count: sql<number>`count(*)` }).from(impressoesTable).where(eq(impressoesTable.status, "Pendente"));
