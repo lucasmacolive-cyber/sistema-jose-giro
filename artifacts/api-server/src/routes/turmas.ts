@@ -9,6 +9,7 @@ const router: IRouter = Router();
 
 router.get("/turmas", async (req, res) => {
   const turmas = await db.select().from(turmasTable).orderBy(turmasTable.nomeTurma);
+  const { professoresTable } = require("../lib/db/index.js");
 
   const turmasComCount = await Promise.all(
     turmas.map(async (turma) => {
@@ -16,11 +17,29 @@ router.get("/turmas", async (req, res) => {
         .select({ count: sql<number>`count(*)` })
         .from(alunosTable)
         .where(and(eq(alunosTable.turmaAtual, turma.nomeTurma), eq(alunosTable.arquivoMorto, 0)));
-      return { ...turma, totalAlunos: Number(result[0]?.count ?? 0) };
+        
+      const profs = await db.select({ nome: professoresTable.nome })
+        .from(professoresTable)
+        .where(
+          or(
+            eq(professoresTable.turmaManha, turma.nomeTurma),
+            eq(professoresTable.turmaTarde, turma.nomeTurma)
+          )
+        );
+        
+      const professorResponsavel = profs.length > 0 
+        ? profs.map(p => p.nome).join(", ") 
+        : turma.professorResponsavel;
+
+      return { 
+        ...turma, 
+        professorResponsavel,
+        totalAlunos: Number(result[0]?.count ?? 0) 
+      };
     })
   );
 
-  res.json(turmasComCount);
+  res.json(turmasComCount.filter(t => t.totalAlunos > 0));
 });
 
 router.get("/turmas/:id", async (req, res) => {
