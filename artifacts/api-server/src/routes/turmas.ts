@@ -2,14 +2,15 @@
 import { Router, type IRouter } from "express";
 import { db } from "../lib/db/index.js";
 import { turmasTable, alunosTable } from "../lib/db/index.js";
-import { eq, and } from "drizzle-orm";
+import { eq, and, or } from "drizzle-orm";
 import { sql } from "drizzle-orm";
 
 const router: IRouter = Router();
 
 router.get("/turmas", async (req, res) => {
   const turmas = await db.select().from(turmasTable).orderBy(turmasTable.nomeTurma);
-  const { professoresTable } = require("../lib/db/index.js");
+
+  const { professoresTable } = await import("../lib/db/index.js");
 
   const turmasComCount = await Promise.all(
     turmas.map(async (turma) => {
@@ -17,7 +18,7 @@ router.get("/turmas", async (req, res) => {
         .select({ count: sql<number>`count(*)` })
         .from(alunosTable)
         .where(and(eq(alunosTable.turmaAtual, turma.nomeTurma), eq(alunosTable.arquivoMorto, 0)));
-        
+      
       const profs = await db.select({ nome: professoresTable.nome })
         .from(professoresTable)
         .where(
@@ -26,7 +27,6 @@ router.get("/turmas", async (req, res) => {
             eq(professoresTable.turmaTarde, turma.nomeTurma)
           )
         );
-        
       const professorResponsavel = profs.length > 0 
         ? profs.map(p => p.nome).join(", ") 
         : turma.professorResponsavel;

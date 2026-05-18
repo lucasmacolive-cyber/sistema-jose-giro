@@ -19,6 +19,48 @@ function requireMaster(req: any, res: any, next: any) {
   next();
 }
 
+// GET /api/admin/turmas (Custom handler to include student counts and dynamic professors)
+router.get("/admin/turmas", requireMaster, async (req, res) => {
+  try {
+    const { db, turmasTable, alunosTable } = await import("../lib/db/index.js");
+    const { eq, and, or, sql } = await import("drizzle-orm");
+    
+    const turmas = await db.select().from(turmasTable).orderBy(turmasTable.nomeTurma);
+    
+    const { professoresTable } = await import("../lib/db/index.js");
+
+    const turmasComContagem = await Promise.all(
+      turmas.map(async (turma) => {
+        const result = await db
+          .select({ count: sql<number>`count(*)` })
+          .from(alunosTable)
+          .where(and(eq(alunosTable.turmaAtual, turma.nomeTurma), eq(alunosTable.arquivoMorto, 0)));
+        
+        const profs = await db.select({ nome: professoresTable.nome })
+          .from(professoresTable)
+          .where(
+            or(
+              eq(professoresTable.turmaManha, turma.nomeTurma),
+              eq(professoresTable.turmaTarde, turma.nomeTurma)
+            )
+          );
+        const professorResponsavel = profs.length > 0 
+          ? profs.map(p => p.nome).join(", ") 
+          : turma.professorResponsavel;
+
+        return { 
+          ...turma, 
+          professorResponsavel,
+          totalAlunos: Number(result[0]?.count ?? 0) 
+        };
+      })
+    );
+    res.json({ rows: turmasComContagem, total: turmasComContagem.length, page: 1, limit: 100 });
+  } catch (error: any) {
+    res.status(500).json({ erro: "erro_consulta", mensagem: error.message });
+  }
+});
+
 // GET /api/admin/:tabela
 router.get("/admin/:tabela", requireMaster, async (req, res) => {
   const { tabela } = req.params;
