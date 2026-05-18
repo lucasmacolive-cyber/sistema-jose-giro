@@ -133,7 +133,7 @@ function extractCsrf(html: string, jar: CookieJar): string {
  */
 const SUAP_RELATORIO_URL =
   "/edu/relatorio/?uo=205&diretoria=&estrutura_curso=&modalidade=&convenio=&polo=" +
-  "&ano_letivo=&periodo_letivo=0&periodo_matriz=0&periodo_referencia=0&ano_conclusao=" +
+  "&ano_letivo=9&periodo_letivo=0&periodo_matriz=0&periodo_referencia=0&ano_conclusao=" +
   "&situacao_diario=0&turno=&situacao_matricula=&situacao_matricula_periodo=" +
   "&ano_ingresso_inicio=&periodo_ingresso_inicio=0&ano_ingresso_fim=&periodo_ingresso_fim=0" +
   "&aluno_especial=&forma_ingresso=&situacao_sistema=TODOS&medida_disciplinar=0" +
