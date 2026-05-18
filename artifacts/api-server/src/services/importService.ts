@@ -52,7 +52,7 @@ export async function processarImportacaoAlunos(rows: AlunoRow[], options: Impor
   const colAnoIngresso  = mapearColuna(["ano de ingresso", "ano ingresso", "ano_letivo"]);
   const colNivel        = mapearColuna(["nível de ensino", "nivel ensino", "nivel"]);
   const colCurso        = mapearColuna(["descrição do curso", "curso", "descricao do curso", "curso_campus.descricao"]);
-  const colCodCurso     = mapearColuna(["código do curso", "cod curso", "codigo curso", "curso_campus.codigo"]);
+  const colCodCurso     = mapearColuna(["código do curso", "código curso", "cod curso", "codigo curso", "curso_campus.codigo"]);
   const colPrevisao     = mapearColuna(["ano de previsão", "previsao conclusao", "ano_let_prev_conclusao"]);
   const colNaturalidade = mapearColuna(["naturalidade", "cidade natural", "cidade de nascimento"]);
 
