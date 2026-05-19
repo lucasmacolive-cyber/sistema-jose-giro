@@ -127,7 +127,8 @@ function parseSecao(linhas: string[], erros: string[]): SecaoDiario | null {
   let disciplina = "";
 
   for (let i = 0; i < linhas.length; i++) {
-    const l = linhas[i];
+    const l = linhas[i].trim();
+    if (!l) continue;
 
     // Tenta capturar do formato completo de Diário SUAP
     // ex: "56255 - FUND.0118 - 1º Ano - Língua Portuguesa - 1AT02   1"
@@ -135,24 +136,36 @@ function parseSecao(linhas: string[], erros: string[]): SecaoDiario | null {
     if (mDiario) {
       disciplina = mDiario[1].trim();
       turmaCodigo = mDiario[2].trim();
-    } else if (/Diário:\s*(.*)/i.test(l) && !disciplina) {
-      const match = l.match(/Diário:\s*(.*)/i);
-      if (match) {
-        disciplina = match[1].split("-")[0].trim();
-        // Tenta pegar a turma se estiver no final separado por "-"
-        const partes = match[1].split("-").map(p => p.trim());
-        const ultimaParte = partes[partes.length - 1]?.split(/\s+/)[0];
-        if (ultimaParte && /^[A-Z0-9]{4,7}$/i.test(ultimaParte)) {
-          turmaCodigo = ultimaParte;
+    }
+
+    // Tenta extrair a partir de "Turma:" no cabeçalho
+    if (/^Turma:/i.test(l)) {
+      const m = l.match(/Turma:\s*\(?([A-Z0-9]+)\)?/i);
+      if (m) {
+        turmaCodigo = m[1].trim();
+      } else {
+        const prox = linhas[i + 1]?.trim() ?? "";
+        const mProx = prox.match(/\(?([A-Z0-9]{4,7})\)?$/i) || prox.match(/\(([^)]+)\)/);
+        if (mProx) {
+          turmaCodigo = mProx[1].trim();
         }
       }
     }
 
-    // Tenta extrair a partir de "Turma:" no cabeçalho
-    // ex: "Turma: 1AT02" ou "Turma: (1AT02)"
-    const mTurma = l.match(/Turma:\s*\(?([A-Z0-9]+)\)?/i);
-    if (mTurma && !turmaCodigo) {
-      turmaCodigo = mTurma[1].trim();
+    // Tenta extrair a disciplina a partir de "Diário:"
+    if (/^Diário:/i.test(l)) {
+      const m = l.match(/Diário:\s*(.*)/i);
+      if (m && m[1].trim()) {
+        disciplina = m[1].split("-")[0].trim();
+      } else {
+        const prox = linhas[i + 1]?.trim() ?? "";
+        const partes = prox.split("-").map(p => p.trim());
+        if (partes.length >= 3) {
+          disciplina = partes.slice(2).join(" - ");
+        } else {
+          disciplina = partes[0];
+        }
+      }
     }
 
     // Professor Regente: aparece antes de "(Professor Regente)" na seção de assinatura
@@ -194,134 +207,179 @@ function parsePresencas(
   ano: number,
   erros: string[]
 ): AlunoFrequencia[] {
-  /*
-   * Estrutura da tabela:
-   *   Linha "Dia":  "...Dia   04  05  06  09..."
-   *   Linha "Mês":  "#  Matrícula  Aluno  Mês  02  02  02  02...  Nota  Faltas"
-   *   Linha "N.A.": "...N.A.  1  1  1  1..."   ← pular
-   *   Linhas alunos:"  1  20261031610002  Nome ...  -  -  1  -  ...  0"
-   */
-
-  // 1. Encontrar índice da linha "Dia"
+  // 1. Encontrar a linha "Dia"
   let diaIdx = -1;
+  let diasStr = "";
   for (let i = 0; i < linhas.length; i++) {
-    if (/\bDia\b/.test(linhas[i]) && /\d{1,2}\s+\d{1,2}/.test(linhas[i])) {
+    const l = linhas[i].replace(/\s+/g, ""); // remove espaços para unificar
+    const m = l.match(/^Dia(\d{2,})/i);
+    if (m) {
+      diaIdx = i;
+      diasStr = m[1];
+      break;
+    }
+    // Fallback caso venha com espaços na linha original
+    if (/^Dia/i.test(linhas[i]) && (linhas[i].match(/\b\d{1,2}\b/g) ?? []).length > 2) {
       diaIdx = i;
       break;
     }
   }
   if (diaIdx === -1) return [];
 
-  // 2. Extrair dias da linha "Dia"
-  const dias = (linhas[diaIdx].match(/\b(\d{1,2})\b/g) ?? []).map(Number);
+  // Extrair dias
+  let dias: number[] = [];
+  if (diasStr) {
+    // Quebrar de 2 em 2
+    for (let k = 0; k < diasStr.length; k += 2) {
+      dias.push(Number(diasStr.substring(k, k + 2)));
+    }
+  } else {
+    dias = (linhas[diaIdx].match(/\b(\d{1,2})\b/g) ?? []).map(Number);
+  }
   if (dias.length === 0) return [];
 
-  // 3. Linha "Mês" — é a linha com "Mês" E números de mês (normalmente logo abaixo)
-  let mesIdx = diaIdx + 1;
+  // 2. Encontrar a linha "Mês"
+  let mesIdx = -1;
+  let mesesStr = "";
   let meses: number[] = [];
-  for (let i = diaIdx + 1; i < Math.min(diaIdx + 4, linhas.length); i++) {
+
+  for (let i = diaIdx + 1; i < Math.min(diaIdx + 5, linhas.length); i++) {
+    const l = linhas[i].replace(/\s+/g, "");
+    const m = l.match(/M[eê]s(\d{2,})/i);
+    if (m) {
+      mesIdx = i;
+      mesesStr = m[1];
+      break;
+    }
     if (/\bM[eê]s\b/i.test(linhas[i])) {
-      // Pega todos os números que parecem mês (01-12)
       const nums = (linhas[i].match(/\b(0?[1-9]|1[0-2])\b/g) ?? []).map(Number);
-      if (nums.length > 0) { meses = nums; mesIdx = i; break; }
+      if (nums.length > 0) {
+        meses = nums;
+        mesIdx = i;
+        break;
+      }
+    }
+  }
+
+  if (mesesStr) {
+    for (let k = 0; k < mesesStr.length; k += 2) {
+      meses.push(Number(mesesStr.substring(k, k + 2)));
     }
   }
 
   // Se não encontrou linha de mês, tenta usar apenas o primeiro mês que aparecer perto
   if (meses.length === 0) {
     for (let i = diaIdx; i < Math.min(diaIdx + 5, linhas.length); i++) {
-      const nums = (linhas[i].match(/\b(0?[1-9]|1[0-2])\b/g) ?? []).map(Number);
-      if (nums.length >= dias.length / 2) { meses = nums; break; }
+      const l = linhas[i].replace(/\s+/g, "");
+      const m = l.match(/(\d{2})/g);
+      if (m && m.length >= dias.length) {
+        meses = m.map(Number);
+        break;
+      }
     }
   }
 
-  // 4. Construir datas: parear dia[i] com mes[i], preenchendo o último mês se necessário
+  // 3. Construir datas: parear dia[i] com mes[i]
   const datas: string[] = dias.map((d, i) => {
     const mes = (meses[i] ?? meses[meses.length - 1] ?? 1);
     const anoFinal = ano;
     return `${anoFinal}-${String(mes).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
   });
 
-  // 5. Pular linha N.A. e encontrar início dos alunos
-  // Linhas de aluno: começam com espaços + número + espaços + matrícula (12+ dígitos)
-  const alunoRegex = /^\s+(\d+)\s+(\d{10,})\s+(.+)/;
-  const alunos: AlunoFrequencia[] = [];
-
-  // A linha N.A. é depois de mesIdx, pular ela
-  let alunoStart = mesIdx + 1;
+  // 4. Encontrar início dos alunos
+  let alunoStart = (mesIdx !== -1 ? mesIdx : diaIdx) + 1;
   while (alunoStart < linhas.length && /N\.A\./i.test(linhas[alunoStart])) {
     alunoStart++;
   }
 
-  for (let i = alunoStart; i < linhas.length; i++) {
-    const l = linhas[i];
-    const m = l.match(alunoRegex);
-    if (!m) continue;
-
-    const matricula = m[2];
-    const resto = m[3];
-
-    // Tokenizar o resto: nome + presencas + faltas
-    const tokens = resto.trim().split(/\s+/);
-
-    // Presença = "." ou "-"  |  Falta = "1"
-    const isPresenca = (t: string) => t === "." || t === "-" || t === "·";
-    const isFalta    = (t: string) => t === "1";
-    const isAtt      = (t: string) => isPresenca(t) || isFalta(t);
-
-    // Encontrar primeiro token de presença/falta
-    let attStart = -1;
-    for (let t = 0; t < tokens.length; t++) {
-      if (isAtt(tokens[t])) { attStart = t; break; }
+  const alunos: AlunoFrequencia[] = [];
+  let i = alunoStart;
+  
+  while (i < linhas.length) {
+    const l = linhas[i].trim();
+    if (!l) {
+      i++;
+      continue;
     }
 
-    if (attStart === -1) continue;
-
-    const nomeParts = tokens.slice(0, attStart);
-    const nome = nomeParts.join(" ").trim();
-    const attTokens = tokens.slice(attStart);
-
-    // Separar attendance de faltas e notas: attendance são ".", "-" e "1",
-    // Nota (opcional) e faltas (último número) ficam no final
-    const attValues: ("P" | "F")[] = [];
-    let totalFaltasPDF = 0;
-    let nota: number | null = null;
-    
-    // Filtramos apenas os tokens que são dados (presenças, notas ou faltas)
-    const dataTokens = attTokens.filter(tk => isAtt(tk) || /^\d+([,.]\d+)?$/.test(tk));
-    
-    // O último token numérico é sempre o total de faltas
-    if (dataTokens.length > 0) {
-      const lastToken = dataTokens[dataTokens.length - 1];
-      if (/^\d+$/.test(lastToken)) {
-        totalFaltasPDF = parseInt(lastToken);
-      }
+    // Caso 1: Layout quebrado em 3 linhas
+    // Linha i: número sequencial (ex: "1")
+    // Linha i+1: matrícula (ex: "20261031610017")
+    // Linha i+2: nome + frequências + notas/faltas
+    if (/^\d{1,2}$/.test(l) && i + 2 < linhas.length && /^\d{10,16}$/.test(linhas[i + 1].trim())) {
+      const matricula = linhas[i + 1].trim();
+      const nomeEFreq = linhas[i + 2].trim();
       
-      // O penúltimo token, se for numérico, pode ser a nota
-      if (dataTokens.length > 1) {
-        const preLastToken = dataTokens[dataTokens.length - 2];
-        // Se não for um marcador de presença/falta (., -, 1) e for número, é a nota
-        if (!isAtt(preLastToken) && /^\d+([,.]\d+)?$/.test(preLastToken)) {
-          nota = parseFloat(preLastToken.replace(",", "."));
+      const mNomeFreq = nomeEFreq.match(/^([A-Za-zÀ-ÿ'\s\.\-]+?)\s+([-\.·1\s]+)(.*)$/);
+      if (mNomeFreq) {
+        const nome = mNomeFreq[1].trim();
+        // Remove espaços do bloco de frequências
+        const freqRaw = mNomeFreq[2].replace(/\s+/g, "");
+        const resto = mNomeFreq[3].trim();
+        
+        // Pega os primeiros dias.length caracteres
+        const freqStr = freqRaw.substring(0, dias.length);
+        
+        const frequencias = datas.map((data, idx) => {
+          const char = freqStr[idx] ?? ".";
+          const status: "P" | "F" = (char === "1") ? "F" : "P";
+          return { data, status };
+        });
+
+        let nota: number | null = null;
+        let totalFaltasPDF = 0;
+        const nums = resto.match(/\d+/g);
+        if (nums) {
+          if (nums.length >= 2) {
+            totalFaltasPDF = Number(nums[0]);
+            nota = Number(nums[1]) / 10;
+          } else if (nums.length === 1) {
+            totalFaltasPDF = Number(nums[0]);
+          }
         }
+
+        alunos.push({ matricula, nome: normNome(nome), frequencias, totalFaltasPDF, nota });
+      }
+      i += 3;
+      continue;
+    }
+
+    // Caso 2: Layout em 1 linha
+    const m1Linha = linhas[i].match(/^\s*(\d+)\s+(\d{10,16})\s+(.+)$/);
+    if (m1Linha) {
+      const matricula = m1Linha[2].trim();
+      const restoLinha = m1Linha[3].trim();
+      
+      const mNomeFreq = restoLinha.match(/^([A-Za-zÀ-ÿ'\s\.\-]+?)\s+([-\.·1\s]+)(.*)$/);
+      if (mNomeFreq) {
+        const nome = mNomeFreq[1].trim();
+        const freqRaw = mNomeFreq[2].replace(/\s+/g, "");
+        const resto = mNomeFreq[3].trim();
+        const freqStr = freqRaw.substring(0, dias.length);
+        
+        const frequencias = datas.map((data, idx) => {
+          const char = freqStr[idx] ?? ".";
+          const status: "P" | "F" = (char === "1") ? "F" : "P";
+          return { data, status };
+        });
+
+        let nota: number | null = null;
+        let totalFaltasPDF = 0;
+        const nums = resto.match(/\d+/g);
+        if (nums) {
+          if (nums.length >= 2) {
+            totalFaltasPDF = Number(nums[0]);
+            nota = Number(nums[1]) / 10;
+          } else if (nums.length === 1) {
+            totalFaltasPDF = Number(nums[0]);
+          }
+        }
+
+        alunos.push({ matricula, nome: normNome(nome), frequencias, totalFaltasPDF, nota });
       }
     }
-
-    for (let t = 0; t < attTokens.length; t++) {
-      const tk = attTokens[t];
-      if (isAtt(tk)) {
-        attValues.push(isPresenca(tk) ? "P" : "F");
-      }
-    }
-
-    // Montar frequências cruzando datas x presença
-    const frequencias: { data: string; status: "P" | "F" }[] = datas.map(
-      (data, idx) => ({ data, status: attValues[idx] ?? "P" })
-    );
-
-    if (nome) {
-      alunos.push({ matricula, nome: normNome(nome), frequencias, totalFaltasPDF, nota });
-    }
+    
+    i++;
   }
 
   if (alunos.length === 0) {

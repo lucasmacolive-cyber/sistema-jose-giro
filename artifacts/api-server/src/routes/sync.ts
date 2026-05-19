@@ -2,7 +2,7 @@
 import { Router, type IRouter } from "express";
 import { db } from "../lib/db/index.js";
 import { syncStatusTable, alunosTable, configuracoesTable, diarioAulasTable, diarioPresencasTable, turmasTable, professoresTable, notasTable } from "../lib/db/index.js";
-import { desc, eq, isNotNull, and, inArray } from "drizzle-orm";
+import { desc, eq, isNotNull, and, inArray, sql } from "drizzle-orm";
 import * as XLSX from "xlsx";
 import archiver from "archiver";
 import path from "path";
@@ -1104,7 +1104,7 @@ router.post("/sync/diario-pdf", async (req, res) => {
   }
 });
 
-async function importarSecao(
+export async function importarSecao(
   secao: SecaoDiario,
   todosAlunos: { id: number; matricula: string | null; nomeCompleto: string; turmaAtual: string | null }[]
 ): Promise<{
@@ -1175,7 +1175,9 @@ async function importarSecao(
     }
   }
 
-  // 2. Importar presenças → diario_presencas
+  // 2. Coletar presenças para bulk insert e processar notas dos alunos
+  const presencasParaInserir: { aulaId: number; alunoId: number; status: "P" | "F" }[] = [];
+
   for (const aluno of secao.alunos) {
     // Resolver alunoId: primeiro por matrícula, depois por nome
     let alunoId = porMatricula.get(aluno.matricula);
@@ -1198,21 +1200,11 @@ async function importarSecao(
       continue;
     }
 
+    // Coletar presenças deste aluno
     for (const f of aluno.frequencias) {
       const aulaId = aulaIdPorData.get(f.data);
       if (!aulaId) continue;
-      try {
-        await db
-          .insert(diarioPresencasTable)
-          .values({ aulaId, alunoId, status: f.status })
-          .onConflictDoUpdate({
-            target: [diarioPresencasTable.aulaId, diarioPresencasTable.alunoId],
-            set: { status: f.status },
-          });
-        presencasImportadas++;
-      } catch (e: any) {
-        erros.push(`Presença aluno ${alunoId} dia ${f.data}: ${e.message}`);
-      }
+      presencasParaInserir.push({ aulaId, alunoId, status: f.status });
     }
 
     // 3. Importar Nota (se existir) → notasTable
@@ -1227,16 +1219,13 @@ async function importarSecao(
             dataAtualizacao: new Date(),
           })
           .onConflictDoUpdate({
-            target: [notasTable.id], // TODO: check if there is a unique constraint on alunoId+disciplina+bimestre
+            target: [notasTable.id],
             set: {
               notaFinal: String(aluno.nota),
               dataAtualizacao: new Date(),
             }
           });
           
-        // Fallback: se não houver constraint única no onConflict, fazemos um update manual
-        // ou garantimos que a tabela tenha essa constraint. 
-        // Para garantir, vamos fazer um update por filtros se o insert falhar.
         await db.update(notasTable)
           .set({ notaFinal: String(aluno.nota), dataAtualizacao: new Date() })
           .where(and(
@@ -1247,6 +1236,26 @@ async function importarSecao(
       } catch (e: any) {
         erros.push(`Nota aluno ${alunoId} (${secao.disciplina}): ${e.message}`);
       }
+    }
+  }
+
+  // Executar bulk insert de presenças acumuladas
+  if (presencasParaInserir.length > 0) {
+    try {
+      const chunkSize = 100;
+      for (let offset = 0; offset < presencasParaInserir.length; offset += chunkSize) {
+        const chunk = presencasParaInserir.slice(offset, offset + chunkSize);
+        await db
+          .insert(diarioPresencasTable)
+          .values(chunk)
+          .onConflictDoUpdate({
+            target: [diarioPresencasTable.aulaId, diarioPresencasTable.alunoId],
+            set: { status: sql`excluded.status` },
+          });
+        presencasImportadas += chunk.length;
+      }
+    } catch (e: any) {
+      erros.push(`Erro bulk insert presenças: ${e.message}`);
     }
   }
 
