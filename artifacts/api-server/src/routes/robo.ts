@@ -79,7 +79,7 @@ router.put("/robo/config", async (req, res) => {
   try {
     const newConfig = req.body;
     await setChave("robo_config", JSON.stringify(newConfig));
-    res.json({ ok: True, mensagem: "Configuração de agenda salva no servidor." });
+    res.json({ ok: true, mensagem: "Configuração de agenda salva no servidor." });
   } catch (err: any) {
     res.status(500).json({ ok: false, error: err.message });
   }
