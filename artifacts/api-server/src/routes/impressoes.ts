@@ -199,7 +199,6 @@ exit`);
 router.post("/impressoes/acao/limpar-historico", async (_req, res) => {
   try {
     const deleted = await db.delete(impressoesTable)
-      .where(inArray(impressoesTable.status, ["Impresso", "Cancelado"]))
       .returning({ id: impressoesTable.id });
     console.log("Histórico limpo. Deletados:", deleted.length, "registros.");
     res.json({ ok: true, deleted: deleted.length });

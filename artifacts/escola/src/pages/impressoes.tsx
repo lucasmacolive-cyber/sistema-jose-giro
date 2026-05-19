@@ -675,7 +675,7 @@ export default function ImpressoesPage() {
 
   async function limparHistorico() {
     if (!isAdmin) return;
-    if (!confirm("Tem certeza que deseja limpar todo o histórico de impressões (exceto pendentes)?")) return;
+    if (!confirm("Tem certeza que deseja APAGAR COMPLETAMENTE toda a fila e histórico de impressões?")) return;
     
     try {
       const res = await fetch(API("impressoes/acao/limpar-historico"), { method: "POST", credentials: "include" });
