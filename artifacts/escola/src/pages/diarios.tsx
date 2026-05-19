@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import {
   BookOpen, Users, Sun, Sunset, Loader2, ChevronRight,
-  GraduationCap, RefreshCcw, Check, Clock,
+  GraduationCap, RefreshCcw, Check, Clock, XCircle,
 } from "lucide-react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { toast } from "@/hooks/use-toast";
@@ -58,8 +58,12 @@ export default function DiariosPage() {
   });
 
   const [fase, setFase] = useState<"idle"|"baixando"|"done"|"error">("idle");
-  const [progresso, setProgresso] = useState({ atual: 0, total: 0, msg: "" });
+  const [progresso, setProgresso] = useState({ atual: 0, total: 0, msg: "", turmaAtual: "" });
   const [ultimaSync, setUltimaSync] = useState<string | null>(null);
+  const [relatorio, setRelatorio] = useState<{
+    resultados: { turma: string; aulas: number; presencas: number; erro?: string }[];
+    turmasSemLink: string[];
+  } | null>(null);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const pararPolling = useCallback(() => {
@@ -85,7 +89,8 @@ export default function DiariosPage() {
   const iniciarSincronizacao = async () => {
     if (fase === "baixando") return;
     setFase("baixando");
-    setProgresso({ atual: 0, total: 0, msg: "Iniciando..." });
+    setProgresso({ atual: 0, total: 0, msg: "Iniciando...", turmaAtual: "" });
+    setRelatorio(null);
     try {
       const r = await fetch(`${BASE}/api/sync/baixar-todos-diarios`, {
         method: "POST",
@@ -99,12 +104,12 @@ export default function DiariosPage() {
         setTimeout(() => setFase("idle"), 5000);
         return;
       }
-      setProgresso({ atual: 0, total: data.total, msg: "Baixando..." });
+      setProgresso({ atual: 0, total: data.total, msg: "Baixando...", turmaAtual: "" });
 
       pollingRef.current = setInterval(async () => {
         try {
           const s = await fetch(`${BASE}/api/sync/baixar-todos-status`, { credentials: "include" }).then(r => r.json());
-          setProgresso({ atual: s.atual, total: s.total, msg: s.msg });
+          setProgresso({ atual: s.atual, total: s.total, msg: s.msg, turmaAtual: s.turmaAtual ?? "" });
           if (s.concluido) {
             pararPolling();
             if (s.erro && !s.ultimaSync) {
@@ -113,8 +118,13 @@ export default function DiariosPage() {
             } else {
               setFase("done");
               if (s.ultimaSync) setUltimaSync(s.ultimaSync);
+              if (s.resultados || s.turmasSemLink) {
+                setRelatorio({ resultados: s.resultados ?? [], turmasSemLink: s.turmasSemLink ?? [] });
+              }
               carregarUltimaSync();
-              toast({ title: "Diários sincronizados!", description: s.msg });
+              const concluidos = (s.resultados ?? []).filter((r: any) => !r.erro).length;
+              const comErro = (s.resultados ?? []).filter((r: any) => r.erro).length;
+              toast({ title: "Diários sincronizados!", description: `${concluidos} turmas atualizadas${comErro > 0 ? ` · ${comErro} com erro` : ""}` });
             }
           }
         } catch { /* ignora */ }
@@ -202,7 +212,7 @@ export default function DiariosPage() {
             )}
             <span className="relative flex items-center gap-2">
               {fase === "baixando" ? (
-                <><Loader2 className="w-4 h-4 animate-spin" /> Baixando {progresso.atual > 0 ? `${progresso.atual}/${progresso.total}` : "..."}</>
+                <><Loader2 className="w-4 h-4 animate-spin" /> {progresso.turmaAtual ? progresso.turmaAtual : (progresso.atual > 0 ? `${progresso.atual}/${progresso.total}` : "...")}</>
               ) : fase === "done" ? (
                 <><Check className="w-4 h-4" /> Sincronizado</>
               ) : (
@@ -233,6 +243,45 @@ export default function DiariosPage() {
         <div className="text-center py-16 text-gray-500">
           <BookOpen className="w-12 h-12 mx-auto mb-3 opacity-30" />
           <p>Nenhuma turma cadastrada</p>
+        </div>
+      )}
+
+      {/* ── Relatório de sincronização ── */}
+      {relatorio && fase === "done" && (
+        <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 overflow-hidden">
+          <div className="px-5 py-3 border-b border-white/10 flex items-center gap-2">
+            <Check className="w-4 h-4 text-emerald-400" />
+            <span className="text-sm font-bold text-white">Relatório da última sincronização</span>
+          </div>
+          <div className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+            {relatorio.resultados.map(r => (
+              <div key={r.turma} className={`flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-medium border ${
+                r.erro
+                  ? "bg-red-950/40 border-red-700/30 text-red-300"
+                  : "bg-emerald-950/40 border-emerald-700/30 text-emerald-300"
+              }`}>
+                {r.erro
+                  ? <XCircle className="w-3.5 h-3.5 shrink-0" />
+                  : <Check className="w-3.5 h-3.5 shrink-0" />
+                }
+                <span className="font-bold">{r.turma}</span>
+                {r.erro
+                  ? <span className="truncate opacity-70" title={r.erro}>Erro</span>
+                  : <span className="opacity-70">{r.aulas} aulas · {r.presencas} presenças</span>
+                }
+              </div>
+            ))}
+          </div>
+          {relatorio.turmasSemLink.length > 0 && (
+            <div className="px-5 py-3 border-t border-white/10">
+              <p className="text-xs text-amber-400/80 font-medium mb-2">Turmas sem link cadastrado (não sincronizadas):</p>
+              <div className="flex flex-wrap gap-1.5">
+                {relatorio.turmasSemLink.map(t => (
+                  <span key={t} className="text-xs bg-amber-950/40 border border-amber-700/30 text-amber-300 rounded-lg px-2 py-1">{t}</span>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

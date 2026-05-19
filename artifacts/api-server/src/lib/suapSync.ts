@@ -726,8 +726,15 @@ export async function baixarDiarioPorLink(
   link: string,
 ): Promise<Buffer> {
   const jar = await suapLogin(usuario, senha, () => {});
-  const m = link.match(/\/edu\/diario\/(\d+)\//);
-  if (!m) throw new Error(`Link inválido: "${link}". Use o formato .../edu/diario/ID/`);
+
+  // Aceita ambos os formatos:
+  //   https://suap.../edu/diario/NNNNN/
+  //   https://suap.../edu/diario_pdf/NNNNN/0/
+  const m =
+    link.match(/\/edu\/diario_pdf\/(\d+)\//) ??
+    link.match(/\/edu\/diario\/(\d+)\//);
+  if (!m) throw new Error(`Link inválido: "${link}". Use o formato .../edu/diario/ID/ ou .../edu/diario_pdf/ID/0/`);
+
   const suapId = m[1];
   const resp = await request("GET", `/edu/diario_pdf/${suapId}/0/`, jar);
   if (resp.status !== 200) {

@@ -26,10 +26,13 @@ let batchSyncState: {
   total: number;
   atual: number;
   msg: string;
+  turmaAtual: string;
   erro: string | null;
   concluido: boolean;
   ultimaSync: string | null;
-} = { rodando: false, total: 0, atual: 0, msg: "", erro: null, concluido: false, ultimaSync: null };
+  resultados: { turma: string; aulas: number; presencas: number; erro?: string }[];
+  turmasSemLink: string[];
+} = { rodando: false, total: 0, atual: 0, msg: "", turmaAtual: "", erro: null, concluido: false, ultimaSync: null, resultados: [], turmasSemLink: [] };
 
 const router: IRouter = Router();
 
@@ -316,41 +319,74 @@ router.post("/sync/baixar-todos-diarios", async (req, res) => {
     return;
   }
 
-  const turmasComLink = await db.select().from(turmasTable).where(isNotNull(turmasTable.linkSuap));
-  const links = turmasComLink.map(t => t.linkSuap as string).filter(Boolean);
-  if (links.length === 0) {
-    res.status(400).json({ ok: false, mensagem: "Nenhum link de diário cadastrado. Configure em Ajustes → Sincronização." });
+  // Buscar todas as turmas, separar as que têm link das que não têm
+  const todasTurmas = await db.select().from(turmasTable);
+  const turmasComLink = todasTurmas.filter(t => t.linkSuap);
+  const turmasSemLink = todasTurmas.filter(t => !t.linkSuap).map(t => t.nomeTurma as string);
+
+  if (turmasComLink.length === 0) {
+    res.status(400).json({ ok: false, mensagem: "Nenhum link de diário cadastrado. Configure os links em Ajustes → Turmas." });
     return;
   }
 
-  batchSyncState = { rodando: true, total: links.length, atual: 0, msg: "Iniciando...", erro: null, concluido: false, ultimaSync: null };
-  res.json({ ok: true, total: links.length });
+  // Expandir turmas com múltiplos links (separados por \n) em pares {nomeTurma, link}
+  const jobs: { nomeTurma: string; link: string }[] = [];
+  for (const turma of turmasComLink) {
+    const linksRaw = (turma.linkSuap as string).split("\n").map(l => l.trim()).filter(Boolean);
+    for (const link of linksRaw) {
+      jobs.push({ nomeTurma: turma.nomeTurma as string, link });
+    }
+  }
 
-  // Background: baixar cada link em sequência
+  batchSyncState = {
+    rodando: true, total: jobs.length, atual: 0,
+    msg: "Iniciando...", turmaAtual: "",
+    erro: null, concluido: false, ultimaSync: null,
+    resultados: [], turmasSemLink,
+  };
+  res.json({ ok: true, total: jobs.length, turmasSemLink });
+
+  // Background: baixar cada diário em sequência
   (async () => {
     const todosAlunos = await db.select({
       id: alunosTable.id, matricula: alunosTable.matricula,
       nomeCompleto: alunosTable.nomeCompleto, turmaAtual: alunosTable.turmaAtual,
     }).from(alunosTable);
 
-    for (let i = 0; i < links.length; i++) {
-      const link = links[i];
+    for (let i = 0; i < jobs.length; i++) {
+      const { nomeTurma, link } = jobs[i];
       batchSyncState.atual = i;
-      batchSyncState.msg = `Baixando diário ${i + 1}/${links.length}...`;
+      batchSyncState.turmaAtual = nomeTurma;
+      batchSyncState.msg = `Baixando ${nomeTurma} (${i + 1}/${jobs.length})...`;
       try {
         const pdfBuffer = await baixarDiarioPorLink(usuario, senha, link);
         const { secoes } = await parseDiarioPDF(pdfBuffer);
+        let totalAulas = 0;
+        let totalPresencas = 0;
         for (const secao of secoes) {
-          await importarSecao(secao, todosAlunos);
-          await salvarLinkMeta(link, secao.turmaLocal);
+          secao.turmaLocal = nomeTurma; // Forçar o nome correto da turma
+          const r = await importarSecao(secao, todosAlunos);
+          totalAulas += r.aulasImportadas;
+          totalPresencas += r.presencasImportadas;
+          await salvarLinkMeta(link, nomeTurma);
         }
-        batchSyncState.msg = `${i + 1}/${links.length} concluídos`;
+        batchSyncState.resultados.push({ turma: nomeTurma, aulas: totalAulas, presencas: totalPresencas });
+        batchSyncState.msg = `${i + 1}/${jobs.length} concluídos`;
       } catch (e: any) {
-        batchSyncState.msg = `Erro no diário ${i + 1}: ${e.message}`;
+        batchSyncState.resultados.push({ turma: nomeTurma, aulas: 0, presencas: 0, erro: e.message });
+        batchSyncState.msg = `Erro em ${nomeTurma} (${i + 1}/${jobs.length}): ${e.message}`;
       }
     }
     const agora = new Date().toISOString();
-    batchSyncState = { rodando: false, total: links.length, atual: links.length, msg: `${links.length} diários sincronizados`, erro: null, concluido: true, ultimaSync: agora };
+    const comErro = batchSyncState.resultados.filter(r => r.erro).length;
+    const concluidos = batchSyncState.resultados.filter(r => !r.erro).length;
+    batchSyncState = {
+      ...batchSyncState,
+      rodando: false, atual: jobs.length,
+      msg: `${concluidos} turmas sincronizadas${comErro > 0 ? ` (${comErro} com erro)` : ""}`,
+      turmaAtual: "",
+      concluido: true, ultimaSync: agora,
+    };
   })().catch((e) => {
     batchSyncState = { ...batchSyncState, rodando: false, erro: e.message, concluido: true };
   });
