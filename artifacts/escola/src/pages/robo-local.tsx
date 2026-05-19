@@ -8,19 +8,13 @@ import {
   Trash2, Plus, Save, Power, BookOpen, Users,
 } from "lucide-react";
 
-const ROBO_URL = "http://localhost:8091";
+const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 const DIAS_SEMANA = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"];
-const DIAS_FULL   = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"];
 
 /* ─── Utilitários ──────────────────────────────────────────────────────── */
 function fmt(isoOrStr: string | null | undefined): string {
   if (!isoOrStr) return "—";
-  try {
-    // já vem formatado do Python (dd/mm/yyyy HH:MM:SS)
-    return isoOrStr;
-  } catch {
-    return isoOrStr;
-  }
+  return isoOrStr;
 }
 
 /* ─── Badge de status ──────────────────────────────────────────────────── */
@@ -125,7 +119,6 @@ function HorarioEditor({
 
   return (
     <div className="bg-white/5 border border-white/10 rounded-2xl p-5 flex flex-col gap-4">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <div className={`p-2 rounded-xl bg-${cor}-500/10`}>
@@ -133,7 +126,6 @@ function HorarioEditor({
           </div>
           <span className="text-sm font-bold text-white">{label}</span>
         </div>
-        {/* Toggle */}
         <button
           onClick={() => onChangeAtivo(!ativo)}
           className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
@@ -160,7 +152,6 @@ function HorarioEditor({
 
           {horarios.map((h, i) => (
             <div key={i} className="bg-black/30 border border-white/5 rounded-xl p-4 flex flex-col gap-3">
-              {/* Hora e minuto */}
               <div className="flex items-center gap-3">
                 <div className="flex items-center gap-1.5">
                   <label className="text-xs text-slate-400">Hora</label>
@@ -189,7 +180,6 @@ function HorarioEditor({
                 </button>
               </div>
 
-              {/* Dias da semana */}
               <div className="flex flex-wrap gap-1.5">
                 {DIAS_SEMANA.map((dia, dIdx) => (
                   <button
@@ -228,7 +218,7 @@ function ProximasExecucoes({ lista }: { lista: any[] }) {
     <div className="bg-white/5 border border-white/10 rounded-2xl p-5">
       <div className="flex items-center gap-2 mb-4">
         <CalendarDays className="h-4 w-4 text-violet-400" />
-        <span className="text-sm font-semibold text-white">Próximas Execuções</span>
+        <span className="text-sm font-semibold text-white">Próximas Execuções Agendadas</span>
       </div>
       <div className="space-y-2">
         {lista.map((ex: any, i: number) => (
@@ -265,46 +255,41 @@ export default function RoboLocalPage() {
   const [syncingDiarios, setSyncingDiarios] = useState(false);
   const [syncingAlunos, setSyncingAlunos]   = useState(false);
 
-  // ── Verifica status do robô ────────────────────────────────────────────
-  const checkStatus = useCallback(async () => {
+  // ── Busca status e config unificados da API central ────────────────────
+  const loadData = useCallback(async (showLoading = false) => {
+    if (showLoading) setLoadingConfig(true);
     try {
-      const r = await fetch(`${ROBO_URL}/status`, {
-        signal: AbortSignal.timeout(3000),
+      const r = await fetch(`${BASE}/api/robo/status`, {
+        credentials: "include",
       });
-      const data = await r.json();
-      setOnline(true);
-      setStatus(data);
+      const res = await r.json();
+      if (res.ok) {
+        setOnline(res.online);
+        setStatus(res.status || null);
+        // Só sobrescreve a config local se não estiver salvando no momento
+        if (!salvando) {
+          setConfig(res.config || {
+            diarios: { ativo: false, horarios: [] },
+            alunos:  { ativo: false, horarios: [] },
+          });
+        }
+      } else {
+        setOnline(false);
+      }
     } catch {
       setOnline(false);
-      setStatus(null);
-    }
-  }, []);
-
-  // ── Carrega config ─────────────────────────────────────────────────────
-  const loadConfig = useCallback(async () => {
-    setLoadingConfig(true);
-    try {
-      const r = await fetch(`${ROBO_URL}/config`, { signal: AbortSignal.timeout(3000) });
-      const data = await r.json();
-      setConfig(data);
-    } catch {
-      setConfig({
-        api_local: "http://localhost:8080",
-        diarios: { ativo: false, horarios: [] },
-        alunos:  { ativo: false, horarios: [] },
-      });
     } finally {
-      setLoadingConfig(false);
+      if (showLoading) setLoadingConfig(false);
     }
-  }, []);
+  }, [salvando]);
 
   // ── Polling inicial e recorrente ───────────────────────────────────────
   useEffect(() => {
-    checkStatus();
-    loadConfig();
-    const t = setInterval(checkStatus, 5000);
+    loadData(true);
+    const intervalTime = syncingDiarios || syncingAlunos || status?.sincronizando_diarios || status?.sincronizando_alunos ? 2000 : 5000;
+    const t = setInterval(() => loadData(false), intervalTime);
     return () => clearInterval(t);
-  }, [checkStatus, loadConfig]);
+  }, [loadData, syncingDiarios, syncingAlunos, status?.sincronizando_diarios, status?.sincronizando_alunos]);
 
   // ── Salvar config ──────────────────────────────────────────────────────
   async function salvarConfig() {
@@ -312,16 +297,21 @@ export default function RoboLocalPage() {
     setSalvando(true);
     setSavedOk(false);
     try {
-      await fetch(`${ROBO_URL}/config`, {
+      const r = await fetch(`${BASE}/api/robo/config`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(config),
-        signal: AbortSignal.timeout(5000),
+        credentials: "include",
       });
-      setSavedOk(true);
-      setTimeout(() => setSavedOk(false), 3000);
+      const res = await r.json();
+      if (res.ok) {
+        setSavedOk(true);
+        setTimeout(() => setSavedOk(false), 3000);
+      } else {
+        alert("Erro ao salvar configuração: " + res.mensagem);
+      }
     } catch (e) {
-      alert("Erro ao salvar configuração: " + e);
+      alert("Erro de conexão ao salvar configuração: " + e);
     } finally {
       setSalvando(false);
     }
@@ -332,15 +322,19 @@ export default function RoboLocalPage() {
     const setter = tipo === "diarios" ? setSyncingDiarios : setSyncingAlunos;
     setter(true);
     try {
-      await fetch(`${ROBO_URL}/sync/${tipo}`, {
+      const r = await fetch(`${BASE}/api/robo/sync/${tipo}`, {
         method: "POST",
-        signal: AbortSignal.timeout(5000),
+        credentials: "include",
       });
-      // Polling de atualização
-      const t = setInterval(checkStatus, 2000);
-      setTimeout(() => clearInterval(t), 30000);
+      const res = await r.json();
+      if (!res.ok) {
+        alert(`Erro ao acionar sync de ${tipo}: ${res.mensagem}`);
+      } else {
+        // Força recarga imediata
+        loadData(false);
+      }
     } catch (e) {
-      alert(`Erro ao acionar sync de ${tipo}: ${e}`);
+      alert(`Erro de conexão ao acionar sync de ${tipo}: ${e}`);
     } finally {
       setTimeout(() => setter(false), 3000);
     }
@@ -361,13 +355,13 @@ export default function RoboLocalPage() {
             </div>
             <div>
               <h1 className="text-2xl font-bold text-white tracking-tight">Robô Escolar</h1>
-              <p className="text-sm text-slate-400 mt-0.5">Sincronização automática de diários e alunos</p>
+              <p className="text-sm text-slate-400 mt-0.5">Sincronização automática centralizada de diários e alunos</p>
             </div>
           </div>
           <div className="flex items-center gap-3">
             <StatusBadge online={online} />
             <button
-              onClick={checkStatus}
+              onClick={() => loadData(true)}
               className="p-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-slate-400 hover:text-white transition-all"
               title="Atualizar status"
             >
@@ -383,106 +377,105 @@ export default function RoboLocalPage() {
               <WifiOff className="h-6 w-6 text-orange-400" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-orange-300 mb-1">Robô não encontrado</h2>
+              <h2 className="text-base font-bold text-orange-300 mb-1">Robô local desconectado</h2>
               <p className="text-sm text-orange-200/60">
-                O Robô só funciona quando você está usando o sistema no computador da escola.
-                Inicie o robô executando <code className="bg-black/30 px-1.5 py-0.5 rounded text-orange-300 text-xs">robo_escola.py</code> nesse computador.
+                O Robô só funcionará se o computador da escola estiver ligado e com o processo do robô ativo.
+                Se o computador estiver ligado, o robô se conectará automaticamente em instantes.
               </p>
             </div>
           </div>
         )}
 
-        {online && status && (
-          <>
-            {/* ── Status de sync atual ──────────────────────────────────── */}
-            {(isSyncingDiarios || isSyncingAlunos) && (
-              <div className="bg-amber-500/5 border border-amber-500/20 rounded-2xl px-5 py-4 flex items-center gap-3">
-                <Loader2 className="h-5 w-5 text-amber-400 animate-spin shrink-0" />
-                <div>
-                  <p className="text-sm font-semibold text-amber-300">Sincronização em andamento</p>
-                  <p className="text-xs text-amber-200/60 mt-0.5">
-                    {isSyncingDiarios && "Baixando diários do SUAP..."}
-                    {isSyncingDiarios && isSyncingAlunos && " • "}
-                    {isSyncingAlunos && "Sincronizando alunos..."}
-                  </p>
-                </div>
-              </div>
-            )}
-
-            {/* ── Últimos resultados ────────────────────────────────────── */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <UltimoResultado
-                titulo="Última Sync de Diários"
-                icone={BookOpen}
-                cor="emerald"
-                dado={status.ultimo_diarios}
-                sincronizando={isSyncingDiarios}
-              />
-              <UltimoResultado
-                titulo="Última Sync de Alunos"
-                icone={Users}
-                cor="blue"
-                dado={status.ultimo_alunos}
-                sincronizando={isSyncingAlunos}
-              />
+        {/* ── Status de sync atual ──────────────────────────────────── */}
+        {(isSyncingDiarios || isSyncingAlunos) && (
+          <div className="bg-amber-500/5 border border-amber-500/20 rounded-2xl px-5 py-4 flex items-center gap-3">
+            <Loader2 className="h-5 w-5 text-amber-400 animate-spin shrink-0" />
+            <div>
+              <p className="text-sm font-semibold text-amber-300">Sincronização em andamento no computador da escola</p>
+              <p className="text-xs text-amber-200/60 mt-0.5">
+                {isSyncingDiarios && "Baixando diários do SUAP..."}
+                {isSyncingDiarios && isSyncingAlunos && " • "}
+                {isSyncingAlunos && "Sincronizando alunos..."}
+              </p>
             </div>
-
-            {/* ── Próximas execuções ────────────────────────────────────── */}
-            {status.proximas_execucoes?.length > 0 && (
-              <ProximasExecucoes lista={status.proximas_execucoes} />
-            )}
-
-            {/* ── Ações manuais ─────────────────────────────────────────── */}
-            <div className="bg-white/5 border border-white/10 rounded-2xl p-5">
-              <div className="flex items-center gap-2 mb-4">
-                <Zap className="h-4 w-4 text-amber-400" />
-                <span className="text-sm font-semibold text-white">Executar Agora</span>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {/* Botão Diários */}
-                <button
-                  onClick={() => acionar("diarios")}
-                  disabled={isSyncingDiarios}
-                  className="flex items-center justify-center gap-2 px-5 py-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 font-semibold hover:bg-emerald-500/20 hover:border-emerald-500/40 transition-all disabled:opacity-50 disabled:cursor-not-allowed group"
-                >
-                  {isSyncingDiarios ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Play className="h-4 w-4 group-hover:scale-110 transition-transform" />
-                  )}
-                  {isSyncingDiarios ? "Sincronizando Diários..." : "▶ Sincronizar Diários Agora"}
-                </button>
-
-                {/* Botão Alunos */}
-                <button
-                  onClick={() => acionar("alunos")}
-                  disabled={isSyncingAlunos}
-                  className="flex items-center justify-center gap-2 px-5 py-4 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-300 font-semibold hover:bg-blue-500/20 hover:border-blue-500/40 transition-all disabled:opacity-50 disabled:cursor-not-allowed group"
-                >
-                  {isSyncingAlunos ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Play className="h-4 w-4 group-hover:scale-110 transition-transform" />
-                  )}
-                  {isSyncingAlunos ? "Sincronizando Alunos..." : "▶ Sincronizar Alunos Agora"}
-                </button>
-              </div>
-            </div>
-          </>
+          </div>
         )}
 
+        {/* ── Últimos resultados ────────────────────────────────────── */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <UltimoResultado
+            titulo="Última Sync de Diários"
+            icone={BookOpen}
+            cor="emerald"
+            dado={status?.ultimo_diarios}
+            sincronizando={isSyncingDiarios}
+          />
+          <UltimoResultado
+            titulo="Última Sync de Alunos"
+            icone={Users}
+            cor="blue"
+            dado={status?.ultimo_alunos}
+            sincronizando={isSyncingAlunos}
+          />
+        </div>
+
+        {/* ── Próximas execuções ────────────────────────────────────── */}
+        {status?.proximas_execucoes?.length > 0 && (
+          <ProximasExecucoes lista={status.proximas_execucoes} />
+        )}
+
+        {/* ── Ações manuais ─────────────────────────────────────────── */}
+        <div className="bg-white/5 border border-white/10 rounded-2xl p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <Zap className="h-4 w-4 text-amber-400" />
+            <span className="text-sm font-semibold text-white">Executar Agora de forma Remota</span>
+          </div>
+          <p className="text-xs text-slate-400 mb-4">
+            Clique para enviar um comando instantâneo para o robô da escola. O robô identificará e iniciará a tarefa em até 10 segundos.
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {/* Botão Diários */}
+            <button
+              onClick={() => acionar("diarios")}
+              disabled={isSyncingDiarios || !online}
+              className="flex items-center justify-center gap-2 px-5 py-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 font-semibold hover:bg-emerald-500/20 hover:border-emerald-500/40 transition-all disabled:opacity-50 disabled:cursor-not-allowed group"
+            >
+              {isSyncingDiarios ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Play className="h-4 w-4 group-hover:scale-110 transition-transform" />
+              )}
+              {isSyncingDiarios ? "Solicitado..." : "▶ Sincronizar Diários Agora"}
+            </button>
+
+            {/* Botão Alunos */}
+            <button
+              onClick={() => acionar("alunos")}
+              disabled={isSyncingAlunos || !online}
+              className="flex items-center justify-center gap-2 px-5 py-4 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-300 font-semibold hover:bg-blue-500/20 hover:border-blue-500/40 transition-all disabled:opacity-50 disabled:cursor-not-allowed group"
+            >
+              {isSyncingAlunos ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Play className="h-4 w-4 group-hover:scale-110 transition-transform" />
+              )}
+              {isSyncingAlunos ? "Solicitado..." : "▶ Sincronizar Alunos Agora"}
+            </button>
+          </div>
+        </div>
+
         {/* ── Configuração de Agenda ─────────────────────────────────────── */}
-        {online && config && (
+        {config && (
           <div className="bg-white/3 border border-white/10 rounded-2xl p-5 flex flex-col gap-5">
             <div className="flex items-center gap-2">
               <Settings className="h-4 w-4 text-slate-400" />
-              <span className="text-sm font-bold text-white">Configuração de Agenda</span>
+              <span className="text-sm font-bold text-white">Configuração de Agenda Remota</span>
             </div>
 
             {loadingConfig ? (
               <div className="flex items-center gap-2 text-slate-500 py-4 justify-center">
                 <Loader2 className="h-4 w-4 animate-spin" />
-                <span className="text-sm">Carregando configuração...</span>
+                <span className="text-sm">Carregando agenda...</span>
               </div>
             ) : (
               <>
@@ -525,21 +518,10 @@ export default function RoboLocalPage() {
                   ) : (
                     <Save className="h-4 w-4" />
                   )}
-                  {salvando ? "Salvando..." : savedOk ? "Configuração Salva!" : "Salvar Configuração"}
+                  {salvando ? "Salvando na Nuvem..." : savedOk ? "Agenda Atualizada!" : "Salvar Agenda na Nuvem"}
                 </button>
               </>
             )}
-          </div>
-        )}
-
-        {/* ── Info offline — config não carregada ────────────────────────── */}
-        {online === false && (
-          <div className="bg-white/5 border border-white/10 rounded-2xl p-5">
-            <div className="flex items-center gap-2 mb-3">
-              <Settings className="h-4 w-4 text-slate-500" />
-              <span className="text-sm font-semibold text-slate-400">Configuração de Agenda</span>
-            </div>
-            <p className="text-xs text-slate-500">Conecte-se ao robô para visualizar e editar a configuração de agenda.</p>
           </div>
         )}
 
@@ -547,9 +529,9 @@ export default function RoboLocalPage() {
         <div className="bg-white/3 border border-white/5 rounded-2xl p-4 flex items-start gap-3">
           <Cpu className="h-4 w-4 text-slate-500 shrink-0 mt-0.5" />
           <div className="text-xs text-slate-500 space-y-1">
-            <p><span className="text-slate-400 font-semibold">Robô Escolar</span> rodando em <code className="bg-black/30 px-1 py-0.5 rounded">localhost:8091</code></p>
-            <p>O robô deve estar em execução no computador principal da escola para que o agendamento funcione.</p>
-            <p>Os horários usam o fuso horário local do computador onde o robô roda.</p>
+            <p><span className="text-slate-400 font-semibold">Robô Escolar Conectado via Nuvem</span></p>
+            <p>O robô instalado no computador da escola envia atualizações de status e busca comandos pendentes automaticamente.</p>
+            <p>Os horários configurados usam o fuso horário local da escola.</p>
           </div>
         </div>
 
