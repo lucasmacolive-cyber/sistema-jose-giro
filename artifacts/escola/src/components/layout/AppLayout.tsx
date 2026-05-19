@@ -8,7 +8,7 @@ import {
   Bell, FileX, ClipboardList, ChevronLeft, ChevronRight,
   Activity, Timer, Menu, X, NotebookPen, CalendarDays,
   Cake, GraduationCap, Briefcase, CheckCircle2, RefreshCw,
-  AlertTriangle,
+  AlertTriangle, Cpu,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -31,6 +31,7 @@ const NAV_ITEMS = [
   { icon: ClipboardList, label: "Listagens", href: "/listagens" },
   { icon: Timer, label: "Ponto", href: "/ponto" },
   { icon: FileX, label: "Arquivo Morto", href: "/arquivo-morto" },
+  { icon: Cpu, label: "Robô Escolar", href: "/robo-local" },
   { icon: Settings, label: "Ajustes", href: "/sync" },
 ];
 

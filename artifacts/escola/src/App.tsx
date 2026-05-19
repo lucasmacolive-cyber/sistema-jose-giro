@@ -24,6 +24,7 @@ import PontoPage from "@/pages/ponto";
 import DiariosPage from "@/pages/diarios";
 import DiarioTurmaPage from "@/pages/diario-turma";
 import CalendarioPage from "@/pages/calendario";
+import RoboLocalPage from "@/pages/robo-local";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient({
@@ -53,6 +54,7 @@ function Router() {
       <Route path="/diarios" component={DiariosPage} />
       <Route path="/diarios/:turma/:ano/:mes" component={DiarioTurmaPage} />
       <Route path="/calendario" component={CalendarioPage} />
+      <Route path="/robo-local" component={RoboLocalPage} />
       <Route component={NotFound} />
     </Switch>
   );
