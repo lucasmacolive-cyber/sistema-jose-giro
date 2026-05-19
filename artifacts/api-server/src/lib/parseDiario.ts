@@ -124,20 +124,35 @@ function parseSecao(linhas: string[], erros: string[]): SecaoDiario | null {
   let bimestre = 1;
   let ano = new Date().getFullYear();
   let professorRegente = "";
-
   let disciplina = "";
 
   for (let i = 0; i < linhas.length; i++) {
     const l = linhas[i];
 
-    // Diário: "56202 - FUND.0148 - 1º Ano - Língua Portuguesa - 1AM01   1"
-    // Ou formato mais simples: "Diário: [NOME DA DISCIPLINA]"
-    const mDiario = l.match(/\d+ - FUND\.\d+ - .* - (.*?) - \w+\s+\d/);
+    // Tenta capturar do formato completo de Diário SUAP
+    // ex: "56255 - FUND.0118 - 1º Ano - Língua Portuguesa - 1AT02   1"
+    const mDiario = l.match(/\d+ - FUND\.\d+ - .*? - (.*?) - (\w+)\s+\d+/);
     if (mDiario) {
       disciplina = mDiario[1].trim();
+      turmaCodigo = mDiario[2].trim();
     } else if (/Diário:\s*(.*)/i.test(l) && !disciplina) {
       const match = l.match(/Diário:\s*(.*)/i);
-      if (match) disciplina = match[1].split("-")[0].trim();
+      if (match) {
+        disciplina = match[1].split("-")[0].trim();
+        // Tenta pegar a turma se estiver no final separado por "-"
+        const partes = match[1].split("-").map(p => p.trim());
+        const ultimaParte = partes[partes.length - 1]?.split(/\s+/)[0];
+        if (ultimaParte && /^[A-Z0-9]{4,7}$/i.test(ultimaParte)) {
+          turmaCodigo = ultimaParte;
+        }
+      }
+    }
+
+    // Tenta extrair a partir de "Turma:" no cabeçalho
+    // ex: "Turma: 1AT02" ou "Turma: (1AT02)"
+    const mTurma = l.match(/Turma:\s*\(?([A-Z0-9]+)\)?/i);
+    if (mTurma && !turmaCodigo) {
+      turmaCodigo = mTurma[1].trim();
     }
 
     // Professor Regente: aparece antes de "(Professor Regente)" na seção de assinatura
