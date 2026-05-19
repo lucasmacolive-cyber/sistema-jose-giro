@@ -2,9 +2,11 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { AppLayout } from "@/components/layout/AppLayout";
+import { useGetMe } from "@workspace/api-client-react";
 import {
   CalendarDays, ChevronDown, Printer, Plus, X, Users, UserCircle,
   ClipboardList, Download, Check, AlertCircle, FileText, FileSpreadsheet,
+  Loader2,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { jsPDF } from "jspdf";
@@ -338,13 +340,14 @@ function gerarHtmlPonto(
 
 /* ─── Modal: selecionar pessoas ──────────────────────────────────── */
 function ModalSelecionar({
-  titulo, pessoas, onImprimir, onPdf, onExcel, onClose,
+  titulo, pessoas, onImprimir, onPdf, onExcel, onRicoh, onClose,
 }: {
   titulo: string;
   pessoas: Pessoa[];
   onImprimir: (selecionados: Pessoa[]) => void;
   onPdf: (selecionados: Pessoa[]) => void;
   onExcel: (selecionados: Pessoa[]) => void;
+  onRicoh: (selecionados: Pessoa[]) => void;
   onClose: () => void;
 }) {
   const [sels, setSels] = useState<Set<number>>(new Set(pessoas.map(p => p.id)));
@@ -419,6 +422,13 @@ function ModalSelecionar({
               className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-bold bg-violet-500/20 border border-violet-500/40 text-violet-300 hover:bg-violet-500/30 disabled:opacity-40 transition-colors"
             >
               <FileSpreadsheet className="h-3.5 w-3.5" /> Excel
+            </button>
+            <button
+              disabled={sels.size === 0}
+              onClick={() => { onRicoh(selecionados); onClose(); }}
+              className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-bold bg-blue-500/20 border border-blue-500/40 text-blue-300 hover:bg-blue-500/30 disabled:opacity-40 transition-colors"
+            >
+              <Printer className="h-3.5 w-3.5" /> RICOH
             </button>
           </div>
         </div>
@@ -544,6 +554,7 @@ function SecaoDiasEspeciais({
 /* ─── Página principal ───────────────────────────────────────────── */
 export default function PontoPage() {
   const hoje = new Date();
+  const { data: me } = useGetMe({ query: { retry: false } } as any);
 
   /* dados */
   const { data: funcionarios = [] } = useQuery<any[]>({
@@ -765,6 +776,34 @@ export default function PontoPage() {
     XLSX.writeFile(wb, `Ponto_${tipo.replace(/\s+/g, "_")}_${nomeMes}_${anoSel}_${dataStr}.xlsx`);
   }
 
+  const [imprimindoRicoh, setImprimindoRicoh] = useState(false);
+
+  async function imprimirPontoNaRicoh(pessoas: Pessoa[], tipo: string) {
+    if (pessoas.length === 0) return;
+    setImprimindoRicoh(true);
+    try {
+      const html = gerarHtmlPonto(pessoas, mesSel, anoSel, diasEspeciais, tipo);
+      const blob = new Blob([html], { type: "text/html" });
+      const file = new File([blob], `Ponto_${tipo.replace(/\s+/g, "_")}_${MESES[mesSel]}_${anoSel}.html`, { type: "text/html" });
+
+      const form = new FormData();
+      form.append("professorSolicitante", me?.nomeCompleto || "Master");
+      form.append("quantidadeCopias", "1");
+      form.append("impressoraNome", "RICOH");
+      form.append("arquivo", file);
+
+      const res = await fetch(`${BASE}/api/impressoes`, { method: "POST", body: form });
+      if (!res.ok) throw new Error("Erro ao enviar para impressora");
+
+      alert("Enviado para a RICOH com sucesso!");
+    } catch (err) {
+      console.error(err);
+      alert("Erro ao tentar imprimir na RICOH.");
+    } finally {
+      setImprimindoRicoh(false);
+    }
+  }
+
   /* botões */
   const botoes = [
     {
@@ -948,6 +987,14 @@ export default function PontoPage() {
                         <FileSpreadsheet className="h-3.5 w-3.5" />
                         Excel
                       </button>
+                      <button
+                        onClick={() => imprimirPontoNaRicoh(pessoas, btn.label)}
+                        disabled={pessoas.length === 0 || imprimindoRicoh}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-blue-500/20 border border-blue-500/40 text-blue-300 hover:bg-blue-500/30 disabled:opacity-40 transition-colors"
+                      >
+                        {imprimindoRicoh ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Printer className="h-3.5 w-3.5" />}
+                        RICOH
+                      </button>
                     </div>
                   )}
                 </div>
@@ -975,6 +1022,7 @@ export default function PontoPage() {
             onImprimir={sels => imprimir(sels, modal.tipo)}
             onPdf={sels => gerarPdfPonto(sels, modal.tipo)}
             onExcel={sels => gerarExcelPonto(sels, modal.tipo)}
+            onRicoh={sels => imprimirPontoNaRicoh(sels, modal.tipo)}
           />
         )}
       </AnimatePresence>

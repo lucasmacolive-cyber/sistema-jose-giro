@@ -252,6 +252,42 @@ function NotifPanel({ onClose }: { onClose: () => void }) {
   );
 }
 
+/* ─── Status da Impressora ────────────────────────────────────────────────── */
+function PrinterStatusBadge() {
+  const [online, setOnline] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    const check = () => {
+      fetch(`${BASE}/api/impressoes/status-agente`, { credentials: "include" })
+        .then(r => r.json())
+        .then(d => setOnline(d.online))
+        .catch(() => setOnline(false));
+    };
+    check();
+    const t = setInterval(check, 10000);
+    return () => clearInterval(t);
+  }, []);
+
+  if (online === null) return null;
+
+  return (
+    <div
+      title={online ? "Robô de impressão conectado e aguardando documentos" : "Robô de impressão offline (Verifique se o computador principal está ligado)"}
+      className={cn(
+        "flex items-center gap-1.5 px-2 md:px-2.5 py-1 md:py-1.5 rounded-full border text-[9px] md:text-[10px] font-bold uppercase tracking-wider transition-colors cursor-help",
+        online
+          ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
+          : "bg-red-500/10 border-red-500/20 text-red-400"
+      )}
+    >
+      <div className={cn("w-1.5 h-1.5 rounded-full", online ? "bg-emerald-400 animate-pulse" : "bg-red-400")} />
+      <Printer className="h-3 w-3 hidden md:block" />
+      <span className="hidden md:inline">{online ? "Impressora Online" : "Impressora Offline"}</span>
+      <span className="md:hidden">{online ? "ON" : "OFF"}</span>
+    </div>
+  );
+}
+
 /* ─── Conteúdo da barra lateral ──────────────────────────────────────────── */
 function NavContent({
   collapsed,
@@ -580,6 +616,8 @@ export function AppLayout({ children, noPadding }: { children: React.ReactNode; 
                 </div>
               </div>
             )}
+
+            <PrinterStatusBadge />
 
             {/* Sino — funcional */}
             <div className="relative" ref={notifRef}>

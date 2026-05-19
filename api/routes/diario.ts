@@ -3,7 +3,7 @@ import { Router } from "express";
 import { db } from "../lib/db/index.ts";
 import {
   diarioAulasTable, diarioPresencasTable, diarioConfiguracoesTable,
-  turmasTable, alunosTable,
+  turmasTable, alunosTable, professoresTable
 } from "../lib/db/index.ts";
 import { eq, and, inArray, or, sql } from "drizzle-orm";
 import { parseDiarioTexto } from "../lib/parseDiario";
@@ -30,7 +30,6 @@ router.get("/diario/turmas", requireAuth, async (req, res) => {
       if (r.turmaAtual) countMap[r.turmaAtual] = r.total;
     }
 
-    const { professoresTable } = require("../lib/db/index.ts");
     const profs = await db.select().from(professoresTable);
     const profsMap: Record<string, string> = {};
     for (const p of profs) {

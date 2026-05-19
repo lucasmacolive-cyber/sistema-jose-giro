@@ -62,7 +62,7 @@ interface TurmaInfo {
 }
 
 function ModalAlunosTurma({ turma, onClose, onUpdated }: { turma: TurmaInfo; onClose: () => void, onUpdated: () => void }) {
-  const { me } = useGetMe();
+  const { data: me } = useGetMe({ query: { retry: false } } as any);
   const isMaster = me?.perfil === "Master";
   const cor = turma.cor || COR_PADRAO;
   const { data: todosAlunos, isLoading } = useListarAlunos();
@@ -167,6 +167,46 @@ function ModalAlunosTurma({ turma, onClose, onUpdated }: { turma: TurmaInfo; onC
     XLSX.utils.book_append_sheet(wb, ws, nomePlan);
     const dataStr = new Date().toLocaleDateString("pt-BR").replace(/\//g, "-");
     XLSX.writeFile(wb, `Lista_${turma.nomeTurma.replace(/\s+/g, "_")}_${dataStr}.xlsx`);
+  }
+
+  const [imprimindoRicoh, setImprimindoRicoh] = useState(false);
+
+  async function imprimirNaRicoh() {
+    if (matriculados.length === 0) return;
+    setImprimindoRicoh(true);
+    try {
+      const linhas = matriculados
+        .map((a, i) => `<tr><td style="padding:6px 8px;border-bottom:1px solid #eee;">${i + 1}</td><td style="padding:6px 8px;border-bottom:1px solid #eee;font-weight:600">${a.nomeCompleto}</td></tr>`)
+        .join("");
+      const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Lista ${turma.nomeTurma}</title>
+      <style>@page{size:A4;margin:2cm} body{font-family:Arial,sans-serif;font-size:12pt} h1{font-size:16pt;margin-bottom:4px} p{margin:2px 0;font-size:10pt;color:#555} table{width:100%;border-collapse:collapse;margin-top:16px} th{background:#f5f5f5;padding:8px;border-bottom:2px solid #ddd;text-align:left;font-size:10pt} .no-print{margin-bottom:12px} @media print{.no-print{display:none}}</style>
+      </head><body>
+      <h1>${turma.nomeTurma}</h1>
+      <p>Professor(a): <strong>${turma.professorResponsavel || "A definir"}</strong></p>
+      <p>Turno: ${turma.turno || "—"} · ${matriculados.length} aluno(s)</p>
+      <table><thead><tr><th>#</th><th>Nome do Aluno</th></tr></thead><tbody>${linhas}</tbody></table>
+      <p style="margin-top:20px;font-size:9pt;color:#999">Gerado em: ${new Date().toLocaleString("pt-BR")}</p>
+      </body></html>`;
+
+      const blob = new Blob([html], { type: "text/html" });
+      const file = new File([blob], `Lista_${turma.nomeTurma.replace(/\s+/g, "_")}.html`, { type: "text/html" });
+
+      const form = new FormData();
+      form.append("professorSolicitante", me?.nomeCompleto || "Master");
+      form.append("quantidadeCopias", "1");
+      form.append("impressoraNome", "RICOH");
+      form.append("arquivo", file);
+
+      const res = await fetch(`${BASE}/api/impressoes`, { method: "POST", body: form });
+      if (!res.ok) throw new Error("Erro ao enviar para impressora");
+
+      alert("Enviado para a RICOH com sucesso!");
+    } catch (err) {
+      console.error(err);
+      alert("Erro ao tentar imprimir diretamente.");
+    } finally {
+      setImprimindoRicoh(false);
+    }
   }
 
   return (
@@ -290,6 +330,15 @@ function ModalAlunosTurma({ turma, onClose, onUpdated }: { turma: TurmaInfo; onC
               >
                 <FileSpreadsheet className="h-3.5 w-3.5" />
                 Excel
+              </button>
+              <button
+                onClick={imprimirNaRicoh}
+                disabled={matriculados.length === 0 || imprimindoRicoh}
+                title="Imprimir lista diretamente na RICOH"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all disabled:opacity-40 bg-blue-500/20 border border-blue-500/40 text-blue-300 hover:bg-blue-500/30"
+              >
+                {imprimindoRicoh ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Printer className="h-3.5 w-3.5" />}
+                RICOH
               </button>
             </div>
           </div>

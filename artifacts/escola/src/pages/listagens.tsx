@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { AppLayout } from "@/components/layout/AppLayout";
-import { useGetMe } from "@workspace/api-client-react";
+import { useGetMe, useListarTurmas } from "@workspace/api-client-react";
 import { Loader2, FileSpreadsheet, LayoutList, Rows3, Download, UserCircle, Users, Printer } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { jsPDF } from "jspdf";
@@ -303,6 +303,7 @@ function gerarHtmlImpressao(
 
 export default function ListagensPage() {
   const { data: me } = useGetMe({ query: { retry: false } } as any);
+  const { data: turmas = [] } = useListarTurmas();
   const isMaster = me?.perfil === "Master";
 
   const [turmaSelecionada, setTurmaSelecionada]   = useState("");

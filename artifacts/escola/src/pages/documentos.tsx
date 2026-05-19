@@ -7,6 +7,7 @@ import {
   FileText, Search, Loader2, ChevronRight, ChevronLeft,
   Baby, BookOpen, ClipboardList, Plus, X, Calendar,
   Pencil, Trash2, UserPlus, Check, Users, FileSpreadsheet,
+  Printer,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -419,11 +420,11 @@ function SecaoDeclaracoes() {
   const [matriculadoEm, setMatriculadoEm]   = useState("");
 
   const sugestoes = useMemo(() => {
-    if (!busca || busca.length < 2) return [];
+    if (!busca || busca.length < 1) return [];
     const q = busca.toLowerCase();
     return (todosAlunos ?? []).filter(a =>
       a.nomeCompleto.toLowerCase().includes(q) || (a.matricula ?? "").includes(q)
-    ).slice(0, 8);
+    ).slice(0, 15);
   }, [busca, todosAlunos]);
 
   function selecionarAluno(a: any) {
@@ -483,6 +484,22 @@ function SecaoDeclaracoes() {
   );
 
   function gerarDeclaracao() {
+    if (!alunoSel || !nivel || !situacao) return;
+    const html = gerarHtml({
+      aluno: alunoSel,
+      naturalidade,
+      nivel: nivel as "infantil" | "fundamental",
+      situacao: situacao as "matriculado(a)" | "matriculado e frequentando" | "cursou",
+      objetivo,
+      serieInfantil: nivel === "infantil" ? serieInfantil : undefined,
+      anoLetivo:     nivel === "fundamental" ? anoLetivo : undefined,
+      anoEscolar:    nivel === "fundamental" ? anoEscolarFinal : undefined,
+      resultado:     nivel === "fundamental" ? resultado : undefined,
+      dataTransf:    precisaTransf ? dataTransf : undefined,
+      progressaoComps: precisaProgressao ? progressaoComps : undefined,
+      anoReclassif:  precisaReclass ? anoReclassif : undefined,
+      matriculadoEm: nivel === "fundamental" ? matriculadoEm : undefined,
+    });
     const win = window.open("", "_blank");
     if (win) { win.document.write(html); win.document.close(); }
   }
@@ -574,7 +591,7 @@ function SecaoDeclaracoes() {
             />
             {isLoading && <Loader2 className="absolute right-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 animate-spin" />}
             {showSug && sugestoes.length > 0 && (
-              <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-[#1e293b] border border-white/10 rounded-xl shadow-2xl overflow-hidden">
+              <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-[#1e293b] border border-white/10 rounded-xl shadow-2xl max-h-60 overflow-y-auto">
                 {sugestoes.map(a => (
                   <button key={a.id} className="w-full text-left px-4 py-3 hover:bg-blue-500/20 transition-colors flex items-center justify-between group" onMouseDown={() => selecionarAluno(a)}>
                     <div>
@@ -1142,57 +1159,13 @@ function SecaoDiasEspeciaisPD({
 }
 
 // ─── Seção Pré-Diário ─────────────────────────────────────────────────────────
-function useDiasEspeciaisMes(mesSel: number, anoSel: number) {
-  const [feriados, setFeriados] = useState<DiaEspecialPD[]>([]);
-  const [recessos, setRecessos] = useState<DiaEspecialPD[]>([]);
-  const primeiro = useRef(true);
-
-  const nacionaisDoMes = useMemo(() => {
-    const result: { dia: number; nome: string }[] = [];
-    for (const [chave, nome] of Object.entries(FERIADOS_NACIONAIS_PD)) {
-      const [a, m, d] = chave.split("-").map(Number);
-      if (a === anoSel && m - 1 === mesSel) result.push({ dia: d, nome });
-    }
-    return result.sort((x, y) => x.dia - y.dia);
-  }, [mesSel, anoSel]);
-
-  useEffect(() => {
-    const inicial = nacionaisDoMes.map((f, i) => ({
-      id: `fn-${i}-${f.dia}`, dia: f.dia, nome: f.nome, tipo: "feriado" as const,
-    }));
-    setFeriados(inicial);
-    if (!primeiro.current) setRecessos([]);
-    primeiro.current = false;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mesSel, anoSel]);
-
-  const addFeriado   = () => setFeriados(p => [...p, { id: `f-${Date.now()}`, dia: 1, nome: "", tipo: "feriado" }]);
-  const removeFeriado = (id: string) => setFeriados(p => p.filter(f => f.id !== id));
-  const updateFeriado = (id: string, campo: "dia" | "nome", valor: string | number) =>
-    setFeriados(p => p.map(f => f.id === id ? { ...f, [campo]: valor } : f));
-
-  const addRecesso   = () => setRecessos(p => [...p, { id: `r-${Date.now()}`, dia: 1, nome: "Recesso Escolar", tipo: "recesso" }]);
-  const removeRecesso = (id: string) => setRecessos(p => p.filter(r => r.id !== id));
-  const updateRecesso = (id: string, campo: "dia" | "nome", valor: string | number) =>
-    setRecessos(p => p.map(r => r.id === id ? { ...r, [campo]: valor } : r));
-
-  const diasNoMes = new Date(anoSel, mesSel + 1, 0).getDate();
-
-  const previewCount = useMemo(() => {
-    const excl = new Set([...feriados.map(f => f.dia), ...recessos.map(r => r.dia)]);
-    let c = 0;
-    for (let d = 1; d <= diasNoMes; d++) {
-      if (excl.has(d)) continue;
-      const dow = new Date(anoSel, mesSel, d).getDay();
-      if (dow === 0 || dow === 6) continue;
-      c++;
-    }
-    return c;
-  }, [mesSel, anoSel, diasNoMes, feriados, recessos]);
-
-  return { feriados, recessos, diasNoMes, previewCount,
-           addFeriado, removeFeriado, updateFeriado,
-           addRecesso, removeRecesso, updateRecesso };
+function obterFeriadosNacionais(mes: number, ano: number) {
+  const result: { dia: number; nome: string }[] = [];
+  for (const [chave, nome] of Object.entries(FERIADOS_NACIONAIS_PD)) {
+    const [a, m, d] = chave.split("-").map(Number);
+    if (a === ano && m - 1 === mes) result.push({ dia: d, nome });
+  }
+  return result.sort((x, y) => x.dia - y.dia);
 }
 
 function SecaoPreDiario() {
@@ -1202,23 +1175,90 @@ function SecaoPreDiario() {
   type AlunoRev = { tmpId: string; n: number; nome: string; ativo: boolean };
   type BlocoRev = { turma: any; alunos: AlunoRev[]; grupos: any[] };
 
+  const { data: me } = useGetMe({ query: { retry: false } } as any);
   const [turmas, setTurmas]         = useState<any[]>([]);
   const [turmasSel, setTurmasSel]   = useState<Set<string>>(new Set()); // vazio = todas
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro]             = useState("");
-  const [segundoMes, setSegundoMes] = useState(false);
   const [dadosRevisao, setDadosRevisao] = useState<BlocoRev[] | null>(null);
   const [editandoNome, setEditandoNome] = useState<string | null>(null); // tmpId sendo editado
 
-  // Mês 1
-  const [mesSel, setMesSel]   = useState(hoje.getMonth());
-  const [anoSel, setAnoSel]   = useState(hoje.getFullYear());
-  const m1 = useDiasEspeciaisMes(mesSel, anoSel);
+  const [meses, setMeses] = useState<any[]>(() => {
+    const m = hoje.getMonth();
+    const a = hoje.getFullYear();
+    const f = obterFeriadosNacionais(m, a).map((fn, i) => ({
+      id: `fn-${i}-${fn.dia}`, dia: fn.dia, nome: fn.nome, tipo: "feriado" as const
+    }));
+    return [{ id: "m-initial", mes: m, ano: a, feriados: f, recessos: [] }];
+  });
 
-  // Mês 2
-  const [mesSel2, setMesSel2] = useState((hoje.getMonth() + 1) % 12);
-  const [anoSel2, setAnoSel2] = useState(hoje.getMonth() === 11 ? hoje.getFullYear() + 1 : hoje.getFullYear());
-  const m2 = useDiasEspeciaisMes(mesSel2, anoSel2);
+  function adicionarMes() {
+    setMeses(prev => {
+      const ult = prev[prev.length - 1];
+      const proximoMes = (ult.mes + 1) % 12;
+      const proximoAno = ult.mes === 11 ? ult.ano + 1 : ult.ano;
+      const f = obterFeriadosNacionais(proximoMes, proximoAno).map((fn, i) => ({
+        id: `fn-${i}-${fn.dia}`, dia: fn.dia, nome: fn.nome, tipo: "feriado" as const
+      }));
+      return [...prev, {
+        id: `m-${Date.now()}`,
+        mes: proximoMes,
+        ano: proximoAno,
+        feriados: f,
+        recessos: []
+      }];
+    });
+  }
+
+  function removerMes(id: string) {
+    if (meses.length <= 1) return;
+    setMeses(prev => prev.filter(m => m.id !== id));
+  }
+
+  function atualizarMesCampos(id: string, campo: "mes" | "ano", valor: number) {
+    setMeses(prev => prev.map(m => {
+      if (m.id !== id) return m;
+      const novoM = campo === "mes" ? valor : m.mes;
+      const novoA = campo === "ano" ? valor : m.ano;
+      const f = obterFeriadosNacionais(novoM, novoA).map((fn, i) => ({
+        id: `fn-${i}-${fn.dia}`, dia: fn.dia, nome: fn.nome, tipo: "feriado" as const
+      }));
+      return { ...m, [campo]: valor, feriados: f, recessos: [] };
+    }));
+  }
+
+  function addFeriado(mesId: string) {
+    setMeses(prev => prev.map(m => m.id === mesId ? { ...m, feriados: [...m.feriados, { id: `f-${Date.now()}`, dia: 1, nome: "", tipo: "feriado" }] } : m));
+  }
+  function removeFeriado(mesId: string, id: string) {
+    setMeses(prev => prev.map(m => m.id === mesId ? { ...m, feriados: m.feriados.filter((f: any) => f.id !== id) } : m));
+  }
+  function updateFeriado(mesId: string, id: string, campo: "dia" | "nome", valor: string | number) {
+    setMeses(prev => prev.map(m => m.id === mesId ? { ...m, feriados: m.feriados.map((f: any) => f.id === id ? { ...f, [campo]: valor } : f) } : m));
+  }
+
+  function addRecesso(mesId: string) {
+    setMeses(prev => prev.map(m => m.id === mesId ? { ...m, recessos: [...m.recessos, { id: `r-${Date.now()}`, dia: 1, nome: "Recesso Escolar", tipo: "recesso" }] } : m));
+  }
+  function removeRecesso(mesId: string, id: string) {
+    setMeses(prev => prev.map(m => m.id === mesId ? { ...m, recessos: m.recessos.filter((r: any) => r.id !== id) } : m));
+  }
+  function updateRecesso(mesId: string, id: string, campo: "dia" | "nome", valor: string | number) {
+    setMeses(prev => prev.map(m => m.id === mesId ? { ...m, recessos: m.recessos.map((r: any) => r.id === id ? { ...r, [campo]: valor } : r) } : m));
+  }
+
+  function calcularPreviewCount(mSel: number, aSel: number, feriados: any[], recessos: any[]) {
+    const diasNoMes = new Date(aSel, mSel + 1, 0).getDate();
+    const excl = new Set([...feriados.map(f => f.dia), ...recessos.map(r => r.dia)]);
+    let c = 0;
+    for (let d = 1; d <= diasNoMes; d++) {
+      if (excl.has(d)) continue;
+      const dow = new Date(aSel, mSel, d).getDay();
+      if (dow === 0 || dow === 6) continue;
+      c++;
+    }
+    return c;
+  }
 
   useEffect(() => {
     fetch(`${BASE}api/turmas`, { credentials: "include" })
@@ -1249,45 +1289,44 @@ function SecaoPreDiario() {
     setCarregando(true);
     setErro("");
     try {
-      const nomeMes1 = `${MESES_NOME[mesSel].toUpperCase()} ${anoSel}`;
-      const nomeMes2 = `${MESES_NOME[mesSel2].toUpperCase()} ${anoSel2}`;
-
-      const raw1 = await buscarMes(mesSel, anoSel, m1.feriados, m1.recessos);
-      const dados1 = filtrarPorTurmas(raw1);
-      if (!dados1.length) { setErro("Nenhuma turma encontrada."); return; }
-
-      let dadosFinal: any[];
-      if (segundoMes) {
-        const raw2   = await buscarMes(mesSel2, anoSel2, m2.feriados, m2.recessos);
-        const dados2 = filtrarPorTurmas(raw2);
-        dadosFinal = dados1.map((bloco1: any) => {
-          const bloco2 = dados2.find((b: any) => b.turma.nome === bloco1.turma.nome) ?? { datasLetivas: [] };
+      const dadosMeses = await Promise.all(
+        meses.map(async (m) => {
+          const raw = await buscarMes(m.mes, m.ano, m.feriados, m.recessos);
+          const dados = filtrarPorTurmas(raw);
           return {
-            ...bloco1,
-            grupos: [
-              { nomeMes: nomeMes1, datas: bloco1.datasLetivas ?? [] },
-              { nomeMes: nomeMes2, datas: bloco2.datasLetivas ?? [] },
-            ],
+            nomeMes: `${MESES_NOME[m.mes].toUpperCase()} ${m.ano}`,
+            dados,
           };
-        });
-      } else {
-        dadosFinal = dados1.map((bloco: any) => ({
-          ...bloco,
-          grupos: [{ nomeMes: nomeMes1, datas: bloco.datasLetivas ?? [] }],
-        }));
+        })
+      );
+
+      if (!dadosMeses[0]?.dados?.length) {
+        setErro("Nenhuma turma encontrada.");
+        return;
       }
 
-      // Converte para estrutura de revisão (com ativo e tmpId)
-      const revisao: BlocoRev[] = dadosFinal.map((bloco: any) => ({
-        turma: bloco.turma,
-        grupos: bloco.grupos,
-        alunos: (bloco.alunos ?? []).map((a: any, i: number) => ({
-          tmpId: `${bloco.turma?.nome ?? i}-${a.n}-${i}`,
-          n: a.n,
-          nome: a.nome,
-          ativo: true,
-        })),
-      }));
+      const primeiroMesDados = dadosMeses[0].dados;
+      const revisao: BlocoRev[] = primeiroMesDados.map((bloco1: any) => {
+        const grupos = dadosMeses.map((dm) => {
+          const blocoMes = dm.dados.find((b: any) => b.turma.nome === bloco1.turma.nome) ?? { datasLetivas: [] };
+          return {
+            nomeMes: dm.nomeMes,
+            datas: blocoMes.datasLetivas ?? [],
+          };
+        });
+
+        return {
+          turma: bloco1.turma,
+          grupos,
+          alunos: (bloco1.alunos ?? []).map((a: any, i: number) => ({
+            tmpId: `${bloco1.turma?.nome ?? i}-${a.n}-${i}`,
+            n: a.n,
+            nome: a.nome,
+            ativo: true,
+          })),
+        };
+      });
+
       setDadosRevisao(revisao);
     } catch (e: any) {
       setErro(e.message || "Erro ao gerar pré-diário");
@@ -1447,11 +1486,45 @@ function SecaoPreDiario() {
     });
   }
 
-  const labelBotao = segundoMes
-    ? `${MESES_NOME[mesSel]} + ${MESES_NOME[mesSel2]} ${anoSel}`
-    : `${MESES_NOME[mesSel]} ${anoSel}`;
+  const [imprimindoPreDiarioRicoh, setImprimindoPreDiarioRicoh] = useState(false);
 
-  const previewTotal = m1.previewCount + (segundoMes ? m2.previewCount : 0);
+  async function imprimirPreDiarioNaRicoh() {
+    if (!dadosRevisao) return;
+    setImprimindoPreDiarioRicoh(true);
+    try {
+      const dadosParaGerar = dadosRevisao.map(bloco => ({
+        ...bloco,
+        alunos: bloco.alunos
+          .filter(a => a.ativo)
+          .map((a, i) => ({ n: i + 1, nome: a.nome })),
+      }));
+      const html = gerarHtmlPreDiario(dadosParaGerar);
+      const blob = new Blob([html], { type: "text/html" });
+      const file = new File([blob], `Pre-Diario.html`, { type: "text/html" });
+
+      const form = new FormData();
+      form.append("professorSolicitante", me?.nomeCompleto || "Master");
+      form.append("quantidadeCopias", "1");
+      form.append("impressoraNome", "RICOH");
+      form.append("arquivo", file);
+
+      const res = await fetch(`${BASE}api/impressoes`, { method: "POST", body: form });
+      if (!res.ok) throw new Error("Erro ao enviar para impressora");
+
+      alert("Enviado para a RICOH com sucesso!");
+      setDadosRevisao(null);
+      setEditandoNome(null);
+    } catch (err) {
+      console.error(err);
+      alert("Erro ao tentar imprimir na RICOH.");
+    } finally {
+      setImprimindoPreDiarioRicoh(false);
+    }
+  }
+
+  const labelBotao = meses.map(m => `${MESES_NOME[m.mes]} ${m.ano}`).join(" + ");
+
+  const previewTotal = meses.reduce((acc, m) => acc + calcularPreviewCount(m.mes, m.ano, m.feriados, m.recessos), 0);
 
   // ── UI helpers ──────────────────────────────────────────────────────────────
   function SelectMes({ value, onChange }: { value: number; onChange: (v: number) => void }) {
@@ -1600,6 +1673,13 @@ function SecaoPreDiario() {
                 <FileSpreadsheet className="h-4 w-4" />
                 Baixar Excel
               </button>
+              <button
+                onClick={imprimirPreDiarioNaRicoh}
+                disabled={imprimindoPreDiarioRicoh}
+                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition-colors shadow-lg shadow-blue-500/20">
+                {imprimindoPreDiarioRicoh ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
+                Imprimir na RICOH
+              </button>
             </div>
           </div>
         </div>
@@ -1693,85 +1773,78 @@ function SecaoPreDiario() {
           <div>
             <p className="text-orange-300 font-bold text-sm">~{previewTotal} colunas de dias letivos</p>
             <p className="text-white/40 text-xs">
-              {MESES_NOME[mesSel]} {anoSel}{segundoMes ? ` + ${MESES_NOME[mesSel2]} ${anoSel2}` : ""}
+              {meses.map(m => `${MESES_NOME[m.mes]} ${m.ano}`).join(" + ")}
               {" "}· fins de semana e dias especiais excluídos
             </p>
           </div>
         </div>
       </div>
 
-      {/* ── Mês 1 ── */}
-      <div className="rounded-2xl border border-white/10 bg-white/3 p-5 space-y-4">
-        <p className="text-xs font-black uppercase tracking-widest text-slate-400 flex items-center gap-2">
-          <Calendar className="h-3.5 w-3.5" />
-          {segundoMes ? "1º Mês" : "Mês"}
-        </p>
-        <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-1.5">
-            <Label className="text-xs text-slate-400">Mês</Label>
-            <SelectMes value={mesSel} onChange={setMesSel} />
+      {/* ── Meses ── */}
+      {meses.map((m, idx) => {
+        const diasNoMes = new Date(m.ano, m.mes + 1, 0).getDate();
+        return (
+          <div key={m.id} className="rounded-2xl border border-white/10 bg-white/3 p-5 space-y-4 relative">
+            {idx > 0 && (
+              <button
+                onClick={() => removerMes(m.id)}
+                className="absolute top-4 right-4 text-xs text-red-400 hover:text-red-300 font-bold px-2 py-1 rounded bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 transition-colors"
+              >
+                Remover Mês
+              </button>
+            )}
+            <p className="text-xs font-black uppercase tracking-widest text-slate-400 flex items-center gap-2">
+              <Calendar className="h-3.5 w-3.5" />
+              {meses.length > 1 ? `${idx + 1}º Mês` : "Mês"}
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs text-slate-400">Mês</Label>
+                <SelectMes value={m.mes} onChange={v => atualizarMesCampos(m.id, "mes", v)} />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-slate-400">Ano</Label>
+                <SelectAno value={m.ano} onChange={v => atualizarMesCampos(m.id, "ano", v)} />
+              </div>
+            </div>
+            <SecaoDiasEspeciaisPD
+              titulo="Feriados e Pontos Facultativos"
+              cor="red"
+              diasNoMes={diasNoMes}
+              ano={m.ano}
+              mes={m.mes}
+              itens={m.feriados}
+              onAdd={() => addFeriado(m.id)}
+              onRemove={id => removeFeriado(m.id, id)}
+              onUpdate={(id, campo, valor) => updateFeriado(m.id, id, campo, valor)}
+            />
+            <SecaoDiasEspeciaisPD
+              titulo="Recessos Escolares"
+              cor="amber"
+              diasNoMes={diasNoMes}
+              ano={m.ano}
+              mes={m.mes}
+              itens={m.recessos}
+              onAdd={() => addRecesso(m.id)}
+              onRemove={id => removeRecesso(m.id, id)}
+              onUpdate={(id, campo, valor) => updateRecesso(m.id, id, campo, valor)}
+            />
           </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs text-slate-400">Ano</Label>
-            <SelectAno value={anoSel} onChange={setAnoSel} />
-          </div>
-        </div>
-        <SecaoDiasEspeciaisPD titulo="Feriados e Pontos Facultativos" cor="red"
-          diasNoMes={m1.diasNoMes} ano={anoSel} mes={mesSel}
-          itens={m1.feriados} onAdd={m1.addFeriado} onRemove={m1.removeFeriado} onUpdate={m1.updateFeriado} />
-        <SecaoDiasEspeciaisPD titulo="Recessos Escolares" cor="amber"
-          diasNoMes={m1.diasNoMes} ano={anoSel} mes={mesSel}
-          itens={m1.recessos} onAdd={m1.addRecesso} onRemove={m1.removeRecesso} onUpdate={m1.updateRecesso} />
-      </div>
+        );
+      })}
 
-      {/* ── Toggle segundo mês ── */}
+      {/* ── Botão Adicionar Mês ── */}
       <button
-        onClick={() => setSegundoMes(v => !v)}
-        className={`w-full flex items-center justify-between px-4 py-3 rounded-xl border transition-colors
-          ${segundoMes
-            ? "border-orange-500/40 bg-orange-500/10 text-orange-300"
-            : "border-white/10 bg-white/3 text-white/50 hover:bg-white/8 hover:text-white/70"}`}
+        onClick={adicionarMes}
+        className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl border border-dashed border-orange-500/30 bg-orange-500/5 text-orange-400 hover:bg-orange-500/10 transition-colors font-semibold text-sm"
       >
-        <span className="flex items-center gap-2 text-sm font-semibold">
-          <Calendar className="h-4 w-4" />
-          {segundoMes ? "Remover segundo mês" : "Incluir segundo mês no documento"}
-        </span>
-        <div className={`w-10 h-5 rounded-full transition-colors flex items-center px-0.5
-          ${segundoMes ? "bg-orange-500" : "bg-white/20"}`}>
-          <div className={`w-4 h-4 rounded-full bg-white shadow transition-transform
-            ${segundoMes ? "translate-x-5" : "translate-x-0"}`} />
-        </div>
+        <Plus className="h-4 w-4" />
+        Adicionar mais um mês
       </button>
-
-      {/* ── Mês 2 (condicional) ── */}
-      {segundoMes && (
-        <div className="rounded-2xl border border-orange-500/20 bg-orange-500/3 p-5 space-y-4">
-          <p className="text-xs font-black uppercase tracking-widest text-orange-400/70 flex items-center gap-2">
-            <Calendar className="h-3.5 w-3.5" />2º Mês
-          </p>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label className="text-xs text-slate-400">Mês</Label>
-              <SelectMes value={mesSel2} onChange={setMesSel2} />
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs text-slate-400">Ano</Label>
-              <SelectAno value={anoSel2} onChange={setAnoSel2} />
-            </div>
-          </div>
-          <SecaoDiasEspeciaisPD titulo="Feriados e Pontos Facultativos" cor="red"
-            diasNoMes={m2.diasNoMes} ano={anoSel2} mes={mesSel2}
-            itens={m2.feriados} onAdd={m2.addFeriado} onRemove={m2.removeFeriado} onUpdate={m2.updateFeriado} />
-          <SecaoDiasEspeciaisPD titulo="Recessos Escolares" cor="amber"
-            diasNoMes={m2.diasNoMes} ano={anoSel2} mes={mesSel2}
-            itens={m2.recessos} onAdd={m2.addRecesso} onRemove={m2.removeRecesso} onUpdate={m2.updateRecesso} />
-        </div>
-      )}
 
       {/* Observações */}
       <div className="rounded-xl bg-white/5 border border-white/10 px-4 py-3 text-xs text-white/50 space-y-1">
         <p>• Os feriados nacionais de cada mês são carregados automaticamente.</p>
-        <p>• Com dois meses: o documento terá uma faixa azul separando cada mês na tabela.</p>
         <p>• O documento é gerado em formato A4 Paisagem — ideal para impressão.</p>
       </div>
 
@@ -1810,7 +1883,7 @@ function SecaoEmBreve({ titulo, cor, descricao }: { titulo: string; cor: string;
 }
 
 // ─── Hub ──────────────────────────────────────────────────────────────────────
-type SecaoId = "declaracoes" | "infantil" | "fundamental" | "ponto" | "prediario";
+type SecaoId = "declaracoes" | "infantil" | "fundamental" | "ponto" | "prediario" | "relatorio_individual";
 
 const SECOES: { id: SecaoId; label: string; descricao: string; icone: any; cor: string; badge?: string }[] = [
   { id: "declaracoes",  label: "Declarações",                   descricao: "Gere declarações preenchidas automaticamente",                      icone: FileText,      cor: "blue" },
@@ -1818,6 +1891,7 @@ const SECOES: { id: SecaoId; label: string; descricao: string; icone: any; cor: 
   { id: "infantil",     label: "Documentos Ensino Infantil",    descricao: "Documentos específicos da Educação Infantil",                       icone: Baby,          cor: "violet",  badge: "Em breve" },
   { id: "fundamental",  label: "Documentos Ensino Fundamental", descricao: "Documentos específicos do Ensino Fundamental",                      icone: BookOpen,      cor: "emerald", badge: "Em breve" },
   { id: "ponto",        label: "Ponto dos Funcionários",        descricao: "Registro e controle de ponto da equipe escolar",                    icone: ClipboardList, cor: "cyan",    badge: "Em breve" },
+  { id: "relatorio_individual", label: "Relatório individual do aluno", descricao: "Gere o relatório individual de avaliação e comportamento", icone: ClipboardList, cor: "violet",  badge: "Em breve" },
 ];
 
 const COR_CARD: Record<string, { bg: string; border: string; text: string; icon: string; hover: string }> = {
@@ -1900,6 +1974,7 @@ export default function DocumentosPage() {
         {secaoAtiva === "prediario"   && <SecaoPreDiario />}
         {secaoAtiva === "infantil"     && <SecaoEmBreve titulo="Documentos Ensino Infantil"    cor="violet"  />}
         {secaoAtiva === "fundamental"  && <SecaoEmBreve titulo="Documentos Ensino Fundamental" cor="emerald" />}
+        {secaoAtiva === "relatorio_individual" && <SecaoEmBreve titulo="Relatório individual do aluno" cor="violet" />}
       </div>
     </AppLayout>
   );
