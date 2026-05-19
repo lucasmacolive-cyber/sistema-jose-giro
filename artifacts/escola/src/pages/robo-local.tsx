@@ -308,13 +308,34 @@ export default function RoboLocalPage() {
     }
   }, [salvando]);
 
+  // ── Polling mais leve apenas de status (preserva a config que o usuário digita) ──
+  const loadStatusOnly = useCallback(async () => {
+    try {
+      const r = await fetch(`${BASE}/api/robo/status`, {
+        credentials: "include",
+      });
+      const res = await r.json();
+      if (res.ok) {
+        setOnline(res.online);
+        setStatus(res.status || null);
+      } else {
+        setOnline(false);
+      }
+    } catch {
+      setOnline(false);
+    }
+  }, []);
+
   // ── Polling inicial e recorrente ───────────────────────────────────────
   useEffect(() => {
     loadData(true);
+  }, [loadData]);
+
+  useEffect(() => {
     const intervalTime = syncingDiarios || syncingAlunos || status?.sincronizando_diarios || status?.sincronizando_alunos ? 2000 : 5000;
-    const t = setInterval(() => loadData(false), intervalTime);
+    const t = setInterval(() => loadStatusOnly(), intervalTime);
     return () => clearInterval(t);
-  }, [loadData, syncingDiarios, syncingAlunos, status?.sincronizando_diarios, status?.sincronizando_alunos]);
+  }, [loadStatusOnly, syncingDiarios, syncingAlunos, status?.sincronizando_diarios, status?.sincronizando_alunos]);
 
   // ── Salvar config ──────────────────────────────────────────────────────
   async function salvarConfig() {
@@ -332,6 +353,8 @@ export default function RoboLocalPage() {
       if (res.ok) {
         setSavedOk(true);
         setTimeout(() => setSavedOk(false), 3000);
+        // Força sincronização de volta
+        loadData(false);
       } else {
         alert("Erro ao salvar configuração: " + res.mensagem);
       }
@@ -411,18 +434,70 @@ export default function RoboLocalPage() {
           </div>
         )}
 
-        {/* ── Status de sync atual ──────────────────────────────────── */}
+        {/* ── Status de progresso atual ──────────────────────────────────── */}
         {(isSyncingDiarios || isSyncingAlunos) && (
-          <div className="bg-amber-500/5 border border-amber-500/20 rounded-2xl px-5 py-4 flex items-center gap-3">
-            <Loader2 className="h-5 w-5 text-amber-400 animate-spin shrink-0" />
-            <div>
-              <p className="text-sm font-semibold text-amber-300">Sincronização em andamento no computador da escola</p>
-              <p className="text-xs text-amber-200/60 mt-0.5">
-                {isSyncingDiarios && "Baixando diários do SUAP..."}
-                {isSyncingDiarios && isSyncingAlunos && " • "}
-                {isSyncingAlunos && "Sincronizando alunos..."}
-              </p>
+          <div className="bg-white/5 border border-white/10 rounded-2xl p-6 flex flex-col gap-4 shadow-xl backdrop-blur-md">
+            <div className="flex items-center gap-3">
+              <Loader2 className="h-5 w-5 text-amber-400 animate-spin shrink-0" />
+              <div>
+                <h3 className="text-sm font-bold text-white">Sincronização Ativa em Andamento</h3>
+                <p className="text-xs text-slate-400">O robô local no computador da escola está processando as informações...</p>
+              </div>
             </div>
+
+            {/* Progresso de Diários */}
+            {isSyncingDiarios && (() => {
+              const prog = status?.progresso_diarios;
+              const atual = prog?.atual ?? 0;
+              const total = prog?.total ?? 0;
+              const msg = prog?.msg ?? "Iniciando download dos diários...";
+              const pct = total > 0 ? Math.round((atual / total) * 100) : 0;
+              return (
+                <div className="bg-black/20 border border-white/5 rounded-xl p-4 flex flex-col gap-3">
+                  <div className="flex justify-between items-center text-xs font-semibold">
+                    <span className="text-emerald-400 flex items-center gap-1.5">
+                      <BookOpen className="h-3.5 w-3.5" />
+                      {msg}
+                    </span>
+                    <span className="text-slate-300">{atual}/{total} ({pct}%)</span>
+                  </div>
+                  {/* Trilho e Barra */}
+                  <div className="w-full h-2.5 bg-white/5 rounded-full overflow-hidden border border-white/5">
+                    <div
+                      className="h-full bg-gradient-to-r from-emerald-500 to-teal-400 transition-all duration-500 ease-out"
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Progresso de Alunos */}
+            {isSyncingAlunos && (() => {
+              const prog = status?.progresso_alunos;
+              const atual = prog?.atual ?? 0;
+              const total = prog?.total ?? 1;
+              const msg = prog?.msg ?? "Verificando lista de alunos no SUAP...";
+              const pct = total > 0 ? Math.round((atual / total) * 100) : 0;
+              return (
+                <div className="bg-black/20 border border-white/5 rounded-xl p-4 flex flex-col gap-3">
+                  <div className="flex justify-between items-center text-xs font-semibold">
+                    <span className="text-blue-400 flex items-center gap-1.5">
+                      <Users className="h-3.5 w-3.5" />
+                      {msg}
+                    </span>
+                    <span className="text-slate-300">{pct}%</span>
+                  </div>
+                  {/* Trilho e Barra */}
+                  <div className="w-full h-2.5 bg-white/5 rounded-full overflow-hidden border border-white/5">
+                    <div
+                      className="h-full bg-gradient-to-r from-blue-500 to-indigo-400 transition-all duration-500 ease-out"
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         )}
 
