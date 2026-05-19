@@ -303,7 +303,7 @@ function gerarHtmlImpressao(
 
 export default function ListagensPage() {
   const { data: me } = useGetMe({ query: { retry: false } } as any);
-  const { data: turmas = [] } = useListarTurmas();
+  const { data: turmas = [], isLoading: turmasLoading } = useListarTurmas();
   const isMaster = me?.perfil === "Master";
 
   const [turmaSelecionada, setTurmaSelecionada]   = useState("");
@@ -720,6 +720,10 @@ export default function ListagensPage() {
 
   const qtdProf = Object.values(colProf).filter(Boolean).length;
 
+  function toggleColProf(ref: string) {
+    setColProf((prev) => ({ ...prev, [ref]: !prev[ref] }));
+  }
+
   async function gerarHtmlProfessores() {
     setGerandoProf(true);
     try {
@@ -849,6 +853,10 @@ export default function ListagensPage() {
   const [exportandoFunc, setExportandoFunc] = useState(false);
 
   const qtdFunc = Object.values(colFunc).filter(Boolean).length;
+
+  function toggleColFunc(ref: string) {
+    setColFunc((prev) => ({ ...prev, [ref]: !prev[ref] }));
+  }
 
   async function gerarHtmlFuncionarios() {
     setGerandoFunc(true);
