@@ -169,7 +169,6 @@ if not exist "%SYS_DIR%" mkdir "%SYS_DIR%"
 echo.
 echo 3. Baixando arquivos atualizados de: ${b}
 powershell -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest '${b}/api/impressoes/script-impressora' -OutFile '%SYS_DIR%\\impressora_escola.py'"
-powershell -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest '${b}/api/impressoes/impressora-loop.vbs' -OutFile '%STARTUP_DIR%\\robo-impressao-escola.vbs'"
 
 echo.
 echo 4. Verificando SumatraPDF...
@@ -182,6 +181,31 @@ if not exist "%SYS_DIR%\\SumatraPDF.exe" (
 echo.
 echo 5. Verificando bibliotecas...
 python -m pip install requests img2pdf pdfplumber Pillow --quiet
+
+echo.
+echo 6. Configurando inicializacao automatica...
+set "PYTHON_EXE="
+for /f "delims=" %%i in ('where python 2^>nul') do (
+  echo %%i | findstr /i "WindowsApps" >nul
+  if errorlevel 1 (
+    if not defined PYTHON_EXE set "PYTHON_EXE=%%i"
+  )
+)
+
+if not defined PYTHON_EXE (
+  set "PYTHON_EXE=python.exe"
+)
+
+set "PYTHONW_EXE=%PYTHON_EXE:python.exe=pythonw.exe%"
+
+echo Criando robo-impressao-escola.vbs em Startup...
+echo Dim WshShell, pyScript > "%STARTUP_DIR%\\robo-impressao-escola.vbs"
+echo Set WshShell = CreateObject("WScript.Shell") >> "%STARTUP_DIR%\\robo-impressao-escola.vbs"
+echo pyScript = "%SYS_DIR%\\impressora_escola.py" >> "%STARTUP_DIR%\\robo-impressao-escola.vbs"
+echo Do >> "%STARTUP_DIR%\\robo-impressao-escola.vbs"
+echo     WshShell.Run Chr(34) ^& "%PYTHONW_EXE%" ^& Chr(34) ^& " " ^& Chr(34) ^& pyScript ^& Chr(34), 0, True >> "%STARTUP_DIR%\\robo-impressao-escola.vbs"
+echo     WScript.Sleep 5000 >> "%STARTUP_DIR%\\robo-impressao-escola.vbs"
+echo Loop >> "%STARTUP_DIR%\\robo-impressao-escola.vbs"
 
 echo.
 echo ==================================================
