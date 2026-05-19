@@ -42,21 +42,44 @@ function StatusBadge({ online }: { online: boolean | null }) {
   );
 }
 
+/* ─── Mapeamento de Cores para Tailwind ────────────────────────────────── */
+const COR_MAP: Record<string, { bg: string; text: string; textLight: string; border: string; borderStrong: string; bgActive: string; toggle: string }> = {
+  emerald: {
+    bg: "bg-emerald-500/10",
+    text: "text-emerald-400",
+    textLight: "text-emerald-300",
+    border: "border-emerald-500/30",
+    borderStrong: "border-emerald-500/40",
+    bgActive: "bg-emerald-500/20",
+    toggle: "bg-emerald-500",
+  },
+  blue: {
+    bg: "bg-blue-500/10",
+    text: "text-blue-400",
+    textLight: "text-blue-300",
+    border: "border-blue-500/30",
+    borderStrong: "border-blue-500/40",
+    bgActive: "bg-blue-500/20",
+    toggle: "bg-blue-500",
+  },
+};
+
 /* ─── Card de resultado da última sync ────────────────────────────────── */
 function UltimoResultado({
   titulo, icone: Icone, cor, dado, sincronizando,
 }: {
   titulo: string;
   icone: any;
-  cor: string;
+  cor: "emerald" | "blue";
   dado: { hora: string; resultado: string; ok: boolean } | null;
   sincronizando: boolean;
 }) {
+  const cmap = COR_MAP[cor] || COR_MAP.blue;
   return (
     <div className="bg-white/5 border border-white/10 rounded-2xl p-5 flex flex-col gap-3">
       <div className="flex items-center gap-2">
-        <div className={`p-2 rounded-xl bg-${cor}-500/10`}>
-          <Icone className={`h-4 w-4 text-${cor}-400`} />
+        <div className={`p-2 rounded-xl ${cmap.bg}`}>
+          <Icone className={`h-4 w-4 ${cmap.text}`} />
         </div>
         <span className="text-sm font-semibold text-white">{titulo}</span>
         {sincronizando && (
@@ -94,11 +117,13 @@ function HorarioEditor({
   label, icone: Icone, cor, horarios, ativo,
   onChangeAtivo, onChangeHorarios,
 }: {
-  label: string; icone: any; cor: string;
+  label: string; icone: any; cor: "emerald" | "blue";
   horarios: any[]; ativo: boolean;
   onChangeAtivo: (v: boolean) => void;
   onChangeHorarios: (h: any[]) => void;
 }) {
+  const cmap = COR_MAP[cor] || COR_MAP.blue;
+
   function addHorario() {
     onChangeHorarios([...horarios, { hora: 6, minuto: 0, dias_semana: [0, 1, 2, 3, 4] }]);
   }
@@ -121,15 +146,15 @@ function HorarioEditor({
     <div className="bg-white/5 border border-white/10 rounded-2xl p-5 flex flex-col gap-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <div className={`p-2 rounded-xl bg-${cor}-500/10`}>
-            <Icone className={`h-4 w-4 text-${cor}-400`} />
+          <div className={`p-2 rounded-xl ${cmap.bg}`}>
+            <Icone className={`h-4 w-4 ${cmap.text}`} />
           </div>
           <span className="text-sm font-bold text-white">{label}</span>
         </div>
         <button
           onClick={() => onChangeAtivo(!ativo)}
           className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-            ativo ? `bg-${cor}-500` : "bg-white/10"
+            ativo ? cmap.toggle : "bg-white/10"
           }`}
         >
           <span
@@ -187,7 +212,7 @@ function HorarioEditor({
                     onClick={() => toggleDia(i, dIdx)}
                     className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
                       h.dias_semana.includes(dIdx)
-                        ? `bg-${cor}-500/20 text-${cor}-300 border border-${cor}-500/40`
+                        ? `${cmap.bgActive} ${cmap.textLight} border ${cmap.borderStrong}`
                         : "bg-white/5 text-slate-500 border border-white/5 hover:border-white/20"
                     }`}
                   >
