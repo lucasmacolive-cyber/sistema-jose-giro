@@ -289,7 +289,8 @@ def proc(job):
         r = requests.get(f"{API}{job['linkArquivo']}", stream=True)
         
         is_pdf = "pdf" in job.get("tipoArquivo","").lower() or name.lower().endswith(".pdf")
-        ext = ".pdf" if is_pdf else ".png"
+        is_html = "html" in job.get("tipoArquivo","").lower() or name.lower().endswith(".html") or name.lower().endswith(".htm")
+        ext = ".pdf" if is_pdf else (".html" if is_html else ".png")
         
         tf = tempfile.NamedTemporaryFile(delete=False, suffix=ext)
         for c in r.iter_content(8192):
@@ -298,7 +299,24 @@ def proc(job):
         
         print_file = tf.name
         
-        if not is_pdf:
+        if is_html:
+            log("Convertendo HTML para PDF usando MS Edge...")
+            pdf_path = print_file + ".pdf"
+            edge_path = r"C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe"
+            if os.path.exists(edge_path):
+                try:
+                    cmd = [edge_path, "--headless", "--disable-gpu", f"--print-to-pdf={pdf_path}", print_file]
+                    subprocess.run(cmd, check=True, timeout=30)
+                    os.unlink(print_file)
+                    print_file = pdf_path
+                    is_pdf = True
+                except Exception as e:
+                    log(f"Falha na conversao de HTML para PDF com Edge: {e}")
+                    raise e
+            else:
+                log("MS Edge nao encontrado para converter HTML.")
+                raise Exception("MS Edge nao encontrado para conversao de HTML")
+        elif not is_pdf:
             log("Convertendo imagem para PDF...")
             pdf_path = print_file + ".pdf"
             try:
