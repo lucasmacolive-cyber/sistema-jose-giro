@@ -89,46 +89,69 @@ export default function DiariosPage() {
   const iniciarSincronizacao = async () => {
     if (fase === "baixando") return;
     setFase("baixando");
-    setProgresso({ atual: 0, total: 0, msg: "Iniciando...", turmaAtual: "" });
     setRelatorio(null);
+
     try {
-      const r = await fetch(`${BASE}/api/sync/baixar-todos-diarios`, {
-        method: "POST",
-        credentials: "include",
-      });
-      const data = await r.json();
-      if (!r.ok || !data.ok) {
+      // Busca turmas com link cadastrado
+      const turmasResp = await fetch(`${BASE}/api/diario/turmas`, { credentials: "include" }).then(r => r.json());
+      const todasTurmas: TurmaInfo[] = Array.isArray(turmasResp) ? turmasResp : [];
+
+      // Busca quais turmas têm link SUAP cadastrado
+      const linksResp = await fetch(`${BASE}/api/sync/diario-links-meta`, { credentials: "include" }).then(r => r.json());
+      const linksMap = new Map<string, boolean>();
+      (linksResp.links ?? []).forEach((l: any) => { if (l.turma && l.link) linksMap.set(l.turma.toUpperCase(), true); });
+
+      // Busca links nas tabela de turmas também (campo linkSuap)
+      const turmasDetalhes = await fetch(`${BASE}/api/turmas`, { credentials: "include" }).then(r => r.json()).catch(() => []);
+      const turmasComLink: string[] = (Array.isArray(turmasDetalhes) ? turmasDetalhes : [])
+        .filter((t: any) => t.linkSuap)
+        .map((t: any) => t.nomeTurma as string);
+
+      if (turmasComLink.length === 0) {
         setFase("error");
-        setProgresso(p => ({ ...p, msg: data.mensagem || "Erro ao iniciar" }));
-        toast({ title: "Erro", description: data.mensagem, variant: "destructive" });
-        setTimeout(() => setFase("idle"), 5000);
+        toast({ title: "Nenhum link cadastrado", description: "Configure os links SUAP em Ajustes → Turmas.", variant: "destructive" });
+        setTimeout(() => setFase("idle"), 6000);
         return;
       }
-      setProgresso({ atual: 0, total: data.total, msg: "Baixando...", turmaAtual: "" });
 
-      pollingRef.current = setInterval(async () => {
+      const total = turmasComLink.length;
+      const resultados: { turma: string; aulas: number; presencas: number; erro?: string }[] = [];
+      const turmasSemLink = todasTurmas.map(t => t.nomeTurma).filter(n => !turmasComLink.includes(n));
+      let ultimaSyncLocal: string | null = null;
+
+      for (let i = 0; i < turmasComLink.length; i++) {
+        const nomeTurma = turmasComLink[i];
+        setProgresso({ atual: i, total, msg: `Baixando ${nomeTurma} (${i + 1}/${total})...`, turmaAtual: nomeTurma });
+
         try {
-          const s = await fetch(`${BASE}/api/sync/baixar-todos-status`, { credentials: "include" }).then(r => r.json());
-          setProgresso({ atual: s.atual, total: s.total, msg: s.msg, turmaAtual: s.turmaAtual ?? "" });
-          if (s.concluido) {
-            pararPolling();
-            if (s.erro && !s.ultimaSync) {
-              setFase("error");
-              setTimeout(() => setFase("idle"), 6000);
-            } else {
-              setFase("done");
-              if (s.ultimaSync) setUltimaSync(s.ultimaSync);
-              if (s.resultados || s.turmasSemLink) {
-                setRelatorio({ resultados: s.resultados ?? [], turmasSemLink: s.turmasSemLink ?? [] });
-              }
-              carregarUltimaSync();
-              const concluidos = (s.resultados ?? []).filter((r: any) => !r.erro).length;
-              const comErro = (s.resultados ?? []).filter((r: any) => r.erro).length;
-              toast({ title: "Diários sincronizados!", description: `${concluidos} turmas atualizadas${comErro > 0 ? ` · ${comErro} com erro` : ""}` });
-            }
+          const r = await fetch(`${BASE}/api/sync/baixar-diario-turma`, {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ turma: nomeTurma }),
+          });
+          const data = await r.json();
+          if (!r.ok || !data.ok) {
+            resultados.push({ turma: nomeTurma, aulas: 0, presencas: 0, erro: data.mensagem ?? "Erro desconhecido" });
+          } else {
+            resultados.push({ turma: nomeTurma, aulas: data.totalAulas ?? 0, presencas: data.totalPresencas ?? 0 });
+            ultimaSyncLocal = new Date().toISOString();
           }
-        } catch { /* ignora */ }
-      }, 2000);
+        } catch (e: any) {
+          resultados.push({ turma: nomeTurma, aulas: 0, presencas: 0, erro: e.message ?? "Erro de conexão" });
+        }
+      }
+
+      const concluidos = resultados.filter(r => !r.erro).length;
+      const comErro = resultados.filter(r => r.erro).length;
+
+      setProgresso({ atual: total, total, msg: `${concluidos} turmas sincronizadas${comErro > 0 ? ` · ${comErro} com erro` : ""}`, turmaAtual: "" });
+      setFase("done");
+      setRelatorio({ resultados, turmasSemLink });
+      if (ultimaSyncLocal) setUltimaSync(ultimaSyncLocal);
+      carregarUltimaSync();
+      toast({ title: "Diários sincronizados!", description: `${concluidos} turmas atualizadas${comErro > 0 ? ` · ${comErro} com erro` : ""}` });
+
     } catch (e: any) {
       setFase("error");
       setProgresso(p => ({ ...p, msg: e.message || "Erro de conexão" }));
