@@ -356,6 +356,7 @@ router.post("/sync/baixar-todos-diarios", async (req, res) => {
     for (let i = 0; i < jobs.length; i++) {
       const { nomeTurma, link } = jobs[i];
       batchSyncState.atual = i;
+      batchSyncState.pct = Math.round((i / jobs.length) * 100);
       batchSyncState.turmaAtual = nomeTurma;
       batchSyncState.msg = `Baixando ${nomeTurma} (${i + 1}/${jobs.length})...`;
       try {
@@ -1135,16 +1136,26 @@ export async function importarSecao(
     porNome.set(normNome(a.nomeCompleto), a.id);
   }
 
+  const converterData = (dStr: string) => {
+    if (/^\d{2}\/\d{2}\/\d{4}$/.test(dStr)) return dStr;
+    const m = dStr.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    return m ? `${m[3]}/${m[2]}/${m[1]}` : dStr;
+  };
+
   // 1. Importar atividades → diario_aulas
   const datasComConteudo = new Map<string, { numAulas: number; conteudo: string }>();
   for (const at of secao.atividades) {
-    datasComConteudo.set(at.data, { numAulas: at.numAulas, conteudo: at.conteudo });
+    const dataConv = converterData(at.data);
+    datasComConteudo.set(dataConv, { numAulas: at.numAulas, conteudo: at.conteudo });
   }
 
   // Coletar todas as datas das presenças (pode haver datas sem conteúdo)
   const todasDatas = new Set<string>();
   for (const al of secao.alunos) {
-    for (const f of al.frequencias) todasDatas.add(f.data);
+    for (const f of al.frequencias) {
+      const dataConv = converterData(f.data);
+      todasDatas.add(dataConv);
+    }
   }
 
   // Upsert diario_aulas e criar mapa data → aulaId
@@ -1202,7 +1213,8 @@ export async function importarSecao(
 
     // Coletar presenças deste aluno
     for (const f of aluno.frequencias) {
-      const aulaId = aulaIdPorData.get(f.data);
+      const dataConv = converterData(f.data);
+      const aulaId = aulaIdPorData.get(dataConv);
       if (!aulaId) continue;
       presencasParaInserir.push({ aulaId, alunoId, status: f.status });
     }

@@ -279,9 +279,10 @@ export default function RoboLocalPage() {
   const [savedOk, setSavedOk] = useState(false);
   const [syncingDiarios, setSyncingDiarios] = useState(false);
   const [syncingAlunos, setSyncingAlunos]   = useState(false);
+  const [hasLoadedConfig, setHasLoadedConfig] = useState(false);
 
   // ── Busca status e config unificados da API central ────────────────────
-  const loadData = useCallback(async (showLoading = false) => {
+  const loadData = useCallback(async (showLoading = false, forceConfig = false) => {
     if (showLoading) setLoadingConfig(true);
     try {
       const r = await fetch(`${BASE}/api/robo/status`, {
@@ -291,12 +292,13 @@ export default function RoboLocalPage() {
       if (res.ok) {
         setOnline(res.online);
         setStatus(res.status || null);
-        // Só sobrescreve a config local se não estiver salvando no momento
-        if (!salvando) {
+        // Só sobrescreve a config local se ainda não foi carregada OU se for explicitamente forçado
+        if ((!hasLoadedConfig || forceConfig) && !salvando) {
           setConfig(res.config || {
             diarios: { ativo: false, horarios: [] },
             alunos:  { ativo: false, horarios: [] },
           });
+          setHasLoadedConfig(true);
         }
       } else {
         setOnline(false);
@@ -306,7 +308,7 @@ export default function RoboLocalPage() {
     } finally {
       if (showLoading) setLoadingConfig(false);
     }
-  }, [salvando]);
+  }, [salvando, hasLoadedConfig]);
 
   // ── Polling mais leve apenas de status (preserva a config que o usuário digita) ──
   const loadStatusOnly = useCallback(async () => {
@@ -329,7 +331,8 @@ export default function RoboLocalPage() {
   // ── Polling inicial e recorrente ───────────────────────────────────────
   useEffect(() => {
     loadData(true);
-  }, [loadData]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     const intervalTime = syncingDiarios || syncingAlunos || status?.sincronizando_diarios || status?.sincronizando_alunos ? 2000 : 5000;
@@ -354,7 +357,7 @@ export default function RoboLocalPage() {
         setSavedOk(true);
         setTimeout(() => setSavedOk(false), 3000);
         // Força sincronização de volta
-        loadData(false);
+        loadData(false, true);
       } else {
         alert("Erro ao salvar configuração: " + res.mensagem);
       }
@@ -409,7 +412,7 @@ export default function RoboLocalPage() {
           <div className="flex items-center gap-3">
             <StatusBadge online={online} />
             <button
-              onClick={() => loadData(true)}
+              onClick={() => loadData(true, true)}
               className="p-2 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-slate-400 hover:text-white transition-all"
               title="Atualizar status"
             >
