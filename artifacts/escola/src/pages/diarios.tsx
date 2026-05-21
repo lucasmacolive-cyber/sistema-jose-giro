@@ -96,16 +96,34 @@ export default function DiariosPage() {
       const turmasResp = await fetch(`${BASE}/api/diario/turmas`, { credentials: "include" }).then(r => r.json());
       const todasTurmas: TurmaInfo[] = Array.isArray(turmasResp) ? turmasResp : [];
 
-      // Busca quais turmas têm link SUAP cadastrado
-      const linksResp = await fetch(`${BASE}/api/sync/diario-links-meta`, { credentials: "include" }).then(r => r.json());
-      const linksMap = new Map<string, boolean>();
-      (linksResp.links ?? []).forEach((l: any) => { if (l.turma && l.link) linksMap.set(l.turma.toUpperCase(), true); });
+      // Busca quais turmas têm link SUAP cadastrado em diario_links
+      const linksResp = await fetch(`${BASE}/api/sync/diario-links-meta`, { credentials: "include" }).then(r => r.json()).catch(() => ({ links: [] }));
 
-      // Busca links nas tabela de turmas também (campo linkSuap)
+      // Busca links na tabela de turmas também (campo linkSuap)
       const turmasDetalhes = await fetch(`${BASE}/api/turmas`, { credentials: "include" }).then(r => r.json()).catch(() => []);
-      const turmasComLink: string[] = (Array.isArray(turmasDetalhes) ? turmasDetalhes : [])
+
+      const turmasComLinkSet = new Set<string>();
+
+      // 1. Da tabela de turmas
+      (Array.isArray(turmasDetalhes) ? turmasDetalhes : [])
         .filter((t: any) => t.linkSuap)
-        .map((t: any) => t.nomeTurma as string);
+        .forEach((t: any) => {
+          if (t.nomeTurma) turmasComLinkSet.add(t.nomeTurma);
+        });
+
+      // 2. Da tabela diario_links
+      (linksResp.links ?? []).forEach((l: any) => {
+        if (l.turma) {
+          const correspondente = todasTurmas.find(t => t.nomeTurma.toUpperCase() === l.turma.toUpperCase());
+          if (correspondente) {
+            turmasComLinkSet.add(correspondente.nomeTurma);
+          } else {
+            turmasComLinkSet.add(l.turma);
+          }
+        }
+      });
+
+      const turmasComLink = Array.from(turmasComLinkSet);
 
       if (turmasComLink.length === 0) {
         setFase("error");
@@ -183,6 +201,44 @@ export default function DiariosPage() {
     <AppLayout>
     <div className="p-4 sm:p-6 max-w-6xl mx-auto">
 
+      {/* Banner de Progresso Geral (Sincronização Ativa) */}
+      {fase === "baixando" && (
+        <div className="mb-6 p-5 rounded-2xl border border-amber-500/30 bg-amber-500/5 backdrop-blur-md animate-pulse">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-3">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-xl bg-amber-500/20 text-amber-400">
+                <Loader2 className="w-5 h-5 animate-spin" />
+              </div>
+              <div>
+                <h2 className="text-base font-bold text-white">Sincronizando com o SUAP...</h2>
+                <p className="text-sm text-gray-400 mt-0.5">
+                  Baixando diários e atualizando presenças no sistema.
+                </p>
+              </div>
+            </div>
+            <div className="text-right">
+              <span className="text-2xl font-black text-amber-400">{pct}%</span>
+              <p className="text-xs text-gray-500 mt-0.5">Sincronizando {progresso.atual + 1} de {progresso.total}</p>
+            </div>
+          </div>
+          
+          {/* Barra de progresso */}
+          <div className="w-full bg-white/10 h-3 rounded-full overflow-hidden mb-3">
+            <div 
+              className="bg-gradient-to-r from-amber-500 to-amber-300 h-full rounded-full transition-all duration-500 ease-out shadow-[0_0_8px_rgba(245,158,11,0.5)]" 
+              style={{ width: `${pct}%` }}
+            />
+          </div>
+          
+          <div className="flex items-center justify-between text-xs font-semibold">
+            <span className="text-amber-400/90 truncate max-w-[70%]">
+              Turma atual: <span className="text-white font-bold">{progresso.turmaAtual}</span>
+            </span>
+            <span className="text-gray-400 shrink-0">{progresso.msg}</span>
+          </div>
+        </div>
+      )}
+
       {/* Cabeçalho com botão "Atualizar todos" */}
       <div className="flex items-center gap-3 mb-6">
         <div className="p-2.5 rounded-xl bg-blue-500/20">
@@ -205,23 +261,23 @@ export default function DiariosPage() {
         </div>
 
         {/* Botão 3 estados */}
-        <div className="flex flex-col items-end gap-1">
+        <div className="flex flex-col items-end gap-1.5">
           <button
             onClick={iniciarSincronizacao}
             disabled={fase === "baixando"}
-            className={`relative flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-black transition-all border overflow-hidden ${
+            className={`relative flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition-all border overflow-hidden ${
               fase === "baixando"
                 ? "border-amber-400/50 text-amber-300 cursor-wait"
                 : fase === "done"
                 ? "border-emerald-400/50 text-emerald-300 hover:opacity-90"
-                : "border-red-500/40 text-red-300 hover:opacity-90"
+                : "border-blue-500/40 text-blue-300 hover:opacity-90"
             }`}
             style={{
               background: fase === "baixando"
                 ? "rgba(245,158,11,0.15)"
                 : fase === "done"
                 ? "rgba(16,185,129,0.15)"
-                : "rgba(239,68,68,0.15)",
+                : "rgba(59,130,246,0.15)",
             }}
           >
             {/* Barra de progresso animada (amarelo) */}
@@ -239,15 +295,15 @@ export default function DiariosPage() {
               ) : fase === "done" ? (
                 <><Check className="w-4 h-4" /> Sincronizado</>
               ) : (
-                <><RefreshCcw className="w-4 h-4" /> Atualizar todos</>
+                <><RefreshCcw className="w-4 h-4" /> Sincronizar Tudo</>
               )}
             </span>
           </button>
           {fase === "baixando" && progresso.msg && (
-            <span className="text-[0.6rem] text-amber-400/70 max-w-[200px] text-right truncate">{progresso.msg}</span>
+            <span className="text-xs font-semibold text-amber-400/80 max-w-[200px] text-right truncate">{progresso.msg}</span>
           )}
           {fase === "done" && (
-            <span className="text-[0.6rem] text-emerald-400/70">{progresso.msg}</span>
+            <span className="text-xs font-semibold text-emerald-400/80">{progresso.msg}</span>
           )}
         </div>
       </div>

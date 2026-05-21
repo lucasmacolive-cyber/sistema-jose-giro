@@ -15,6 +15,445 @@ function requireAuth(req: any, res: any, next: any) {
   next();
 }
 
+/* ─── GET /diario/relatorio-frequencia-mensal (Público/WhatsApp) ─── */
+router.get("/diario/relatorio-frequencia-mensal", async (req, res) => {
+  try {
+    const { mes, ano, turma } = req.query;
+    if (!mes || !ano) {
+      return res.status(400).send("<h1>Parâmetros inválidos</h1><p>Os parâmetros 'mes' e 'ano' são obrigatórios.</p>");
+    }
+
+    const options: Intl.DateTimeFormatOptions = {
+      timeZone: "America/Sao_Paulo",
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric"
+    };
+    const hojeStr = new Intl.DateTimeFormat("pt-BR", options).format(new Date());
+
+    function parseDate(s: string) {
+      const [d, m, y] = s.split("/").map(Number);
+      return new Date(y, m - 1, d);
+    }
+    function dateLE(a: string, b: string) {
+      return parseDate(a).getTime() <= parseDate(b).getTime();
+    }
+
+    const mesFormatado = String(mes).padStart(2, "0");
+    const pattern = `__/${mesFormatado}/${ano}`;
+    const cond = sql`${diarioAulasTable.data} LIKE ${pattern}`;
+
+    // 1. Aulas do mês
+    const allAulas = await db
+      .select()
+      .from(diarioAulasTable)
+      .where(turma ? and(eq(diarioAulasTable.turmaNome, String(turma)), cond) : cond)
+      .orderBy(diarioAulasTable.data);
+
+    const aulasPassadas = allAulas.filter(a => dateLE(a.data, hojeStr));
+
+    // 2. Alunos
+    const queryAlunos = db
+      .select()
+      .from(alunosTable)
+      .where(
+        turma 
+          ? and(eq(alunosTable.situacao, "Matriculado"), eq(alunosTable.turmaAtual, String(turma)))
+          : eq(alunosTable.situacao, "Matriculado")
+      )
+      .orderBy(alunosTable.nomeCompleto);
+
+    const alunos = await queryAlunos;
+
+    // 3. Presenças
+    const aulaIds = aulasPassadas.map(a => a.id);
+    const presMap: Record<number, Record<number, string>> = {};
+    if (aulaIds.length > 0) {
+      const presencas = await db
+        .select()
+        .from(diarioPresencasTable)
+        .where(inArray(diarioPresencasTable.aulaId, aulaIds));
+      for (const p of presencas) {
+        if (!presMap[p.aulaId]) presMap[p.aulaId] = {};
+        presMap[p.aulaId][p.alunoId] = p.status;
+      }
+    }
+
+    // Agrupar e calcular estatísticas por turma
+    const turmasComAulas = [...new Set(aulasPassadas.map(a => a.turmaNome))].sort();
+
+    const relatorioPorTurma: {
+      turma: string;
+      totalAlunos: number;
+      reprovados: any[];
+      risco: any[];
+    }[] = [];
+
+    let totalGeralAlunos = 0;
+    let totalGeralReprovados = 0;
+    let totalGeralRisco = 0;
+
+    for (const tNome of turmasComAulas) {
+      const aulasT = aulasPassadas.filter(a => a.turmaNome === tNome);
+      const alunosT = alunos.filter(a => a.turmaAtual === tNome);
+      if (aulasT.length === 0 || alunosT.length === 0) continue;
+
+      const reprovados: any[] = [];
+      const risco: any[] = [];
+
+      for (const al of alunosT) {
+        let faltas = 0;
+        for (const au of aulasT) {
+          if ((presMap[au.id]?.[al.id] ?? "P") === "F") {
+            faltas++;
+          }
+        }
+        const totalAulas = aulasT.length;
+        const presencas = totalAulas - faltas;
+        const pct = totalAulas > 0 ? Math.round((presencas / totalAulas) * 100) : 100;
+
+        const info = {
+          nome: al.nomeCompleto,
+          matricula: al.matricula || "N/D",
+          presencas,
+          totalAulas,
+          faltas,
+          pct
+        };
+
+        if (pct < 50) {
+          reprovados.push(info);
+          totalGeralReprovados++;
+        } else if (pct < 75) {
+          risco.push(info);
+          totalGeralRisco++;
+        }
+      }
+
+      totalGeralAlunos += alunosT.length;
+
+      relatorioPorTurma.push({
+        turma: tNome,
+        totalAlunos: alunosT.length,
+        reprovados,
+        risco
+      });
+    }
+
+    const nomesMeses = [
+      "", "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+      "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
+    ];
+    const nomeMes = nomesMeses[Number(mes)] || mes;
+
+    // Gerar HTML
+    let html = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Relatório Mensal de Frequência - \${nomeMes}/\${ano}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --danger: #ef4444;
+      --danger-bg: #fee2e2;
+      --warning: #f59e0b;
+      --warning-bg: #fef3c7;
+      --success: #10b981;
+      --text-main: #1f2937;
+      --text-muted: #6b7280;
+      --border: #e5e7eb;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Outfit', sans-serif;
+      color: var(--text-main);
+      background-color: #f9fafb;
+      line-height: 1.5;
+      padding: 2rem 1rem;
+    }
+    .container {
+      max-width: 850px;
+      margin: 0 auto;
+      background: #ffffff;
+      padding: 2.5rem;
+      border-radius: 1rem;
+      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -1px rgba(0,0,0,0.03);
+    }
+    .header {
+      border-bottom: 2px solid var(--text-main);
+      padding-bottom: 1.5rem;
+      margin-bottom: 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+    }
+    .header-info h1 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .header-info p {
+      color: var(--text-muted);
+      font-size: 0.95rem;
+      margin-top: 0.25rem;
+    }
+    .header-meta {
+      text-align: right;
+    }
+    .badge {
+      display: inline-block;
+      padding: 0.25rem 0.75rem;
+      font-size: 0.85rem;
+      font-weight: 600;
+      border-radius: 9999px;
+      margin-top: 0.5rem;
+    }
+    .badge-date {
+      background-color: #f3f4f6;
+      color: var(--text-main);
+    }
+    .btn-print {
+      background-color: var(--text-main);
+      color: white;
+      border: none;
+      padding: 0.6rem 1.2rem;
+      font-size: 0.9rem;
+      font-weight: 500;
+      border-radius: 0.5rem;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      transition: opacity 0.2s;
+    }
+    .btn-print:hover { opacity: 0.9; }
+    
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1rem;
+      margin-bottom: 2.5rem;
+    }
+    .stat-card {
+      border: 1px solid var(--border);
+      padding: 1rem;
+      border-radius: 0.5rem;
+      text-align: center;
+    }
+    .stat-val {
+      font-size: 1.8rem;
+      font-weight: 700;
+    }
+    .stat-label {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      font-weight: 600;
+      margin-top: 0.25rem;
+    }
+    .stat-reprovados { border-left: 4px solid var(--danger); }
+    .stat-reprovados .stat-val { color: var(--danger); }
+    .stat-risco { border-left: 4px solid var(--warning); }
+    .stat-risco .stat-val { color: var(--warning); }
+    
+    .turma-section {
+      margin-bottom: 3rem;
+      page-break-inside: avoid;
+    }
+    .turma-title {
+      font-size: 1.25rem;
+      font-weight: 600;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 0.5rem;
+      margin-bottom: 1rem;
+      display: flex;
+      justify-content: space-between;
+    }
+    
+    .table-container {
+      margin-bottom: 1.5rem;
+    }
+    .group-title {
+      font-size: 0.9rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      margin-bottom: 0.5rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .group-title.danger { color: var(--danger); }
+    .group-title.warning { color: var(--warning); }
+    
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 1rem;
+      font-size: 0.9rem;
+    }
+    th, td {
+      padding: 0.6rem 0.8rem;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+    th {
+      background-color: #f9fafb;
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+    
+    .row-danger { background-color: var(--danger-bg); }
+    .row-warning { background-color: var(--warning-bg); }
+    .text-center { text-align: center; }
+    .text-right { text-align: right; }
+    
+    .no-data {
+      color: var(--success);
+      font-weight: 500;
+      padding: 0.5rem 0;
+      font-size: 0.95rem;
+    }
+    
+    .footer-signature {
+      margin-top: 5rem;
+      display: flex;
+      justify-content: space-between;
+      page-break-inside: avoid;
+    }
+    .signature-line {
+      width: 45%;
+      border-top: 1px solid var(--text-main);
+      text-align: center;
+      padding-top: 0.5rem;
+      font-size: 0.85rem;
+    }
+    
+    @media print {
+      body { background-color: white; padding: 0; }
+      .container { box-shadow: none; padding: 0; max-width: 100%; }
+      .no-print { display: none !important; }
+      .row-danger { background-color: #f9f9f9 !important; }
+      .row-warning { background-color: #ffffff !important; }
+      th { background-color: #eeeeee !important; -webkit-print-color-adjust: exact; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="header-info">
+        <h1>E. M. José Giró Faísca</h1>
+        <p>Resumo de Frequência e Alunos em Situação Crítica</p>
+        <span class="badge badge-date">Referência: \${nomeMes} de \${ano}</span>
+      </div>
+      <div class="header-meta no-print">
+        <button class="btn-print" onclick="window.print()">
+          <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 9V2h12v7M6 18H4a2 2 0 01-2-2v-6a2 2 0 012-2h16a2 2 0 012 2v6a2 2 0 01-2 2h-2m-12 0v5h8v-5m-8 0h8"/></svg>
+          Imprimir / Salvar PDF
+        </button>
+      </div>
+    </div>
+
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-val">\${totalGeralAlunos}</div>
+        <div class="stat-label">Alunos Avaliados</div>
+      </div>
+      <div class="stat-card stat-reprovados">
+        <div class="stat-val">\${totalGeralReprovados}</div>
+        <div class="stat-label">Reprovados por Falta (&lt;50%)</div>
+      </div>
+      <div class="stat-card stat-risco">
+        <div class="stat-val">\${totalGeralRisco}</div>
+        <div class="stat-label">Em Risco (50% a 74%    ${relatorioPorTurma.map(rt => `
+      <div class="turma-section">
+        <div class="turma-title">
+          <span>Turma: ${rt.turma}</span>
+          <span style="font-size: 0.9rem; color: var(--text-muted); font-weight: normal;">${rt.totalAlunos} alunos matriculados</span>
+        </div>
+
+        ${rt.reprovados.length === 0 && rt.risco.length === 0 ? `
+          <div class="no-data">✓ Nenhum aluno em situação de risco ou reprovação por falta nesta turma.</div>
+        ` : `
+          ${rt.reprovados.length > 0 ? `
+            <div class="table-container">
+              <div class="group-title danger">🔴 Reprovados por Falta (Frequência &lt; 50%)</div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Nome do Aluno</th>
+                    <th style="width: 140px;">Matrícula</th>
+                    <th style="width: 120px;" class="text-center">Presenças / Total</th>
+                    <th style="width: 100px;" class="text-center">Faltas</th>
+                    <th style="width: 100px;" class="text-right">Frequência</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${rt.reprovados.map(al => `
+                    <tr class="row-danger">
+                      <td><strong>${al.nome}</strong></td>
+                      <td>${al.matricula}</td>
+                      <td class="text-center">${al.presencas} / ${al.totalAulas}</td>
+                      <td class="text-center">${al.faltas}</td>
+                      <td class="text-right" style="color: var(--danger); font-weight: 600;">${al.pct}%</td>
+                    </tr>
+                  `).join("")}
+                </tbody>
+              </table>
+            </div>
+          ` : ""}
+
+          ${rt.risco.length > 0 ? `
+            <div class="table-container">
+              <div class="group-title warning">🟡 Em Risco de Reprovação (Frequência 50% - 74%)</div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Nome do Aluno</th>
+                    <th style="width: 140px;">Matrícula</th>
+                    <th style="width: 120px;" class="text-center">Presenças / Total</th>
+                    <th style="width: 100px;" class="text-center">Faltas</th>
+                    <th style="width: 100px;" class="text-right">Frequência</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${rt.risco.map(al => `
+                    <tr class="row-warning">
+                      <td><strong>${al.nome}</strong></td>
+                      <td>${al.matricula}</td>
+                      <td class="text-center">${al.presencas} / ${al.totalAulas}</td>
+                      <td class="text-center">${al.faltas}</td>
+                      <td class="text-right" style="color: var(--warning); font-weight: 600;">${al.pct}%</td>
+                    </tr>
+                  `).join("")}
+                </tbody>
+              </table>
+            </div>
+          ` : ""}
+        `}
+      </div>
+    `).join("")}
+
+    <div class="footer-signature">
+      <div class="signature-line">Coordenação Pedagógica</div>
+      <div class="signature-line">Direção Escolar</div>
+    </div>
+  </div>
+</body>
+</html>`;
+
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.send(html);
+  } catch (e: any) {
+    res.status(500).send(`<h1>Erro no servidor</h1><p>${e.message}</p>`);
+  }
+});
+
 /* ─── GET /diario/turmas ─── */
 router.get("/diario/turmas", requireAuth, async (req, res) => {
   try {

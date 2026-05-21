@@ -19,6 +19,7 @@ import loginsExternosRouter from "./logins-externos.js";
 import aniversariantesRouter from "./aniversariantes.js";
 import diarioRouter from "./diario.js";
 import calendarioRouter from "./calendario.js";
+import roboRouter from "./robo.js";
 
 const router: IRouter = Router();
 
@@ -41,5 +42,6 @@ router.use(loginsExternosRouter);
 router.use(aniversariantesRouter);
 router.use(diarioRouter);
 router.use(calendarioRouter);
+router.use(roboRouter);
 
 export default router;
