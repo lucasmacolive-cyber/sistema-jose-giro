@@ -2325,7 +2325,7 @@ function SecaoCores() {
 /* ══════════════════════════════════════════
    MODAL DE EDIÇÃO — PROFESSORES (especializado)
 ══════════════════════════════════════════ */
-interface TurmaOpcao { id: number; nome_turma: string; turno: string | null; }
+interface TurmaOpcao { id: number; nome_turma?: string; nomeTurma?: string; turno: string | null; }
 
 interface ModalEdicaoProfessorProps {
   linha: Record<string, any> | null;
@@ -2360,8 +2360,9 @@ function ModalEdicaoProfessor({ linha, onClose, onSalvo }: ModalEdicaoProfessorP
       .catch(() => {});
   }, []);
 
-  const turmasManha = turmas.filter((t) => t.turno === "Manhã");
-  const turmasTarde = turmas.filter((t) => t.turno === "Tarde");
+  // Exibe todas as turmas em ambos os turnos para evitar exclusão de turmas com turnos cadastrados de forma inconsistente no banco de dados.
+  const turmasManha = turmas;
+  const turmasTarde = turmas;
 
   const set = (key: string, val: any) => setForm((f) => ({ ...f, [key]: val }));
 
@@ -2544,8 +2545,8 @@ function ModalEdicaoProfessor({ linha, onClose, onSalvo }: ModalEdicaoProfessorP
                 >
                   <option value="" className="bg-[#1e293b] text-white/50">— Nenhuma —</option>
                   {turmasManha.map((t) => (
-                    <option key={t.id} value={t.nome_turma} className="bg-[#1e293b] text-white">
-                      {t.nome_turma}
+                    <option key={t.id} value={t.nome_turma || t.nomeTurma} className="bg-[#1e293b] text-white">
+                      {t.nome_turma || t.nomeTurma}
                     </option>
                   ))}
                 </select>
@@ -2564,8 +2565,8 @@ function ModalEdicaoProfessor({ linha, onClose, onSalvo }: ModalEdicaoProfessorP
                 >
                   <option value="" className="bg-[#1e293b] text-white/50">— Nenhuma —</option>
                   {turmasTarde.map((t) => (
-                    <option key={t.id} value={t.nome_turma} className="bg-[#1e293b] text-white">
-                      {t.nome_turma}
+                    <option key={t.id} value={t.nome_turma || t.nomeTurma} className="bg-[#1e293b] text-white">
+                      {t.nome_turma || t.nomeTurma}
                     </option>
                   ))}
                 </select>
@@ -2633,9 +2634,23 @@ function ModalEdicaoTurma({ linha, onClose, onSalvo }: ModalEdicaoTurmaProps) {
   const [professores, setProfessores] = useState<ProfessorOpcao[]>([]);
 
   useEffect(() => {
-    apiFetch("/admin/professores?limit=200")
-      .then((d) => setProfessores(d.rows))
-      .catch(() => {});
+    apiFetch("/professores")
+      .then((d) => {
+        if (Array.isArray(d)) {
+          setProfessores(d);
+        } else if (d && Array.isArray(d.rows)) {
+          setProfessores(d.rows);
+        } else {
+          apiFetch("/admin/professores?limit=200")
+            .then((ad) => setProfessores(ad.rows || []))
+            .catch(() => {});
+        }
+      })
+      .catch(() => {
+        apiFetch("/admin/professores?limit=200")
+          .then((ad) => setProfessores(ad.rows || []))
+          .catch(() => {});
+      });
   }, []);
 
   const set = (key: string, val: any) => setForm((f) => ({ ...f, [key]: val }));
