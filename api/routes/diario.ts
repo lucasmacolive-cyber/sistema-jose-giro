@@ -398,6 +398,53 @@ router.get("/diario/relatorio-frequencia-mensal", async (req, res) => {
       .badge-pct.danger { background-color: #fee2e2 !important; color: #ef4444 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
       .badge-pct.warning { background-color: #fef3c7 !important; color: #d97706 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     }
+    @media screen and (max-width: 768px) {
+      body {
+        padding: 0.5rem;
+      }
+      .container {
+        padding: 1.25rem 0.75rem;
+        border-radius: 0.75rem;
+      }
+      .header {
+        flex-direction: column;
+        text-align: center;
+        align-items: center;
+      }
+      .logo {
+        margin-top: 1rem;
+      }
+      .report-title-container {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+      .report-title-container > div {
+        width: 100%;
+        flex-direction: column;
+        align-items: stretch !important;
+      }
+      .btn-print {
+        justify-content: center;
+      }
+      .table-container {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+      }
+      table {
+        min-width: 650px;
+      }
+      th, td {
+        padding: 0.75rem 0.5rem;
+      }
+      .footer-signature {
+        flex-direction: column;
+        gap: 3rem;
+        margin-top: 4rem;
+      }
+      .signature-line {
+        width: 100%;
+      }
+    }
   </style>
 </head>
 <body>

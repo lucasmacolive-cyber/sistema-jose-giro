@@ -1,12 +1,13 @@
 // @ts-nocheck
 import { useState, useMemo, useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "wouter";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { useGetMe } from "@workspace/api-client-react";
 import {
   CalendarDays, ChevronDown, Printer, Plus, X, Users, UserCircle,
   ClipboardList, Download, Check, AlertCircle, FileText, FileSpreadsheet,
-  Loader2,
+  Loader2, ChevronLeft,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { jsPDF } from "jspdf";
@@ -844,11 +845,18 @@ export default function PontoPage() {
     <AppLayout>
       <div className="max-w-3xl mx-auto space-y-8 pb-10">
         {/* cabeçalho */}
-        <div>
-          <h1 className="text-4xl font-extrabold text-white" style={{ letterSpacing: "-1px" }}>
-            Ponto dos Funcionários
-          </h1>
-          <p className="text-white/40 text-sm mt-1">Gere a folha de ponto individual mensal para professores e funcionários.</p>
+        <div className="flex items-center gap-3">
+          <Link href="/documentos">
+            <button className="flex items-center justify-center w-10 h-10 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 transition-colors shrink-0 cursor-pointer">
+              <ChevronLeft className="h-5 w-5 text-white/70" />
+            </button>
+          </Link>
+          <div>
+            <h1 className="text-4xl font-extrabold text-white" style={{ letterSpacing: "-1px" }}>
+              Ponto dos Funcionários
+            </h1>
+            <p className="text-white/40 text-sm mt-0.5">Gere a folha de ponto individual mensal para professores e funcionários.</p>
+          </div>
         </div>
 
         {/* seletor mês/ano */}
