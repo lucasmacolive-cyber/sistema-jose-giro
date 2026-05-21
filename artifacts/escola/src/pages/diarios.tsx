@@ -1,13 +1,22 @@
 // @ts-nocheck
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import {
   BookOpen, Users, Sun, Sunset, Loader2, ChevronRight,
   GraduationCap, RefreshCcw, Check, Clock, XCircle,
+  FileText, Printer, Share2, Download, Copy, CalendarDays,
+  ChevronDown, AlertCircle
 } from "lucide-react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { toast } from "@/hooks/use-toast";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Checkbox } from "@/components/ui/checkbox";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -65,6 +74,83 @@ export default function DiariosPage() {
     turmasSemLink: string[];
   } | null>(null);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // States for report modal
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [reportMonth, setReportMonth] = useState(new Date().getMonth() + 1); // 1-indexed
+  const [reportYear, setReportYear] = useState(new Date().getFullYear());
+  const [reportTurmaMode, setReportTurmaMode] = useState<"all" | "custom">("all");
+  const [selectedTurmasReport, setSelectedTurmasReport] = useState<Set<string>>(new Set());
+  const [imprimindoRicoh, setImprimindoRicoh] = useState(false);
+  const [copiandoLink, setCopiandoLink] = useState(false);
+
+  const getReportUrl = () => {
+    let url = `${window.location.origin}${BASE}/api/diario/relatorio-frequencia-mensal?mes=${reportMonth}&ano=${reportYear}`;
+    if (reportTurmaMode === "custom") {
+      const selectedList = Array.from(selectedTurmasReport);
+      if (selectedList.length > 0) {
+        url += `&turma=${encodeURIComponent(selectedList.join(","))}`;
+      }
+    }
+    return url;
+  };
+
+  const handleCopyLink = async () => {
+    const url = getReportUrl();
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopiandoLink(true);
+      toast({
+        title: "Link Copiado!",
+        description: "O link de acesso ao relatório foi copiado para a área de transferência.",
+      });
+      setTimeout(() => setCopiandoLink(false), 2000);
+    } catch (err) {
+      toast({
+        title: "Erro ao copiar",
+        description: "Não foi possível copiar o link automaticamente.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handlePrintRicoh = async () => {
+    setImprimindoRicoh(true);
+    try {
+      const url = getReportUrl();
+      const resp = await fetch(url);
+      if (!resp.ok) throw new Error("Erro ao obter o HTML do relatório");
+      const html = await resp.text();
+      
+      const blob = new Blob([html], { type: "text/html" });
+      const file = new File([blob], `Relatorio_Frequencia_${reportMonth}_${reportYear}.html`, { type: "text/html" });
+
+      const form = new FormData();
+      form.append("professorSolicitante", "Master");
+      form.append("quantidadeCopias", "1");
+      form.append("impressoraNome", "RICOH");
+      form.append("arquivo", file);
+
+      const printResp = await fetch(`${BASE}/api/impressoes`, { method: "POST", body: form });
+      if (!printResp.ok) throw new Error("Erro ao enviar para a fila de impressão");
+
+      toast({
+        title: "Sucesso!",
+        description: "Relatório enviado para a fila de impressão da RICOH.",
+      });
+    } catch (err) {
+      console.error(err);
+      toast({
+        title: "Erro de Impressão",
+        description: "Não foi possível enviar para a RICOH. O relatório será aberto em uma nova aba.",
+        variant: "destructive"
+      });
+      // Abrir em nova aba em caso de falha
+      window.open(getReportUrl(), "_blank");
+    } finally {
+      setImprimindoRicoh(false);
+    }
+  };
 
   const pararPolling = useCallback(() => {
     if (pollingRef.current) { clearInterval(pollingRef.current); pollingRef.current = null; }
@@ -260,51 +346,62 @@ export default function DiariosPage() {
           </div>
         </div>
 
-        {/* Botão 3 estados */}
-        <div className="flex flex-col items-end gap-1.5">
+        {/* Ações do Cabeçalho */}
+        <div className="flex items-center gap-3">
           <button
-            onClick={iniciarSincronizacao}
-            disabled={fase === "baixando"}
-            className={`relative flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition-all border overflow-hidden ${
-              fase === "baixando"
-                ? "border-amber-400/50 text-amber-300 cursor-wait"
-                : fase === "done"
-                ? "border-emerald-400/50 text-emerald-300 hover:opacity-90"
-                : "border-blue-500/40 text-blue-300 hover:opacity-90"
-            }`}
-            style={{
-              background: fase === "baixando"
-                ? "rgba(245,158,11,0.15)"
-                : fase === "done"
-                ? "rgba(16,185,129,0.15)"
-                : "rgba(59,130,246,0.15)",
-            }}
+            onClick={() => setShowReportModal(true)}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all border border-blue-500/20 text-blue-300 bg-blue-500/5 hover:bg-blue-500/10 hover:border-blue-500/30"
           >
-            {/* Barra de progresso animada (amarelo) */}
-            {fase === "baixando" && (
-              <span className="absolute inset-0 overflow-hidden rounded-xl">
-                <span
-                  className="absolute inset-y-0 left-0 bg-amber-400/20 transition-all duration-700"
-                  style={{ width: `${pct || 15}%` }}
-                />
-              </span>
-            )}
-            <span className="relative flex items-center gap-2">
-              {fase === "baixando" ? (
-                <><Loader2 className="w-4 h-4 animate-spin" /> {progresso.turmaAtual ? progresso.turmaAtual : (progresso.atual > 0 ? `${progresso.atual}/${progresso.total}` : "...")}</>
-              ) : fase === "done" ? (
-                <><Check className="w-4 h-4" /> Sincronizado</>
-              ) : (
-                <><RefreshCcw className="w-4 h-4" /> Sincronizar Tudo</>
-              )}
-            </span>
+            <FileText className="w-4.5 h-4.5" />
+            Relatório de Frequência
           </button>
-          {fase === "baixando" && progresso.msg && (
-            <span className="text-xs font-semibold text-amber-400/80 max-w-[200px] text-right truncate">{progresso.msg}</span>
-          )}
-          {fase === "done" && (
-            <span className="text-xs font-semibold text-emerald-400/80">{progresso.msg}</span>
-          )}
+
+          {/* Botão 3 estados */}
+          <div className="flex flex-col items-end gap-1.5">
+            <button
+              onClick={iniciarSincronizacao}
+              disabled={fase === "baixando"}
+              className={`relative flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition-all border overflow-hidden ${
+                fase === "baixando"
+                  ? "border-amber-400/50 text-amber-300 cursor-wait"
+                  : fase === "done"
+                  ? "border-emerald-400/50 text-emerald-300 hover:opacity-90"
+                  : "border-blue-500/40 text-blue-300 hover:opacity-90"
+              }`}
+              style={{
+                background: fase === "baixando"
+                  ? "rgba(245,158,11,0.15)"
+                  : fase === "done"
+                  ? "rgba(16,185,129,0.15)"
+                  : "rgba(59,130,246,0.15)",
+              }}
+            >
+              {/* Barra de progresso animada (amarelo) */}
+              {fase === "baixando" && (
+                <span className="absolute inset-0 overflow-hidden rounded-xl">
+                  <span
+                    className="absolute inset-y-0 left-0 bg-amber-400/20 transition-all duration-700"
+                    style={{ width: `${pct || 15}%` }}
+                  />
+                </span>
+              )}
+              <span className="relative flex items-center gap-2">
+                {fase === "baixando" ? (
+                  <><Loader2 className="w-4 h-4 animate-spin" /> {progresso.turmaAtual ? progresso.turmaAtual : (progresso.atual > 0 ? `${progresso.atual}/${progresso.total}` : "...")}</>
+                ) : fase === "done" ? (
+                  <><Check className="w-4 h-4" /> Sincronizado</>
+                ) : (
+                  <><RefreshCcw className="w-4 h-4" /> Sincronizar Tudo</>
+                )}
+              </span>
+            </button>
+            {fase === "baixando" && progresso.msg && (
+              <span className="text-xs font-semibold text-amber-400/80 max-w-[200px] text-right truncate">{progresso.msg}</span>
+            )}
+            {fase === "done" && (
+              <span className="text-xs font-semibold text-emerald-400/80">{progresso.msg}</span>
+            )}
+          </div>
         </div>
       </div>
 
@@ -364,6 +461,171 @@ export default function DiariosPage() {
         </div>
       )}
     </div>
+
+    {/* ── Dialog do Relatório de Frequência ── */}
+    <Dialog open={showReportModal} onOpenChange={setShowReportModal}>
+      <DialogContent className="max-w-md bg-[#0f172a] border-white/10 text-white rounded-2xl p-6 shadow-2xl shadow-black/80">
+        <DialogHeader className="mb-4">
+          <DialogTitle className="text-xl font-bold flex items-center gap-2 text-white">
+            <FileText className="w-5 h-5 text-blue-400" />
+            Relatório de Frequência Mensal
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          {/* Período de Referência */}
+          <div className="space-y-2">
+            <label className="text-xs font-bold uppercase tracking-widest text-gray-400 flex items-center gap-1.5">
+              <CalendarDays className="w-3.5 h-3.5 text-blue-400" />
+              Período de Referência
+            </label>
+            <div className="grid grid-cols-2 gap-3">
+              {/* Seleção do Mês */}
+              <div className="relative">
+                <select
+                  className="w-full bg-[#1e293b] border border-white/10 rounded-xl px-3 py-2 text-sm font-semibold text-white cursor-pointer focus:outline-none focus:border-blue-500 appearance-none pr-8"
+                  value={reportMonth}
+                  onChange={(e) => setReportMonth(Number(e.target.value))}
+                >
+                  {[
+                    "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+                    "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
+                  ].map((m, idx) => (
+                    <option key={m} value={idx + 1} className="bg-[#0f172a]">
+                      {m}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30 pointer-events-none" />
+              </div>
+
+              {/* Seleção do Ano */}
+              <div className="relative">
+                <select
+                  className="w-full bg-[#1e293b] border border-white/10 rounded-xl px-3 py-2 text-sm font-semibold text-white cursor-pointer focus:outline-none focus:border-blue-500 appearance-none pr-8"
+                  value={reportYear}
+                  onChange={(e) => setReportYear(Number(e.target.value))}
+                >
+                  {[2024, 2025, 2026, 2027].map((y) => (
+                    <option key={y} value={y} className="bg-[#0f172a]">
+                      {y}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30 pointer-events-none" />
+              </div>
+            </div>
+          </div>
+
+          {/* Seleção de Turmas */}
+          <div className="space-y-2">
+            <label className="text-xs font-bold uppercase tracking-widest text-gray-400">
+              Filtro de Turmas
+            </label>
+            <div className="flex gap-4">
+              <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+                <input
+                  type="radio"
+                  name="turmaMode"
+                  checked={reportTurmaMode === "all"}
+                  onChange={() => setReportTurmaMode("all")}
+                  className="w-4 h-4 text-blue-600 bg-gray-700 border-gray-600 focus:ring-blue-500 focus:ring-offset-gray-800"
+                />
+                <span>Todas as turmas</span>
+              </label>
+              <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+                <input
+                  type="radio"
+                  name="turmaMode"
+                  checked={reportTurmaMode === "custom"}
+                  onChange={() => setReportTurmaMode("custom")}
+                  className="w-4 h-4 text-blue-600 bg-gray-700 border-gray-600 focus:ring-blue-500 focus:ring-offset-gray-800"
+                />
+                <span>Selecionar uma por uma</span>
+              </label>
+            </div>
+
+            {/* Lista de Checkboxes de Turmas */}
+            {reportTurmaMode === "custom" && (
+              <div className="border border-white/10 rounded-xl p-3 bg-white/5 max-h-40 overflow-y-auto space-y-2 mt-2">
+                {turmas && turmas.length > 0 ? (
+                  turmas.map((t) => {
+                    const isChecked = selectedTurmasReport.has(t.nomeTurma);
+                    return (
+                      <label
+                        key={t.id}
+                        className="flex items-center gap-3 text-sm cursor-pointer py-1 hover:bg-white/5 px-2 rounded-lg transition-colors"
+                      >
+                        <Checkbox
+                          checked={isChecked}
+                          onCheckedChange={(checked) => {
+                            setSelectedTurmasReport((prev) => {
+                              const next = new Set(prev);
+                              if (checked) {
+                                next.add(t.nomeTurma);
+                              } else {
+                                next.delete(t.nomeTurma);
+                              }
+                              return next;
+                            });
+                          }}
+                        />
+                        <span className="font-semibold text-white">{t.nomeTurma}</span>
+                        <span className="text-xs text-white/40 font-normal">({t.turno})</span>
+                      </label>
+                    );
+                  })
+                ) : (
+                  <p className="text-xs text-gray-500 italic">Nenhuma turma cadastrada</p>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Aviso informativo de 75% */}
+          <div className="flex items-start gap-2 p-3 bg-blue-950/20 border border-blue-800/20 rounded-xl">
+            <AlertCircle className="w-4.5 h-4.5 text-blue-400 shrink-0 mt-0.5" />
+            <p className="text-xs text-blue-300">
+              O relatório mostrará automaticamente alunos com frequência <strong className="text-white">menor do que 75%</strong> (reprovados por falta e em situação crítica de risco).
+            </p>
+          </div>
+
+          {/* Ações do Modal */}
+          <div className="pt-4 border-t border-white/10 flex flex-col gap-2.5">
+            <button
+              disabled={reportTurmaMode === "custom" && selectedTurmasReport.size === 0}
+              onClick={() => {
+                window.open(getReportUrl(), "_blank");
+                setShowReportModal(false);
+              }}
+              className="w-full flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-sm bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-all shadow-lg shadow-blue-600/20 animate-in fade-in"
+            >
+              <Download className="w-4 h-4" />
+              Visualizar / Baixar PDF
+            </button>
+
+            <div className="flex gap-2">
+              <button
+                disabled={reportTurmaMode === "custom" && selectedTurmasReport.size === 0}
+                onClick={handleCopyLink}
+                className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/30 disabled:opacity-40 transition-all"
+              >
+                {copiandoLink ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                {copiandoLink ? "Copiado!" : "Copiar Link"}
+              </button>
+              <button
+                disabled={(reportTurmaMode === "custom" && selectedTurmasReport.size === 0) || imprimindoRicoh}
+                onClick={handlePrintRicoh}
+                className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold bg-blue-500/20 border border-blue-500/40 text-blue-300 hover:bg-blue-500/30 disabled:opacity-40 transition-all"
+              >
+                {imprimindoRicoh ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Printer className="w-3.5 h-3.5" />}
+                Imprimir na RICOH
+              </button>
+            </div>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
     </AppLayout>
   );
 }

@@ -16,6 +16,13 @@ function requireAuth(req: any, res: any, next: any) {
 }
 
 /* ─── GET /diario/relatorio-frequencia-mensal (Público/WhatsApp) ─── */
+function formatCPF(cpf: string | null | undefined): string {
+  if (!cpf) return "---";
+  const clean = cpf.replace(/\D/g, "");
+  if (clean.length !== 11) return cpf;
+  return `${clean.substring(0, 3)}.${clean.substring(3, 6)}.${clean.substring(6, 9)}-${clean.substring(9, 11)}`;
+}
+
 router.get("/diario/relatorio-frequencia-mensal", async (req, res) => {
   try {
     const { mes, ano, turma } = req.query;
@@ -43,11 +50,25 @@ router.get("/diario/relatorio-frequencia-mensal", async (req, res) => {
     const pattern = `__/${mesFormatado}/${ano}`;
     const cond = sql`${diarioAulasTable.data} LIKE ${pattern}`;
 
+    let turmaCond: any = undefined;
+    let alunosCond: any = eq(alunosTable.situacao, "Matriculado");
+
+    if (turma) {
+      const turmasList = String(turma).split(",").map(t => t.trim()).filter(Boolean);
+      if (turmasList.length === 1) {
+        turmaCond = eq(diarioAulasTable.turmaNome, turmasList[0]);
+        alunosCond = and(eq(alunosTable.situacao, "Matriculado"), eq(alunosTable.turmaAtual, turmasList[0]));
+      } else if (turmasList.length > 1) {
+        turmaCond = inArray(diarioAulasTable.turmaNome, turmasList);
+        alunosCond = and(eq(alunosTable.situacao, "Matriculado"), inArray(alunosTable.turmaAtual, turmasList));
+      }
+    }
+
     // 1. Aulas do mês
     const allAulas = await db
       .select()
       .from(diarioAulasTable)
-      .where(turma ? and(eq(diarioAulasTable.turmaNome, String(turma)), cond) : cond)
+      .where(turmaCond ? and(turmaCond, cond) : cond)
       .orderBy(diarioAulasTable.data);
 
     const aulasPassadas = allAulas.filter(a => dateLE(a.data, hojeStr));
@@ -56,11 +77,7 @@ router.get("/diario/relatorio-frequencia-mensal", async (req, res) => {
     const queryAlunos = db
       .select()
       .from(alunosTable)
-      .where(
-        turma 
-          ? and(eq(alunosTable.situacao, "Matriculado"), eq(alunosTable.turmaAtual, String(turma)))
-          : eq(alunosTable.situacao, "Matriculado")
-      )
+      .where(alunosCond)
       .orderBy(alunosTable.nomeCompleto);
 
     const alunos = await queryAlunos;
@@ -89,10 +106,6 @@ router.get("/diario/relatorio-frequencia-mensal", async (req, res) => {
       risco: any[];
     }[] = [];
 
-    let totalGeralAlunos = 0;
-    let totalGeralReprovados = 0;
-    let totalGeralRisco = 0;
-
     for (const tNome of turmasComAulas) {
       const aulasT = aulasPassadas.filter(a => a.turmaNome === tNome);
       const alunosT = alunos.filter(a => a.turmaAtual === tNome);
@@ -114,7 +127,7 @@ router.get("/diario/relatorio-frequencia-mensal", async (req, res) => {
 
         const info = {
           nome: al.nomeCompleto,
-          matricula: al.matricula || "N/D",
+          cpf: formatCPF(al.cpf),
           presencas,
           totalAulas,
           faltas,
@@ -123,14 +136,10 @@ router.get("/diario/relatorio-frequencia-mensal", async (req, res) => {
 
         if (pct < 50) {
           reprovados.push(info);
-          totalGeralReprovados++;
         } else if (pct < 75) {
           risco.push(info);
-          totalGeralRisco++;
         }
       }
-
-      totalGeralAlunos += alunosT.length;
 
       relatorioPorTurma.push({
         turma: tNome,
@@ -152,7 +161,7 @@ router.get("/diario/relatorio-frequencia-mensal", async (req, res) => {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Relatório Mensal de Frequência - \${nomeMes}/\${ano}</title>
+  <title>Relatório Mensal de Frequência - ${nomeMes}/${ano}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -163,218 +172,261 @@ router.get("/diario/relatorio-frequencia-mensal", async (req, res) => {
       --warning: #f59e0b;
       --warning-bg: #fef3c7;
       --success: #10b981;
-      --text-main: #1f2937;
-      --text-muted: #6b7280;
-      --border: #e5e7eb;
+      --text-main: #0f172a;
+      --text-muted: #64748b;
+      --border: #e2e8f0;
+      --primary: #1e3a8a;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: 'Outfit', sans-serif;
       color: var(--text-main);
-      background-color: #f9fafb;
+      background-color: #f8fafc;
       line-height: 1.5;
       padding: 2rem 1rem;
     }
     .container {
-      max-width: 850px;
+      max-width: 900px;
       margin: 0 auto;
       background: #ffffff;
-      padding: 2.5rem;
-      border-radius: 1rem;
-      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -1px rgba(0,0,0,0.03);
+      padding: 3rem;
+      border-radius: 1.5rem;
+      box-shadow: 0 10px 25px -5px rgba(0,0,0,0.05), 0 8px 10px -6px rgba(0,0,0,0.05);
+      border: 1px solid var(--border);
     }
     .header {
-      border-bottom: 2px solid var(--text-main);
-      padding-bottom: 1.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1.5rem;
+      border-bottom: 2px solid var(--primary);
+      padding-bottom: 1.25rem;
       margin-bottom: 2rem;
+    }
+    .cab-info {
+      font-size: 1rem;
+    }
+    .cab-info .pref {
+      font-size: 0.9rem;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+    .cab-info .escola {
+      font-size: 1.4rem;
+      font-weight: 800;
+      color: var(--primary);
+      margin-top: 0.25rem;
+      letter-spacing: -0.5px;
+    }
+    .logo {
+      width: 70px;
+      height: 70px;
+      object-fit: contain;
+    }
+    .report-title-container {
       display: flex;
       justify-content: space-between;
-      align-items: flex-start;
+      align-items: center;
+      margin-bottom: 2.5rem;
+      flex-wrap: wrap;
+      gap: 1rem;
     }
-    .header-info h1 {
-      font-size: 1.5rem;
+    .report-title-container h2 {
+      font-size: 1.4rem;
       font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
-    .header-info p {
-      color: var(--text-muted);
-      font-size: 0.95rem;
-      margin-top: 0.25rem;
-    }
-    .header-meta {
-      text-align: right;
-    }
-    .badge {
-      display: inline-block;
-      padding: 0.25rem 0.75rem;
-      font-size: 0.85rem;
-      font-weight: 600;
-      border-radius: 9999px;
-      margin-top: 0.5rem;
+      color: #1e293b;
+      letter-spacing: -0.5px;
     }
     .badge-date {
-      background-color: #f3f4f6;
-      color: var(--text-main);
+      background-color: #e2e8f0;
+      color: #334155;
+      padding: 0.5rem 1rem;
+      font-size: 0.85rem;
+      font-weight: 700;
+      border-radius: 9999px;
+      letter-spacing: 0.5px;
     }
     .btn-print {
-      background-color: var(--text-main);
+      background-color: var(--primary);
       color: white;
       border: none;
-      padding: 0.6rem 1.2rem;
+      padding: 0.75rem 1.5rem;
       font-size: 0.9rem;
-      font-weight: 500;
-      border-radius: 0.5rem;
+      font-weight: 600;
+      border-radius: 0.75rem;
       cursor: pointer;
       display: inline-flex;
       align-items: center;
       gap: 0.5rem;
-      transition: opacity 0.2s;
+      transition: all 0.2s;
+      box-shadow: 0 4px 6px -1px rgba(30, 58, 138, 0.2);
     }
-    .btn-print:hover { opacity: 0.9; }
-    
-    .stats-grid {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 1rem;
-      margin-bottom: 2.5rem;
+    .btn-print:hover {
+      background-color: #172554;
+      transform: translateY(-1px);
     }
-    .stat-card {
-      border: 1px solid var(--border);
-      padding: 1rem;
-      border-radius: 0.5rem;
-      text-align: center;
-    }
-    .stat-val {
-      font-size: 1.8rem;
-      font-weight: 700;
-    }
-    .stat-label {
-      font-size: 0.8rem;
-      color: var(--text-muted);
-      text-transform: uppercase;
-      font-weight: 600;
-      margin-top: 0.25rem;
-    }
-    .stat-reprovados { border-left: 4px solid var(--danger); }
-    .stat-reprovados .stat-val { color: var(--danger); }
-    .stat-risco { border-left: 4px solid var(--warning); }
-    .stat-risco .stat-val { color: var(--warning); }
     
     .turma-section {
-      margin-bottom: 3rem;
+      margin-bottom: 3.5rem;
       page-break-inside: avoid;
     }
     .turma-title {
-      font-size: 1.25rem;
-      font-weight: 600;
-      border-bottom: 1px solid var(--border);
-      padding-bottom: 0.5rem;
-      margin-bottom: 1rem;
+      font-size: 1.35rem;
+      font-weight: 800;
+      border-bottom: 2px solid var(--border);
+      padding-bottom: 0.75rem;
+      margin-bottom: 1.5rem;
       display: flex;
       justify-content: space-between;
+      align-items: center;
+      color: #1e293b;
+    }
+    .turma-badge {
+      font-size: 0.85rem;
+      font-weight: 500;
+      color: var(--text-muted);
+      background-color: #f1f5f9;
+      padding: 0.25rem 0.75rem;
+      border-radius: 0.5rem;
     }
     
     .table-container {
-      margin-bottom: 1.5rem;
+      margin-bottom: 2rem;
+      border: 1px solid var(--border);
+      border-radius: 1rem;
+      overflow: hidden;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.02);
     }
     .group-title {
-      font-size: 0.9rem;
-      font-weight: 600;
-      text-transform: uppercase;
-      margin-bottom: 0.5rem;
+      font-size: 0.95rem;
+      font-weight: 700;
+      padding: 1rem 1.25rem;
       display: flex;
       align-items: center;
       gap: 0.5rem;
+      border-bottom: 1px solid var(--border);
     }
-    .group-title.danger { color: var(--danger); }
-    .group-title.warning { color: var(--warning); }
+    .group-title.danger {
+      background-color: #fff1f2;
+      color: #be123c;
+    }
+    .group-title.warning {
+      background-color: #fffbeb;
+      color: #b45309;
+    }
     
     table {
       width: 100%;
       border-collapse: collapse;
-      margin-bottom: 1rem;
-      font-size: 0.9rem;
+      font-size: 0.95rem;
     }
     th, td {
-      padding: 0.6rem 0.8rem;
+      padding: 1rem 1.25rem;
       text-align: left;
       border-bottom: 1px solid var(--border);
     }
     th {
-      background-color: #f9fafb;
+      background-color: #f8fafc;
       font-weight: 600;
-      color: var(--text-muted);
+      color: #475569;
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    tr:last-child td {
+      border-bottom: none;
     }
     
-    .row-danger { background-color: var(--danger-bg); }
-    .row-warning { background-color: var(--warning-bg); }
     .text-center { text-align: center; }
     .text-right { text-align: right; }
     
+    .badge-pct {
+      display: inline-block;
+      padding: 0.25rem 0.5rem;
+      border-radius: 0.375rem;
+      font-weight: 700;
+      font-size: 0.9rem;
+    }
+    .badge-pct.danger {
+      background-color: #fee2e2;
+      color: #ef4444;
+    }
+    .badge-pct.warning {
+      background-color: #fef3c7;
+      color: #d97706;
+    }
+    
     .no-data {
       color: var(--success);
-      font-weight: 500;
-      padding: 0.5rem 0;
-      font-size: 0.95rem;
+      font-weight: 600;
+      padding: 1.5rem;
+      font-size: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: #f0fdf4;
+      border-radius: 1rem;
+      border: 1px solid #bbf7d0;
+      margin-bottom: 2rem;
     }
     
     .footer-signature {
-      margin-top: 5rem;
+      margin-top: 6rem;
       display: flex;
       justify-content: space-between;
       page-break-inside: avoid;
+      gap: 2rem;
     }
     .signature-line {
       width: 45%;
-      border-top: 1px solid var(--text-main);
+      border-top: 1.5px solid #475569;
       text-align: center;
-      padding-top: 0.5rem;
-      font-size: 0.85rem;
+      padding-top: 0.75rem;
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: #475569;
     }
     
     @media print {
       body { background-color: white; padding: 0; }
-      .container { box-shadow: none; padding: 0; max-width: 100%; }
+      .container { box-shadow: none; padding: 0; max-width: 100%; border: none; }
       .no-print { display: none !important; }
-      .row-danger { background-color: #f9f9f9 !important; }
-      .row-warning { background-color: #ffffff !important; }
-      th { background-color: #eeeeee !important; -webkit-print-color-adjust: exact; }
+      .group-title.danger { background-color: #fff1f2 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .group-title.warning { background-color: #fffbeb !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      th { background-color: #f8fafc !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .no-data { background-color: #f0fdf4 !important; border: 1px solid #bbf7d0 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .badge-pct.danger { background-color: #fee2e2 !important; color: #ef4444 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .badge-pct.warning { background-color: #fef3c7 !important; color: #d97706 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     }
   </style>
 </head>
 <body>
   <div class="container">
     <div class="header">
-      <div class="header-info">
-        <h1>E. M. José Giró Faísca</h1>
-        <p>Resumo de Frequência e Alunos em Situação Crítica</p>
-        <span class="badge badge-date">Referência: \${nomeMes} de \${ano}</span>
+      <div class="cab-info">
+        <p class="pref">Prefeitura do Município de Campos dos Goytacazes</p>
+        <p class="pref">Secretaria Municipal de Educação, Ciência e Tecnologia</p>
+        <p class="escola">E. M. José Giró Faísca</p>
       </div>
-      <div class="header-meta no-print">
-        <button class="btn-print" onclick="window.print()">
+      <img class="logo" src="https://i.postimg.cc/bwn72w4F/So-logo-sem-fundo.png" alt="Logo">
+    </div>
+
+    <div class="report-title-container">
+      <h2>Resumo Mensal de Frequência - Alunos Críticos (&lt; 75%)</h2>
+      <div style="display: flex; gap: 10px; align-items: center;">
+        <span class="badge-date">Referência: ${nomeMes} de ${ano}</span>
+        <button class="btn-print no-print" onclick="window.print()">
           <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 9V2h12v7M6 18H4a2 2 0 01-2-2v-6a2 2 0 012-2h16a2 2 0 012 2v6a2 2 0 01-2 2h-2m-12 0v5h8v-5m-8 0h8"/></svg>
           Imprimir / Salvar PDF
         </button>
       </div>
     </div>
 
-    <div class="stats-grid">
-      <div class="stat-card">
-        <div class="stat-val">\${totalGeralAlunos}</div>
-        <div class="stat-label">Alunos Evaluados</div>
-      </div>
-      <div class="stat-card stat-reprovados">
-        <div class="stat-val">\${totalGeralReprovados}</div>
-        <div class="stat-label">Reprovados por Falta (&lt;50%)</div>
-      </div>
-      <div class="stat-card stat-risco">
-        <div class="stat-val">\${totalGeralRisco}</div>
-        <div class="stat-label">Em Risco (50% a 74%    ${relatorioPorTurma.map(rt => `
+    ${relatorioPorTurma.map(rt => `
       <div class="turma-section">
         <div class="turma-title">
           <span>Turma: ${rt.turma}</span>
-          <span style="font-size: 0.9rem; color: var(--text-muted); font-weight: normal;">${rt.totalAlunos} alunos matriculados</span>
+          <span class="turma-badge">${rt.totalAlunos} alunos matriculados</span>
         </div>
 
         ${rt.reprovados.length === 0 && rt.risco.length === 0 ? `
@@ -387,20 +439,22 @@ router.get("/diario/relatorio-frequencia-mensal", async (req, res) => {
                 <thead>
                   <tr>
                     <th>Nome do Aluno</th>
-                    <th style="width: 140px;">Matrícula</th>
-                    <th style="width: 120px;" class="text-center">Presenças / Total</th>
+                    <th style="width: 160px;">CPF</th>
+                    <th style="width: 150px;" class="text-center">Presenças / Total</th>
                     <th style="width: 100px;" class="text-center">Faltas</th>
-                    <th style="width: 100px;" class="text-right">Frequência</th>
+                    <th style="width: 120px;" class="text-right">Frequência</th>
                   </tr>
                 </thead>
                 <tbody>
                   ${rt.reprovados.map(al => `
-                    <tr class="row-danger">
+                    <tr>
                       <td><strong>${al.nome}</strong></td>
-                      <td>${al.matricula}</td>
+                      <td>${al.cpf}</td>
                       <td class="text-center">${al.presencas} / ${al.totalAulas}</td>
                       <td class="text-center">${al.faltas}</td>
-                      <td class="text-right" style="color: var(--danger); font-weight: 600;">${al.pct}%</td>
+                      <td class="text-right">
+                        <span class="badge-pct danger">${al.pct}%</span>
+                      </td>
                     </tr>
                   `).join("")}
                 </tbody>
@@ -415,20 +469,22 @@ router.get("/diario/relatorio-frequencia-mensal", async (req, res) => {
                 <thead>
                   <tr>
                     <th>Nome do Aluno</th>
-                    <th style="width: 140px;">Matrícula</th>
-                    <th style="width: 120px;" class="text-center">Presenças / Total</th>
+                    <th style="width: 160px;">CPF</th>
+                    <th style="width: 150px;" class="text-center">Presenças / Total</th>
                     <th style="width: 100px;" class="text-center">Faltas</th>
-                    <th style="width: 100px;" class="text-right">Frequência</th>
+                    <th style="width: 120px;" class="text-right">Frequência</th>
                   </tr>
                 </thead>
                 <tbody>
                   ${rt.risco.map(al => `
-                    <tr class="row-warning">
+                    <tr>
                       <td><strong>${al.nome}</strong></td>
-                      <td>${al.matricula}</td>
+                      <td>${al.cpf}</td>
                       <td class="text-center">${al.presencas} / ${al.totalAulas}</td>
                       <td class="text-center">${al.faltas}</td>
-                      <td class="text-right" style="color: var(--warning); font-weight: 600;">${al.pct}%</td>
+                      <td class="text-right">
+                        <span class="badge-pct warning">${al.pct}%</span>
+                      </td>
                     </tr>
                   `).join("")}
                 </tbody>
