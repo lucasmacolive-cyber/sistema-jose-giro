@@ -78,61 +78,81 @@ export default function CompensacaoAusenciaPage() {
       </div>
 
       {/* Folha do Documento - Tamanho A4 proporcional na tela e exato na impressão */}
-      <div className="w-full max-w-[800px] bg-white text-black p-12 sm:p-16 rounded-2xl shadow-2xl flex flex-col justify-between font-serif aspect-[1/1.414] border border-slate-200 print:border-none print:shadow-none print:rounded-none print:p-0 print:m-0 print:w-full print:max-w-none print:aspect-auto">
+      <div className="w-full max-w-[800px] bg-white text-black p-12 sm:p-16 rounded-2xl shadow-2xl flex flex-col justify-between font-sans aspect-[1/1.414] border border-slate-200 print:border-none print:shadow-none print:rounded-none print:p-0 print:m-0 print:w-full print:max-w-none print:aspect-auto">
         
         {/* Cabeçalho */}
-        <div className="text-center space-y-4 mb-12">
-          <div className="flex justify-center items-center gap-4">
-            <img 
-              src="/logo.png" 
-              alt="Logo Prefeitura" 
-              className="w-16 h-16 object-contain error-fallback" 
-              onError={(e) => { e.target.style.display = 'none'; }}
-            />
-            <div className="text-center font-sans">
-              <h2 className="text-base font-extrabold tracking-wide uppercase">Prefeitura Municipal de Campos dos Goytacazes</h2>
-              <p className="text-xs font-semibold text-gray-700">Secretaria Municipal de Educação, Ciência e Tecnologia</p>
-              <p className="text-xs text-gray-600">Resolução Seduct N° 02 de 27 de março de 2024</p>
+        <div>
+          <div className="flex items-center justify-center gap-6 font-sans mb-10 select-none border-b border-slate-100 pb-6 print:border-none print:pb-0">
+            {/* Lado Esquerdo: Brasão + Prefeitura de Campos */}
+            <div className="flex items-center gap-3">
+              <img 
+                src="https://i.postimg.cc/bwn72w4F/So-logo-sem-fundo.png" 
+                alt="Brasão de Campos" 
+                className="w-14 h-14 object-contain"
+              />
+              <div className="flex flex-col text-left leading-none">
+                <span className="text-[9px] font-extrabold text-slate-400 tracking-wider">PREFEITURA DE</span>
+                <span className="text-2xl font-black text-[#51759b] tracking-wide">CAMPOS</span>
+              </div>
+            </div>
+
+            {/* Divisor Vertical */}
+            <div className="w-[1.5px] h-11 bg-slate-300" />
+
+            {/* Lado Direito: Secretaria */}
+            <div className="flex flex-col text-left leading-tight justify-center">
+              <span className="text-[11px] font-extrabold text-[#51759b] tracking-wider">SECRETARIA MUNICIPAL</span>
+              <span className="text-[11px] font-extrabold text-[#51759b] tracking-wider">DE EDUCAÇÃO, CIÊNCIA</span>
+              <span className="text-[11px] font-extrabold text-[#51759b] tracking-wider">E TECNOLOGIA</span>
             </div>
           </div>
-          <div className="h-[2px] bg-black w-full my-4" />
-          <h1 className="text-lg font-black tracking-normal uppercase mt-6 text-center leading-relaxed">
+
+          <h1 className="text-center font-sans font-bold text-sm sm:text-base underline decoration-1 underline-offset-4 tracking-wide uppercase mt-8 mb-12 leading-relaxed">
             DECLARAÇÃO DE ACOMPANHAMENTO DO PROGRAMA DE COMPENSAÇÃO DE AUSÊNCIAS
           </h1>
         </div>
 
         {/* Conteúdo */}
-        <div className="flex-1 space-y-8 text-justify text-base leading-loose font-normal">
-          <p>
-            Declaramos que o(a) aluno(a) <strong className="underline decoration-1 underline-offset-4">{params.aluno}</strong>, 
-            matriculado(a) na Turma <strong>{params.turma}</strong>, 
-            da Unidade Escolar: <strong>{params.escola}</strong>, 
-            professor regente <strong className="underline decoration-1 underline-offset-4">{params.professor}</strong>, 
-            cumpriu com êxito os termos da Resolução Seduct N° 02 de 27 de março de 2024, que estabelece as Diretrizes para a Realização do Programa de Compensação de Ausência dos Discentes da Rede Municipal de Educação de Campos dos Goytacazes/RJ.
+        <div className="flex-1 space-y-8 text-justify text-sm sm:text-base leading-[2.2] font-normal font-sans">
+          <p className="indent-12">
+            Declaramos que o(a) aluno(a) <strong className="underline decoration-1 underline-offset-4 font-bold">{params.aluno}</strong>, 
+            matriculado(a) na Turma <strong className="underline decoration-1 underline-offset-4 font-bold">{params.turma}</strong>, 
+            da Unidade Escolar: <strong className="underline decoration-1 underline-offset-4 font-bold">{params.escola}</strong>, 
+            professor regente <strong className="underline decoration-1 underline-offset-4 font-bold">{params.professor}</strong>, 
+            cumpriu com êxito os termos da Resolução Seduct Nº 02 de 27 de março de 2024, que estabelece as Diretrizes para a Realização do Programa de Compensação de Ausência dos Discentes da Rede Municipal de Educação de Campos dos Goytacazes/RJ.
           </p>
 
-          <p className="pt-4">
+          <p className="pt-2">
             Na(s) seguinte(s) data(s): <span className="underline decoration-1 underline-offset-4 font-semibold">{params.datas}</span>
           </p>
         </div>
 
         {/* Rodapé e Assinaturas */}
-        <div className="mt-16 space-y-16">
-          <p className="text-right text-base">
-            Campos dos Goytacazes, <strong>{params.dia}</strong> de <strong>{params.mes}</strong> de <strong>{params.ano}</strong>.
+        <div className="mt-12 space-y-12 font-sans">
+          <p className="text-right text-sm sm:text-base">
+            Campos dos Goytacazes, <span className="underline decoration-1 underline-offset-4 font-bold">&nbsp;{params.dia}&nbsp;</span> de <span className="underline decoration-1 underline-offset-4 font-bold">&nbsp;{params.mes}&nbsp;</span> de <span className="underline decoration-1 underline-offset-4 font-bold">&nbsp;{params.ano}&nbsp;</span>.
           </p>
 
-          <div className="grid grid-cols-2 gap-8 text-center pt-8">
+          <div className="grid grid-cols-2 gap-8 text-center pt-8 pb-4">
             <div className="space-y-1">
               <div className="border-t border-black mx-auto w-[85%] pt-2" />
-              <p className="text-xs font-bold uppercase">Orientador Pedagógico / PSP</p>
+              <p className="text-xs font-semibold text-slate-800">Orientador Pedagógico/PSP</p>
               <p className="text-[10px] text-gray-500 font-sans">(Assinatura e Matrícula)</p>
             </div>
             <div className="space-y-1">
               <div className="border-t border-black mx-auto w-[85%] pt-2" />
-              <p className="text-xs font-bold uppercase">Diretora da Unidade Escolar</p>
+              <p className="text-xs font-semibold text-slate-800">Diretora da Unidade Escolar</p>
               <p className="text-[10px] text-gray-500 font-sans">(Assinatura e Matrícula)</p>
             </div>
+          </div>
+
+          <div className="text-center pt-8 border-t border-slate-100 print:border-none">
+            <p className="text-[9px] text-slate-400 font-sans tracking-wide leading-relaxed">
+              Avenida Vinte e Oito de Março, 40-156 - Parque Tamandaré
+            </p>
+            <p className="text-[9px] text-slate-400 font-sans tracking-wide leading-relaxed">
+              Campos dos Goytacazes - RJ
+            </p>
           </div>
         </div>
 
@@ -143,12 +163,12 @@ export default function CompensacaoAusenciaPage() {
         @media print {
           @page {
             size: A4 portrait;
-            margin: 2.5cm 2cm 2.5cm 2cm;
+            margin: 1.5cm 1.5cm 1.5cm 1.5cm;
           }
           body {
             background: #fff !important;
             color: #000 !important;
-            font-family: 'Times New Roman', Times, serif !important;
+            font-family: Arial, Helvetica, sans-serif !important;
           }
           .print\\:hidden {
             display: none !important;
@@ -171,3 +191,4 @@ export default function CompensacaoAusenciaPage() {
     </div>
   );
 }
+
