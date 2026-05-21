@@ -53,8 +53,8 @@ function Router() {
       <Route path="/transferidos" component={TransferidosPage} />
       <Route path="/ponto" component={PontoPage} />
       <Route path="/diarios" component={DiariosPage} />
-      <Route path="/diarios/:turma/:ano/:mes" component={DiarioTurmaPage} />
       <Route path="/diarios/compensacao-ausencia" component={CompensacaoAusenciaPage} />
+      <Route path="/diarios/:turma/:ano/:mes" component={DiarioTurmaPage} />
       <Route path="/calendario" component={CalendarioPage} />
       <Route path="/robo-local" component={RoboLocalPage} />
       <Route component={NotFound} />

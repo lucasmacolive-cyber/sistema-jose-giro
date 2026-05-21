@@ -780,6 +780,10 @@ export default function DiarioTurmaPage() {
             ficaiIds={new Set(ficaiAlunos.map((f) => f.aluno.id))}
             onTransferir={(aluno) => setTransferirAluno(aluno)}
             onVerPerfil={(aluno) => setPerfilAluno(aluno)}
+            mes={mes}
+            ano={ano}
+            turmaNome={turmaNome}
+            onAbrirAbono={() => setShowAbonoAlunos(true)}
           />
         )}
       </div>
@@ -1347,11 +1351,16 @@ interface GridProps {
   ficaiIds: Set<number>;
   onTransferir: (aluno: Aluno) => void;
   onVerPerfil: (aluno: Aluno) => void;
+  mes: number;
+  ano: number;
+  turmaNome: string;
+  onAbrirAbono: () => void;
 }
 
 function DiarioGrid({
   alunos, aulas, presencas, aulasMap, diasUteis, cor, hojeStr,
   pendentes, onToggleDia, onTogglePresenca, calcFreq, totalPresencas, ficaiIds, onTransferir, onVerPerfil,
+  mes, ano, turmaNome, onAbrirAbono,
 }: GridProps) {
   if (alunos.length === 0) {
     return (
@@ -1704,7 +1713,7 @@ function DiarioGrid({
             mes={mes}
             ano={ano}
             turmaNome={turmaNome}
-            onAbrirAbono={() => setShowAbonoAlunos(true)}
+            onAbrirAbono={onAbrirAbono}
           />
         </div>
       )}
