@@ -842,7 +842,7 @@ function SecaoDeclaracoes() {
               <Button
                 onClick={imprimirNaRicoh}
                 disabled={!podeGerar || imprimindoRicoh}
-                className="flex-1 h-14 text-base font-black bg-slate-700 hover:bg-slate-600 text-white rounded-xl transition-all gap-2 border-2 border-primary/20"
+                className="flex-1 h-14 text-base font-bold bg-slate-700 hover:bg-slate-600 text-white rounded-xl transition-all gap-2 border border-white/10 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 {imprimindoRicoh ? (
                   <Loader2 className="h-5 w-5 animate-spin" />
@@ -1688,7 +1688,7 @@ function SecaoPreDiario() {
               <button
                 onClick={imprimirPreDiarioNaRicoh}
                 disabled={imprimindoPreDiarioRicoh}
-                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition-colors shadow-lg shadow-blue-500/20">
+                className="flex items-center justify-center gap-1.5 px-5 py-2.5 rounded-xl text-sm font-bold bg-slate-700 hover:bg-slate-600 text-white border border-white/10 transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed shrink-0">
                 {imprimindoPreDiarioRicoh ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
                 Imprimir na RICOH
               </button>
@@ -1902,7 +1902,7 @@ const SECOES: { id: SecaoId; label: string; descricao: string; icone: any; cor: 
   { id: "prediario",    label: "Pré-Diário de Classe",          descricao: "Folha de presença para os professores marcarem manualmente",        icone: ClipboardList, cor: "orange" },
   { id: "infantil",     label: "Documentos Ensino Infantil",    descricao: "Documentos específicos da Educação Infantil",                       icone: Baby,          cor: "violet",  badge: "Em breve" },
   { id: "fundamental",  label: "Documentos Ensino Fundamental", descricao: "Documentos específicos do Ensino Fundamental",                      icone: BookOpen,      cor: "emerald", badge: "Em breve" },
-  { id: "ponto",        label: "Ponto dos Funcionários",        descricao: "Registro e controle de ponto da equipe escolar",                    icone: ClipboardList, cor: "cyan",    badge: "Em breve" },
+  { id: "ponto",        label: "Ponto dos Funcionários",        descricao: "Registro e controle de ponto da equipe escolar",                    icone: ClipboardList, cor: "cyan" },
   { id: "relatorio_individual", label: "Relatório individual do aluno", descricao: "Gere o relatório individual de avaliação e comportamento", icone: ClipboardList, cor: "violet",  badge: "Em breve" },
 ];
 
@@ -1975,7 +1975,7 @@ export default function DocumentosPage() {
                     <div className="flex items-center gap-2 flex-wrap">
                       <p className="font-bold text-white text-base">{s.label}</p>
                       {s.badge && (
-                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${c.bg} ${c.text} border ${c.border}`}>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${c.bg} ${c.text} border ${c.border} inline-flex items-center shrink-0 whitespace-nowrap align-middle`}>
                           {s.badge}
                         </span>
                       )}

@@ -640,14 +640,9 @@ export default function DiarioTurmaPage() {
           </a>
           {isMaster && (
             <button
-              className="no-print flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-black transition-all border shadow-lg hover:scale-105 active:scale-95"
-              style={{
-                color: "#fff",
-                background: "#334155", // slate-700
-                borderColor: "rgba(255,255,255,0.2)",
-              }}
               onClick={imprimirDiarioNaRicoh}
               disabled={imprimindoRicoh}
+              className="no-print flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-bold bg-slate-700 hover:bg-slate-600 text-white border border-white/10 transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
             >
               {imprimindoRicoh ? <Loader2 className="w-4 h-4 animate-spin" /> : <Printer className="w-4 h-4" />}
               RICOH (Direto)
@@ -2596,10 +2591,10 @@ function FicaiAlunosModal({
             onClick={handlePrintRicoh}
             disabled={totalSelecionados === 0 || imprimindoRicoh}
             className={cn(
-              "w-full py-2.5 rounded-xl text-sm font-bold text-white transition-all active:scale-95 flex items-center justify-center gap-1.5 mt-1",
+              "w-full py-2.5 rounded-xl text-sm font-bold text-white border transition-all active:scale-95 flex items-center justify-center gap-1.5 mt-1",
               totalSelecionados > 0 && !imprimindoRicoh
-                ? "bg-emerald-600 hover:bg-emerald-500 shadow-lg shadow-emerald-950/40"
-                : "bg-white/5 text-gray-500 cursor-not-allowed"
+                ? "bg-slate-700 hover:bg-slate-600 border-white/10"
+                : "bg-slate-800/40 border-white/5 text-white/20 cursor-not-allowed"
             )}
           >
             {imprimindoRicoh ? (

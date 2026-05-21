@@ -616,7 +616,7 @@ export default function DiariosPage() {
               <button
                 disabled={(reportTurmaMode === "custom" && selectedTurmasReport.size === 0) || imprimindoRicoh}
                 onClick={handlePrintRicoh}
-                className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold bg-blue-500/20 border border-blue-500/40 text-blue-300 hover:bg-blue-500/30 disabled:opacity-40 transition-all"
+                className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold bg-slate-700 hover:bg-slate-600 text-white border border-white/10 transition-all active:scale-95 disabled:bg-slate-800/40 disabled:border-white/5 disabled:text-white/20"
               >
                 {imprimindoRicoh ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Printer className="w-3.5 h-3.5" />}
                 Imprimir na RICOH

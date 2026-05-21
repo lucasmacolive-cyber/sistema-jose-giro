@@ -184,7 +184,7 @@ function ModalPerfilProfessor({
             <button
               onClick={imprimirNaRicoh}
               disabled={imprimindo}
-              className="w-full mt-4 flex items-center justify-center gap-2 py-3 rounded-xl bg-slate-700 hover:bg-slate-600 text-white font-black transition-all border border-white/10"
+              className="w-full mt-4 flex items-center justify-center gap-1.5 py-3 rounded-xl bg-slate-700 hover:bg-slate-600 text-white font-bold transition-all border border-white/10 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {imprimindo ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
               IMPRIMIR PERFIL (RICOH)

@@ -1112,12 +1112,12 @@ export default function ImpressoesPage() {
                             <td className="px-4 py-3 text-white/60 max-w-[200px] truncate">{h.nomeArquivo || "—"}</td>
                             <td className="px-4 py-3 font-black text-violet-400">{h.quantidadeCopias}</td>
                             <td className="px-4 py-3">
-                              <span className={`text-[10px] px-2 py-0.5 rounded-full border ${h.impressoraNome === "RICOH" ? "bg-slate-500/10 border-slate-500/30 text-slate-300" : "bg-sky-500/10 border-sky-500/30 text-sky-300"}`}>
+                              <span className={`text-[10px] px-2 py-0.5 rounded-full border ${h.impressoraNome === "RICOH" ? "bg-slate-500/10 border-slate-500/30 text-slate-300" : "bg-sky-500/10 border-sky-500/30 text-sky-300"} inline-flex items-center shrink-0 whitespace-nowrap align-middle`}>
                                 {h.impressoraNome || "—"}
                               </span>
                             </td>
                             <td className="px-4 py-3 text-right">
-                              <span className={`text-[10px] font-bold ${statusConfig(h.status).cor.split(" ")[0]}`}>
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${statusConfig(h.status).cor} inline-flex items-center shrink-0 whitespace-nowrap align-middle`}>
                                 {h.status}
                               </span>
                             </td>

@@ -216,7 +216,7 @@ export default function FicaiPage() {
           <button
             onClick={handlePrintRicoh}
             disabled={imprimindoRicoh}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold bg-emerald-600 hover:bg-emerald-500 text-white transition-all shadow-lg active:scale-95 disabled:opacity-50 shrink-0"
+            className="flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold bg-slate-700 hover:bg-slate-600 text-white border border-white/10 transition-all active:scale-95 disabled:bg-slate-800/40 disabled:border-white/5 disabled:text-white/20 shrink-0"
           >
             {imprimindoRicoh ? (
               <Loader2 className="w-4 h-4 animate-spin" />

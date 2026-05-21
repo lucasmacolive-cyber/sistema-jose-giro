@@ -197,7 +197,7 @@ export default function AlunoPerfilPage() {
               <button
                 onClick={imprimirPerfilNaRicoh}
                 disabled={imprimindo}
-                className="flex items-center gap-2 text-sm font-black bg-slate-700 hover:bg-slate-600 text-white px-4 py-2 rounded-xl transition-all border-2 border-white/5 ml-2"
+                className="flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold bg-slate-700 hover:bg-slate-600 text-white border border-white/10 transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed shrink-0 ml-2"
               >
                 {imprimindo ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
                 IMPRIMIR PERFIL (RICOH)
