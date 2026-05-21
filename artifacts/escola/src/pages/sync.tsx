@@ -2356,8 +2356,24 @@ function ModalEdicaoProfessor({ linha, onClose, onSalvo }: ModalEdicaoProfessorP
 
   useEffect(() => {
     apiFetch("/admin/turmas?limit=100")
-      .then((d) => setTurmas(d.rows))
-      .catch(() => {});
+      .then((d) => {
+        if (d && Array.isArray(d.rows)) {
+          setTurmas(d.rows);
+        } else {
+          apiFetch("/turmas?all=true")
+            .then((res) => {
+              if (Array.isArray(res)) setTurmas(res);
+            })
+            .catch(() => {});
+        }
+      })
+      .catch(() => {
+        apiFetch("/turmas?all=true")
+          .then((res) => {
+            if (Array.isArray(res)) setTurmas(res);
+          })
+          .catch(() => {});
+      });
   }, []);
 
   // Exibe todas as turmas em ambos os turnos para evitar exclusão de turmas com turnos cadastrados de forma inconsistente no banco de dados.

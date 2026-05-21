@@ -37,7 +37,11 @@ router.get("/turmas", async (req, res) => {
     })
   );
 
-  res.json(turmasComCount.filter(t => t.totalAlunos > 0));
+  if (req.query.all === "true") {
+    res.json(turmasComCount);
+  } else {
+    res.json(turmasComCount.filter(t => t.totalAlunos > 0));
+  }
 });
 
 router.get("/turmas/:id", async (req, res) => {
