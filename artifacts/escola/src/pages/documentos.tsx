@@ -439,6 +439,18 @@ function SecaoDeclaracoes() {
     if (n) setNivel(n);
   }
 
+  useEffect(() => {
+    const searchParams = new URLSearchParams(window.location.search);
+    const alunoIdStr = searchParams.get("alunoId");
+    if (alunoIdStr && todosAlunos && todosAlunos.length > 0) {
+      const id = parseInt(alunoIdStr);
+      const found = todosAlunos.find(a => a.id === id);
+      if (found) {
+        selecionarAluno(found);
+      }
+    }
+  }, [todosAlunos]);
+
   function resetTipo() {
     setNivel(""); setSituacao(""); setSerieCursou("");
     setAnoLetivo(""); setAnoEscolar(""); setResultado("");
@@ -1907,6 +1919,14 @@ export default function DocumentosPage() {
   const [secaoAtiva, setSecaoAtiva] = useState<SecaoId | null>(null);
   const [, navigate] = useLocation();
   const secaoInfo = SECOES.find(s => s.id === secaoAtiva);
+
+  useEffect(() => {
+    const searchParams = new URLSearchParams(window.location.search);
+    const secao = searchParams.get("secao") as SecaoId;
+    if (secao && SECOES.some(s => s.id === secao)) {
+      setSecaoAtiva(secao);
+    }
+  }, []);
 
   function handleCardClick(id: SecaoId) {
     if (id === "ponto") { navigate("/ponto"); return; }

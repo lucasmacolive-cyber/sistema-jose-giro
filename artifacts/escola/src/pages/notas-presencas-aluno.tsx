@@ -6,7 +6,7 @@ import { useParams, useLocation } from "wouter";
 import {
   ArrowLeft, ChevronLeft, ChevronRight, Loader2,
   BookOpen, Activity, TrendingUp, AlertTriangle, CheckCircle,
-  ChevronDown, ChevronUp, Calendar, BarChart3,
+  ChevronDown, ChevronUp, Calendar, BarChart3, FileText,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
@@ -457,23 +457,34 @@ export default function NotasPresencasAlunoPage() {
             </div>
 
             {/* Seletor de aba */}
-            <div className="flex gap-3">
-              {(["presencas", "notas"] as const).map((tab) => {
-                const isAtivo = aba === tab;
-                const tabCor = tab === "notas" ? "#3b82f6" : "#10b981";
-                const Icone = tab === "notas" ? BookOpen : Activity;
-                return (
-                  <button key={tab} onClick={() => setAba(tab)}
-                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm border transition-all"
-                    style={isAtivo
-                      ? { background: tabCor, borderColor: tabCor, color: "#fff", boxShadow: `0 4px 16px ${tabCor}44` }
-                      : { borderColor: "rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "var(--muted-foreground)" }}
-                  >
-                    <Icone className="h-4 w-4" />
-                    {tab === "notas" ? "Notas" : "Presenças"}
-                  </button>
-                );
-              })}
+            <div className="flex flex-wrap items-center justify-between gap-3 w-full">
+              <div className="flex gap-3">
+                {(["presencas", "notas"] as const).map((tab) => {
+                  const isAtivo = aba === tab;
+                  const tabCor = tab === "notas" ? "#3b82f6" : "#10b981";
+                  const Icone = tab === "notas" ? BookOpen : Activity;
+                  return (
+                    <button key={tab} onClick={() => setAba(tab)}
+                      className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm border transition-all"
+                      style={isAtivo
+                        ? { background: tabCor, borderColor: tabCor, color: "#fff", boxShadow: `0 4px 16px ${tabCor}44` }
+                        : { borderColor: "rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.05)", color: "var(--muted-foreground)" }}
+                    >
+                      <Icone className="h-4 w-4" />
+                      {tab === "notas" ? "Notas" : "Presenças"}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Botão de declaração rápida */}
+              <button
+                onClick={() => navigate(`/documentos?secao=declaracoes&alunoId=${aluno.id}`)}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm border border-blue-500/30 bg-gradient-to-r from-blue-500/10 to-indigo-500/10 text-blue-400 hover:from-blue-500/20 hover:to-indigo-500/20 hover:text-blue-300 hover:border-blue-400/50 hover:scale-[1.02] transition-all duration-200 shadow-md shadow-blue-500/5 hover:shadow-blue-500/10"
+              >
+                <FileText className="h-4 w-4 shrink-0" />
+                Gerar Declaração
+              </button>
             </div>
 
             {/* Conteúdo */}
