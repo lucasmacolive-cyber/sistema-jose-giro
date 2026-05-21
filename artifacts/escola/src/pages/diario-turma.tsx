@@ -104,6 +104,10 @@ export default function DiarioTurmaPage() {
   const isMaster = me?.perfil === "Master";
   const [imprimindoRicoh, setImprimindoRicoh] = useState(false);
 
+  // Estados para Abono de Faltas (Anexo III)
+  const [showAbonoAlunos, setShowAbonoAlunos] = useState(false);
+  const [alunoParaAbonar, setAlunoParaAbonar] = useState<Aluno | null>(null);
+
   useEffect(() => {
     const agora = new Date();
     const meianoite = new Date(agora);
@@ -816,6 +820,41 @@ export default function DiarioTurmaPage() {
           isPending={transferirMut.isPending}
         />
       )}
+
+      {/* ── Modal de Compensação de Faltas — Alunos < 75% ── */}
+      <AbonoAlunosModal
+        open={showAbonoAlunos}
+        onClose={() => setShowAbonoAlunos(false)}
+        alunos={(data?.alunos ?? []).filter((aluno) => {
+          if (aluno.situacao !== "Matriculado") return false;
+          const f = calcFreq(aluno.id);
+          return f && f.pct < 75;
+        })}
+        calcFreq={calcFreq}
+        onSelecionarAluno={(aluno) => {
+          setAlunoParaAbonar(aluno);
+          setShowAbonoAlunos(false);
+        }}
+      />
+
+      {/* ── Modal de Seleção de Faltas do Aluno ── */}
+      <AbonoDatasModal
+        open={!!alunoParaAbonar}
+        aluno={alunoParaAbonar}
+        aulasComFalta={alunoParaAbonar ? (data?.aulas ?? [])
+          .filter((a) => (data?.presencas?.[a.id]?.[alunoParaAbonar.id] ?? "P") === "F")
+          .sort((a, b) => strToDate(a.data).getTime() - strToDate(b.data).getTime()) : []}
+        onClose={() => {
+          setAlunoParaAbonar(null);
+          setShowAbonoAlunos(true); // volta para a lista de alunos
+        }}
+        onConfirm={(datas) => {
+          const datasStr = datas.join(",");
+          const url = `${BASE}/diarios/compensacao-ausencia?aluno=${encodeURIComponent(alunoParaAbonar.nomeCompleto)}&turma=${encodeURIComponent(turmaNome)}&professor=${encodeURIComponent(turma?.professorResponsavel || "")}&datas=${encodeURIComponent(datasStr)}&mes=${encodeURIComponent(MESES[mes - 1])}&ano=${ano}`;
+          window.open(url, "_blank");
+          setAlunoParaAbonar(null);
+        }}
+      />
 
       {/* ── Modal de Registro de Atividades ── */}
       {showAtividades && (
@@ -1665,6 +1704,7 @@ function DiarioGrid({
             mes={mes}
             ano={ano}
             turmaNome={turmaNome}
+            onAbrirAbono={() => setShowAbonoAlunos(true)}
           />
         </div>
       )}
@@ -1672,13 +1712,14 @@ function DiarioGrid({
   );
 }
 
-function ResumoFrequencia({ alunos, calcFreq, totalAulas, mes, ano, turmaNome }: {
+function ResumoFrequencia({ alunos, calcFreq, totalAulas, mes, ano, turmaNome, onAbrirAbono }: {
   alunos: Aluno[];
   calcFreq: (id: number) => { pct: number; faltas: number; presencas: number; total: number } | null;
   totalAulas: number;
   mes: number;
   ano: number;
   turmaNome: string;
+  onAbrirAbono: () => void;
 }) {
   const emRisco = alunos.filter((a) => { const f = calcFreq(a.id); return f && f.pct < 75 && f.pct >= 50; });
   const reprovados = alunos.filter((a) => { const f = calcFreq(a.id); return f && f.pct < 50; });
@@ -1702,15 +1743,26 @@ function ResumoFrequencia({ alunos, calcFreq, totalAulas, mes, ano, turmaNome }:
               </p>
             </div>
           </div>
-          <a
-            href={reportUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-xs font-semibold text-white shadow-lg shadow-blue-950/40 hover:bg-blue-500 hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 whitespace-nowrap"
-          >
-            <Printer className="w-4 h-4" />
-            Abrir Relatório (PDF)
-          </a>
+          <div className="flex gap-2 flex-wrap sm:flex-nowrap">
+            <a
+              href={reportUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-xs font-semibold text-white shadow-lg shadow-blue-950/40 hover:bg-blue-500 hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 whitespace-nowrap"
+            >
+              <Printer className="w-4 h-4" />
+              Abrir Relatório (PDF)
+            </a>
+            {(emRisco.length > 0 || reprovados.length > 0) && (
+              <button
+                onClick={onAbrirAbono}
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-amber-600 px-4 py-2 text-xs font-bold text-white shadow-lg shadow-amber-950/40 hover:bg-amber-500 hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 whitespace-nowrap"
+              >
+                <CalendarCheck className="w-4 h-4" />
+                Compensar Faltas
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -1773,5 +1825,200 @@ function AlertaFreq({ titulo, alunos, calcFreq, cor, icon }: {
         })}
       </div>
     </div>
+  );
+}
+
+/* ─── AbonoAlunosModal ─── */
+function AbonoAlunosModal({
+  open,
+  onClose,
+  alunos,
+  calcFreq,
+  onSelecionarAluno,
+}: {
+  open: boolean;
+  onClose: () => void;
+  alunos: Aluno[];
+  calcFreq: (id: number) => { pct: number; faltas: number; total: number } | null;
+  onSelecionarAluno: (aluno: Aluno) => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="max-w-md border border-white/10 bg-[#0f172a] text-white p-6 rounded-2xl shadow-2xl">
+        <DialogHeader>
+          <DialogTitle className="text-lg font-bold text-white flex items-center gap-2">
+            <CalendarCheck className="w-5 h-5 text-amber-500" />
+            Compensação de Faltas (Anexo III)
+          </DialogTitle>
+          <p className="text-xs text-gray-400">
+            Selecione um aluno com baixa frequência (&lt; 75%) para abonar suas faltas e emitir o documento.
+          </p>
+        </DialogHeader>
+
+        <div className="mt-4 max-h-[60vh] overflow-y-auto space-y-2 pr-1">
+          {alunos.length === 0 ? (
+            <p className="text-center py-6 text-sm text-gray-500 italic">
+              Nenhum aluno com frequência &lt; 75% neste mês.
+            </p>
+          ) : (
+            alunos.map((a) => {
+              const f = calcFreq(a.id);
+              const pct = f?.pct ?? 0;
+              const faltas = f?.faltas ?? 0;
+              return (
+                <div key={a.id} className="flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/8 hover:border-white/15 transition-all">
+                  <div className="min-w-0 pr-2">
+                    <p className="text-sm font-bold text-white truncate">{a.nomeCompleto}</p>
+                    <p className="text-xs text-gray-400 mt-0.5">
+                      Frequência: <span className={pct < 50 ? "text-red-400 font-bold" : "text-amber-400 font-bold"}>{pct}%</span> · {faltas} falta{faltas !== 1 ? "s" : ""}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => onSelecionarAluno(a)}
+                    className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-600 hover:bg-amber-500 text-white transition-all active:scale-95"
+                  >
+                    Abonar
+                  </button>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/* ─── AbonoDatasModal ─── */
+function AbonoDatasModal({
+  open,
+  aluno,
+  aulasComFalta,
+  onClose,
+  onConfirm,
+}: {
+  open: boolean;
+  aluno: Aluno | null;
+  aulasComFalta: Aula[];
+  onClose: () => void;
+  onConfirm: (datas: string[]) => void;
+}) {
+  const [selecionadas, setSelecionadas] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    setSelecionadas({});
+  }, [aluno]);
+
+  if (!aluno) return null;
+
+  const totalSelecionadas = Object.values(selecionadas).filter(Boolean).length;
+
+  const toggleData = (dataStr: string) => {
+    setSelecionadas((prev) => ({
+      ...prev,
+      [dataStr]: !prev[dataStr],
+    }));
+  };
+
+  const selectAll = () => {
+    const next: Record<string, boolean> = {};
+    for (const a of aulasComFalta) {
+      next[a.data] = true;
+    }
+    setSelecionadas(next);
+  };
+
+  const deselectAll = () => {
+    setSelecionadas({});
+  };
+
+  const handleGerar = () => {
+    const datas = Object.entries(selecionadas)
+      .filter(([_, sel]) => sel)
+      .map(([d]) => d);
+    onConfirm(datas);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="max-w-md border border-white/10 bg-[#0f172a] text-white p-6 rounded-2xl shadow-2xl">
+        <DialogHeader>
+          <DialogTitle className="text-lg font-bold text-white flex items-center gap-2">
+            <CalendarCheck className="w-5 h-5 text-amber-500" />
+            Selecionar Faltas — {aluno.nomeCompleto.split(" ").slice(0, 2).join(" ")}
+          </DialogTitle>
+          <p className="text-xs text-gray-400">
+            Selecione os dias de falta que deseja abonar na declaração de compensação.
+          </p>
+        </DialogHeader>
+
+        {aulasComFalta.length > 1 && (
+          <div className="flex gap-2 justify-end text-xs mt-2">
+            <button onClick={selectAll} className="text-amber-400 hover:underline">Selecionar Todas</button>
+            <span className="text-gray-600">|</span>
+            <button onClick={deselectAll} className="text-gray-400 hover:underline">Limpar</button>
+          </div>
+        )}
+
+        <div className="mt-2 max-h-[50vh] overflow-y-auto space-y-1.5 pr-1 py-1">
+          {aulasComFalta.length === 0 ? (
+            <p className="text-center py-6 text-sm text-gray-500 italic">
+              Nenhuma falta registrada para este aluno no mês selecionado.
+            </p>
+          ) : (
+            aulasComFalta.map((aula) => {
+              const [dd, mm, yyyy] = aula.data.split("/");
+              const dt = new Date(Number(yyyy), Number(mm) - 1, Number(dd));
+              const semana = ["Domingo", "Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado"][dt.getDay()];
+              const isChecked = !!selecionadas[aula.data];
+
+              return (
+                <label
+                  key={aula.id}
+                  className={cn(
+                    "flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all select-none",
+                    isChecked
+                      ? "bg-amber-600/10 border-amber-500/40 text-amber-200"
+                      : "bg-white/5 border-white/8 hover:border-white/12 text-gray-300"
+                  )}
+                >
+                  <input
+                    type="checkbox"
+                    checked={isChecked}
+                    onChange={() => toggleData(aula.data)}
+                    className="rounded border-white/20 bg-white/10 text-amber-600 focus:ring-amber-500 h-4 w-4 shrink-0"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-bold">{aula.data}</p>
+                    <p className="text-xs opacity-70">{semana}</p>
+                  </div>
+                </label>
+              );
+            })
+          )}
+        </div>
+
+        <div className="flex gap-3 mt-6 pt-4 border-t border-white/10">
+          <button
+            onClick={onClose}
+            className="flex-1 py-2.5 rounded-xl text-sm font-semibold bg-white/5 hover:bg-white/10 border border-white/10 text-white transition-all active:scale-95"
+          >
+            Voltar
+          </button>
+          <button
+            disabled={totalSelecionadas === 0}
+            onClick={handleGerar}
+            className={cn(
+              "flex-1 py-2.5 rounded-xl text-sm font-bold text-white transition-all active:scale-95",
+              totalSelecionadas > 0
+                ? "bg-amber-600 hover:bg-amber-500 shadow-lg shadow-amber-950/40"
+                : "bg-white/5 text-gray-500 cursor-not-allowed"
+            )}
+          >
+            Gerar compensação de faltas
+          </button>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }

@@ -25,6 +25,7 @@ import DiariosPage from "@/pages/diarios";
 import DiarioTurmaPage from "@/pages/diario-turma";
 import CalendarioPage from "@/pages/calendario";
 import RoboLocalPage from "@/pages/robo-local";
+import CompensacaoAusenciaPage from "@/pages/compensacao-ausencia";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient({
@@ -53,6 +54,7 @@ function Router() {
       <Route path="/ponto" component={PontoPage} />
       <Route path="/diarios" component={DiariosPage} />
       <Route path="/diarios/:turma/:ano/:mes" component={DiarioTurmaPage} />
+      <Route path="/diarios/compensacao-ausencia" component={CompensacaoAusenciaPage} />
       <Route path="/calendario" component={CalendarioPage} />
       <Route path="/robo-local" component={RoboLocalPage} />
       <Route component={NotFound} />

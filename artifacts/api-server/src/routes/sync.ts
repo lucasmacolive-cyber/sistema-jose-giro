@@ -1158,6 +1158,11 @@ export async function importarSecao(
     }
   }
 
+  // Garantir que as datas de atividades também sejam criadas como aulas
+  for (const dataConv of datasComConteudo.keys()) {
+    todasDatas.add(dataConv);
+  }
+
   // Upsert diario_aulas e criar mapa data → aulaId
   const aulaIdPorData = new Map<string, number>();
   for (const data of todasDatas) {
