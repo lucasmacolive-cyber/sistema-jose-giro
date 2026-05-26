@@ -2557,27 +2557,27 @@ function SecaoModelosDinamicos() {
     
     for (const [key, val] of Object.entries(tokens)) {
       const regex = new RegExp(key.replace(/[{}]/g, "\\$&"), "gi");
-      html = html.replace(regex, \`<strong>\${val}</strong>\`);
+      html = html.replace(regex, `<strong>${val}</strong>`);
     }
     
-    html = html.replace(/\\n/g, "<br/>");
+    html = html.replace(/\n/g, "<br/>");
     
-    return \`
+    return `
       <div class="page-break" style="page-break-after: always; padding: 20px 0; font-family: 'Times New Roman', Times, serif; font-size: 12pt; line-height: 1.6; text-align: justify; position: relative; min-height: 90vh;">
-        \${incluirCabecalho ? obterCabecalhoHTML("") : "<br/><br/>"}
+        ${incluirCabecalho ? obterCabecalhoHTML("") : "<br/><br/>"}
         <div style="margin-top: 30px;">
-          \${html}
+          ${html}
         </div>
         <div class="ass" style="margin-top: 80px; text-align: center;">
           <div class="linha-ass" style="display: inline-block; width: 280px; border-top: 1.5px solid #000; margin-bottom: 5px;"></div><br>
           <strong>E. M. José Giró Faísca</strong><br>Direção / Coordenação Pedagógica
         </div>
       </div>
-    \`;
+    `;
   }
 
   function gerarHtmlFinal() {
-    let finalHtml = \`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Modelos Dinâmicos</title>
+    let finalHtml = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Modelos Dinâmicos</title>
       <style>
         @page { size: A4; margin: 1.8cm 1.5cm; }
         * { box-sizing: border-box; }
@@ -2585,10 +2585,10 @@ function SecaoModelosDinamicos() {
         .no-print { display: flex; gap: 10px; margin-bottom: 16px; padding: 10px; background: #f0f0f0; border-radius: 6px; }
         .no-print button { padding: 10px 22px; cursor: pointer; font-weight: bold; border-radius: 5px; border: none; font-size: 14px; background: #10b981; color: #fff; }
         @media print { .no-print { display: none !important; } .page-break { page-break-after: always; } }
-        \${CABECALHO_CSS}
+        ${CABECALHO_CSS}
       </style></head><body>
       <div class="no-print"><button onclick="window.print()">🖨️ IMPRIMIR / SALVAR PDF</button></div>
-    \`;
+    `;
     
     alunosFiltrados.forEach(a => {
       finalHtml += renderDocumentoHtml(a);
@@ -2620,7 +2620,7 @@ function SecaoModelosDinamicos() {
     try {
       const html = gerarHtmlFinal();
       const blob = new Blob([html], { type: "text/html" });
-      const file = new File([blob], \`Documentos_Dinamicos_\${alunosFiltrados.length}_alunos.html\`, { type: "text/html" });
+      const file = new File([blob], `Documentos_Dinamicos_${alunosFiltrados.length}_alunos.html`, { type: "text/html" });
 
       const form = new FormData();
       form.append("professorSolicitante", me?.nomeCompleto || "Master");
@@ -2628,8 +2628,8 @@ function SecaoModelosDinamicos() {
       form.append("impressoraNome", "RICOH");
       form.append("arquivo", file);
 
-      const BASE = (import.meta.env.BASE_URL ?? "/").replace(/\\/$/, "") + "/";
-      const res = await fetch(\`\${BASE}api/impressoes\`, { method: "POST", body: form });
+      const BASE = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "") + "/";
+      const res = await fetch(`${BASE}api/impressoes`, { method: "POST", body: form });
       if (!res.ok) throw new Error("Erro ao enviar para impressora");
 
       alert("Enviado para a RICOH com sucesso!");
@@ -2643,8 +2643,8 @@ function SecaoModelosDinamicos() {
 
   // Helper de UI
   const btnBase = "text-center px-3 py-2 rounded-lg border text-xs font-medium transition-colors";
-  const btnOff  = \`\${btnBase} bg-[#0f172a] border-[#334155] text-slate-300 hover:border-slate-500\`;
-  const btnOn   = (cor: string) => \`\${btnBase} bg-\${cor}-500/20 border-\${cor}-500 text-\${cor}-300\`;
+  const btnOff  = `${btnBase} bg-[#0f172a] border-[#334155] text-slate-300 hover:border-slate-500`;
+  const btnOn   = (cor: string) => `${btnBase} bg-${cor}-500/20 border-${cor}-500 text-${cor}-300`;
 
   return (
     <div className="max-w-4xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
