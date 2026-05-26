@@ -1,7 +1,7 @@
 import React from "react";
 
 // Brasão oficial de Campos dos Goytacazes
-export const BRASAO_URL = "https://upload.wikimedia.org/wikipedia/commons/2/23/Bras%C3%A3o_de_Campos_dos_Goytacazes.png";
+export const BRASAO_URL = "https://upload.wikimedia.org/wikipedia/commons/thumb/2/23/Bras%C3%A3o_de_Campos_dos_Goytacazes.png/320px-Bras%C3%A3o_de_Campos_dos_Goytacazes.png";
 
 // Logo JG da escola
 export const LOGO_JG_URL = "https://i.postimg.cc/bwn72w4F/So-logo-sem-fundo.png";
@@ -43,7 +43,6 @@ export const CABECALHO_CSS = `
     color: #475569;
     line-height: 1.3;
     font-weight: bold;
-    text-transform: uppercase;
   }
 
   .timbrado-seduct-info p {
@@ -198,7 +197,7 @@ export function CabecalhoTimbrado({ tituloDoc, infoDinamica, className = "" }: C
             className="timbrado-brasao h-[60px] w-auto object-contain block"
           />
         </div>
-        <div className="timbrado-seduct-info text-right font-sans text-[10pt] text-slate-600 font-bold uppercase leading-tight print:text-black">
+        <div className="timbrado-seduct-info text-right font-sans text-[10pt] text-slate-600 font-bold leading-tight print:text-black">
           <p className="m-0">Estado do Rio de Janeiro</p>
           <p className="m-0">Prefeitura Municipal de Campos dos Goytacazes</p>
           <p className="m-0">Secretaria Municipal de Educação, Ciência e Tecnologia</p>
