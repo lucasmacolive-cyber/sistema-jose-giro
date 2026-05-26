@@ -2492,7 +2492,7 @@ function SecaoModelosDinamicos() {
   const { data: todosAlunos, isLoading } = useListarAlunos();
   const { data: me } = useGetMe({ query: { retry: false } } as any);
   
-  const [template, setTemplate] = useState("Cole ou digite o texto do seu documento aqui...\n\nO(a) aluno(a) {{NOME_ALUNO}}, nascido(a) em {{DATA_NASCIMENTO}}, filho(a) de {{NOME_MAE}} e {{NOME_PAI}}, natural de {{NATURALIDADE}}, está regularmente matriculado(a) na turma {{TURMA}} desta Unidade Escolar.");
+  const [template, setTemplate] = useState("Cole ou digite o texto do seu documento aqui...<br/><br/>O(a) aluno(a) {{NOME_ALUNO}}, nascido(a) em {{DATA_NASCIMENTO}}, filho(a) de {{NOME_MAE}} e {{NOME_PAI}}, natural de {{NATURALIDADE}}, está regularmente matriculado(a) na turma {{TURMA}} desta Unidade Escolar.");
   
   const [filtroTurma, setFiltroTurma] = useState<string>("todas");
   const [filtroTurno, setFiltroTurno] = useState<string>("todos");
@@ -2603,7 +2603,7 @@ function SecaoModelosDinamicos() {
     return `
       <div class="page-break" style="page-break-after: always; padding: 20px 0; font-family: 'Times New Roman', Times, serif; font-size: 12pt; line-height: 1.6; text-align: justify; position: relative; min-height: 90vh;">
         ${incluirCabecalho ? obterCabecalhoHTML("") : "<br/><br/>"}
-        <div style="margin-top: 30px; white-space: pre-wrap;">
+        <div style="margin-top: 30px;">
           ${html}
         </div>
         ${assinaturasHtml}
