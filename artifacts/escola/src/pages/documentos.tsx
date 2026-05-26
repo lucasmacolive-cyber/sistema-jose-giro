@@ -7,7 +7,7 @@ import {
   FileText, Search, Loader2, ChevronRight, ChevronLeft,
   Baby, BookOpen, ClipboardList, Plus, X, Calendar,
   Pencil, Trash2, UserPlus, Check, Users, FileSpreadsheet,
-  Printer, AlertTriangle, ExternalLink, Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight
+  Printer, AlertTriangle, ExternalLink, Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight, AlignJustify
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -2580,8 +2580,7 @@ function SecaoModelosDinamicos() {
       const regex = new RegExp(key.replace(/[{}]/g, "\\$&"), "gi");
       html = html.replace(regex, `<strong>${val}</strong>`);
     }
-    
-    html = html.replace(/\n/g, "<br/>");
+
     
     let assinaturasHtml = "";
     if (assDirecao || assPedagoga || assProfessora || assResponsavel) {
@@ -2604,7 +2603,7 @@ function SecaoModelosDinamicos() {
     return `
       <div class="page-break" style="page-break-after: always; padding: 20px 0; font-family: 'Times New Roman', Times, serif; font-size: 12pt; line-height: 1.6; text-align: justify; position: relative; min-height: 90vh;">
         ${incluirCabecalho ? obterCabecalhoHTML("") : "<br/><br/>"}
-        <div style="margin-top: 30px;">
+        <div style="margin-top: 30px; white-space: pre-wrap;">
           ${html}
         </div>
         ${assinaturasHtml}
@@ -2728,6 +2727,7 @@ function SecaoModelosDinamicos() {
               <button onClick={() => document.execCommand('justifyLeft')} className="p-1.5 hover:bg-white/10 rounded text-slate-300 transition-colors" title="Alinhar à Esquerda"><AlignLeft size={16} /></button>
               <button onClick={() => document.execCommand('justifyCenter')} className="p-1.5 hover:bg-white/10 rounded text-slate-300 transition-colors" title="Centralizar"><AlignCenter size={16} /></button>
               <button onClick={() => document.execCommand('justifyRight')} className="p-1.5 hover:bg-white/10 rounded text-slate-300 transition-colors" title="Alinhar à Direita"><AlignRight size={16} /></button>
+              <button onClick={() => document.execCommand('justifyFull')} className="p-1.5 hover:bg-white/10 rounded text-slate-300 transition-colors" title="Justificar Texto"><AlignJustify size={16} /></button>
             </div>
             <div
               ref={(el) => {
