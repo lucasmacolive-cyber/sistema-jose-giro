@@ -7,7 +7,7 @@ import {
   FileText, Search, Loader2, ChevronRight, ChevronLeft,
   Baby, BookOpen, ClipboardList, Plus, X, Calendar,
   Pencil, Trash2, UserPlus, Check, Users, FileSpreadsheet,
-  Printer, AlertTriangle, ExternalLink,
+  Printer, AlertTriangle, ExternalLink, Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -2388,10 +2388,10 @@ function SecaoFicai() {
                           </span>
                         </td>
                         <td className="p-4 text-xs text-slate-300">
-                          {a.motivos.join(" e ")}
+                          {(a.motivos || []).join(" e ")}
                         </td>
                         <td className="p-4">
-                          {a.datasFaltas.map((dStr: string, idx: number) => (
+                          {(a.datasFaltas || []).map((dStr: string, idx: number) => (
                             <span
                               key={idx}
                               className="bg-red-500/10 text-red-400 border border-red-500/20 px-1.5 py-0.5 rounded text-[10px] mr-1 inline-block font-mono"
@@ -2693,11 +2693,43 @@ function SecaoModelosDinamicos() {
                 </span>
               ))}
             </div>
-            <textarea
-              className="w-full h-64 bg-[#1e293b] border border-[#334155] rounded-xl p-4 text-white text-sm font-serif leading-relaxed focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none resize-y"
-              value={template}
-              onChange={e => setTemplate(e.target.value)}
-              placeholder="Cole seu texto aqui..."
+            <div className="flex flex-wrap items-center gap-2 mb-2 bg-[#1e293b] p-2 rounded-xl border border-[#334155]">
+              <select onChange={(e) => document.execCommand('fontName', false, e.target.value)} className="bg-[#0f172a] text-slate-300 border border-[#334155] rounded px-2 py-1.5 text-xs focus:outline-none focus:border-cyan-500 cursor-pointer" title="Fonte da letra">
+                <option value="Times New Roman">Times New Roman</option>
+                <option value="Arial">Arial</option>
+                <option value="Courier New">Courier New</option>
+                <option value="Georgia">Georgia</option>
+                <option value="Verdana">Verdana</option>
+              </select>
+              <select onChange={(e) => document.execCommand('fontSize', false, e.target.value)} className="bg-[#0f172a] text-slate-300 border border-[#334155] rounded px-2 py-1.5 text-xs focus:outline-none focus:border-cyan-500 cursor-pointer" title="Tamanho da fonte">
+                <option value="3">Tamanho Normal (3)</option>
+                <option value="1">Muito Pequeno (1)</option>
+                <option value="2">Pequeno (2)</option>
+                <option value="4">Médio (4)</option>
+                <option value="5">Grande (5)</option>
+                <option value="6">Muito Grande (6)</option>
+                <option value="7">Enorme (7)</option>
+              </select>
+              <div className="w-px h-5 bg-[#334155] mx-1 self-center" />
+              <button onClick={() => document.execCommand('bold')} className="p-1.5 hover:bg-white/10 rounded text-slate-300 transition-colors" title="Negrito"><Bold size={16} /></button>
+              <button onClick={() => document.execCommand('italic')} className="p-1.5 hover:bg-white/10 rounded text-slate-300 transition-colors" title="Itálico"><Italic size={16} /></button>
+              <button onClick={() => document.execCommand('underline')} className="p-1.5 hover:bg-white/10 rounded text-slate-300 transition-colors" title="Sublinhar"><Underline size={16} /></button>
+              <div className="w-px h-5 bg-[#334155] mx-1 self-center" />
+              <button onClick={() => document.execCommand('justifyLeft')} className="p-1.5 hover:bg-white/10 rounded text-slate-300 transition-colors" title="Alinhar à Esquerda"><AlignLeft size={16} /></button>
+              <button onClick={() => document.execCommand('justifyCenter')} className="p-1.5 hover:bg-white/10 rounded text-slate-300 transition-colors" title="Centralizar"><AlignCenter size={16} /></button>
+              <button onClick={() => document.execCommand('justifyRight')} className="p-1.5 hover:bg-white/10 rounded text-slate-300 transition-colors" title="Alinhar à Direita"><AlignRight size={16} /></button>
+            </div>
+            <div
+              ref={(el) => {
+                if (el && !el.dataset.initialized) {
+                  el.innerHTML = template.replace(/\\n/g, '<br/>');
+                  el.dataset.initialized = 'true';
+                }
+              }}
+              className="w-full h-64 bg-[#1e293b] border border-[#334155] rounded-xl p-4 text-white text-sm font-serif leading-relaxed focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none overflow-y-auto"
+              contentEditable
+              onInput={e => setTemplate(e.currentTarget.innerHTML)}
+              onBlur={e => setTemplate(e.currentTarget.innerHTML)}
             />
             <div className="flex flex-wrap items-center gap-4 mt-2">
               <div className="flex items-center gap-2">
