@@ -2501,6 +2501,10 @@ function SecaoModelosDinamicos() {
   
   const [incluirCabecalho, setIncluirCabecalho] = useState(true);
   const [imprimindoRicoh, setImprimindoRicoh] = useState(false);
+  const [assDirecao, setAssDirecao] = useState(true);
+  const [assPedagoga, setAssPedagoga] = useState(false);
+  const [assProfessora, setAssProfessora] = useState(false);
+  const [assResponsavel, setAssResponsavel] = useState(false);
 
   const alunosFiltrados = useMemo(() => {
     if (!todosAlunos) return [];
@@ -2553,6 +2557,13 @@ function SecaoModelosDinamicos() {
       "{{NOME_PAI}}": formatarValor(aluno.nomePai, "___________________"),
       "{{NATURALIDADE}}": formatarValor(aluno.naturalidade, "Campos dos Goytacazes/RJ"),
       "{{TURMA}}": aluno.turmaAtual || "___",
+      "{{TURMA_ATUAL}}": aluno.turmaAtual || "___",
+      "{{CPF_ALUNO}}": formatarValor(aluno.cpf, "___.___.___-__"),
+      "{{CPF_MAE}}": formatarValor(aluno.cpfMae, "___.___.___-__"),
+      "{{CPF_PAI}}": formatarValor(aluno.cpfPai, "___.___.___-__"),
+      "{{RG_MAE}}": formatarValor(aluno.rgMae, "_______________"),
+      "{{RG_PAI}}": formatarValor(aluno.rgPai, "_______________"),
+      "{{ENDERECO}}": formatarValor(aluno.endereco, "___________________________________"),
     };
     
     for (const [key, val] of Object.entries(tokens)) {
@@ -2562,16 +2573,31 @@ function SecaoModelosDinamicos() {
     
     html = html.replace(/\n/g, "<br/>");
     
+    let assinaturasHtml = "";
+    if (assDirecao || assPedagoga || assProfessora || assResponsavel) {
+      assinaturasHtml = `<div class="ass" style="margin-top: 80px; display: flex; flex-wrap: wrap; justify-content: space-around; gap: 40px; text-align: center;">`;
+      if (assDirecao) {
+        assinaturasHtml += `<div><div class="linha-ass" style="display: inline-block; width: 240px; border-top: 1.5px solid #000; margin-bottom: 5px;"></div><br><strong>Direção</strong></div>`;
+      }
+      if (assPedagoga) {
+        assinaturasHtml += `<div><div class="linha-ass" style="display: inline-block; width: 240px; border-top: 1.5px solid #000; margin-bottom: 5px;"></div><br><strong>Coordenação Pedagógica</strong></div>`;
+      }
+      if (assProfessora) {
+        assinaturasHtml += `<div><div class="linha-ass" style="display: inline-block; width: 240px; border-top: 1.5px solid #000; margin-bottom: 5px;"></div><br><strong>Professora da Turma</strong></div>`;
+      }
+      if (assResponsavel) {
+        assinaturasHtml += `<div><div class="linha-ass" style="display: inline-block; width: 240px; border-top: 1.5px solid #000; margin-bottom: 5px;"></div><br><strong>Responsável</strong></div>`;
+      }
+      assinaturasHtml += `</div>`;
+    }
+
     return `
       <div class="page-break" style="page-break-after: always; padding: 20px 0; font-family: 'Times New Roman', Times, serif; font-size: 12pt; line-height: 1.6; text-align: justify; position: relative; min-height: 90vh;">
         ${incluirCabecalho ? obterCabecalhoHTML("") : "<br/><br/>"}
         <div style="margin-top: 30px;">
           ${html}
         </div>
-        <div class="ass" style="margin-top: 80px; text-align: center;">
-          <div class="linha-ass" style="display: inline-block; width: 280px; border-top: 1.5px solid #000; margin-bottom: 5px;"></div><br>
-          <strong>E. M. José Giró Faísca</strong><br>Direção / Coordenação Pedagógica
-        </div>
+        ${assinaturasHtml}
       </div>
     `;
   }
@@ -2661,7 +2687,7 @@ function SecaoModelosDinamicos() {
               Use as palavras-chave abaixo para que o sistema substitua automaticamente pelos dados do aluno:
             </p>
             <div className="flex flex-wrap gap-2">
-              {["{{NOME_ALUNO}}", "{{DATA_NASCIMENTO}}", "{{NOME_MAE}}", "{{NOME_PAI}}", "{{NATURALIDADE}}", "{{TURMA}}"].map(k => (
+              {["{{NOME_ALUNO}}", "{{DATA_NASCIMENTO}}", "{{NOME_MAE}}", "{{NOME_PAI}}", "{{NATURALIDADE}}", "{{TURMA_ATUAL}}", "{{CPF_ALUNO}}", "{{CPF_MAE}}", "{{CPF_PAI}}", "{{RG_MAE}}", "{{RG_PAI}}", "{{ENDERECO}}"].map(k => (
                 <span key={k} className="px-2 py-1 bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 rounded font-mono text-[10px]">
                   {k}
                 </span>
@@ -2673,17 +2699,29 @@ function SecaoModelosDinamicos() {
               onChange={e => setTemplate(e.target.value)}
               placeholder="Cole seu texto aqui..."
             />
-            <div className="flex items-center gap-2 mt-2">
-              <input 
-                type="checkbox" 
-                id="incCabecalho" 
-                checked={incluirCabecalho} 
-                onChange={e => setIncluirCabecalho(e.target.checked)} 
-                className="rounded border-slate-500 bg-transparent text-cyan-500 focus:ring-cyan-500"
-              />
-              <label htmlFor="incCabecalho" className="text-sm text-slate-300 cursor-pointer">
-                Incluir o Cabeçalho Timbrado Unificado (Logo da Prefeitura) no topo de cada página
-              </label>
+            <div className="flex flex-wrap items-center gap-4 mt-2">
+              <div className="flex items-center gap-2">
+                <input type="checkbox" id="incCabecalho" checked={incluirCabecalho} onChange={e => setIncluirCabecalho(e.target.checked)} className="rounded border-slate-500 bg-transparent text-cyan-500 focus:ring-cyan-500" />
+                <label htmlFor="incCabecalho" className="text-sm text-slate-300 cursor-pointer">Incluir Cabeçalho Timbrado no topo</label>
+              </div>
+              <div className="w-full h-px bg-[#334155] my-1"></div>
+              <p className="text-xs text-slate-400 w-full mb-1">Assinaturas no final da página:</p>
+              <div className="flex items-center gap-2">
+                <input type="checkbox" id="assDir" checked={assDirecao} onChange={e => setAssDirecao(e.target.checked)} className="rounded border-slate-500 bg-transparent text-cyan-500 focus:ring-cyan-500" />
+                <label htmlFor="assDir" className="text-sm text-slate-300 cursor-pointer">Direção</label>
+              </div>
+              <div className="flex items-center gap-2">
+                <input type="checkbox" id="assPed" checked={assPedagoga} onChange={e => setAssPedagoga(e.target.checked)} className="rounded border-slate-500 bg-transparent text-cyan-500 focus:ring-cyan-500" />
+                <label htmlFor="assPed" className="text-sm text-slate-300 cursor-pointer">Pedagoga</label>
+              </div>
+              <div className="flex items-center gap-2">
+                <input type="checkbox" id="assProf" checked={assProfessora} onChange={e => setAssProfessora(e.target.checked)} className="rounded border-slate-500 bg-transparent text-cyan-500 focus:ring-cyan-500" />
+                <label htmlFor="assProf" className="text-sm text-slate-300 cursor-pointer">Professora</label>
+              </div>
+              <div className="flex items-center gap-2">
+                <input type="checkbox" id="assResp" checked={assResponsavel} onChange={e => setAssResponsavel(e.target.checked)} className="rounded border-slate-500 bg-transparent text-cyan-500 focus:ring-cyan-500" />
+                <label htmlFor="assResp" className="text-sm text-slate-300 cursor-pointer">Responsável</label>
+              </div>
             </div>
           </div>
         </div>
