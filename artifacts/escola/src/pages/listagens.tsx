@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import * as XLSX from "xlsx";
+import { CABECALHO_CSS, obterCabecalhoHTML } from "@/components/CabecalhoTimbrado";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -93,6 +94,12 @@ function gerarHtmlLista(
     return `<tr style="background:${bg}">${cells}</tr>`;
   }).join("");
 
+  const infoDinamicaHTML = `
+    <span>Registros: ${pessoas.length}</span>
+    <span>Emissão: ${hoje}</span>
+  `;
+  const cabecalhoHtml = obterCabecalhoHTML(titulo, infoDinamicaHTML);
+
   return `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>${titulo}</title>
   <style>
     @page{size:${pgSize};margin:1.8cm}
@@ -101,17 +108,13 @@ function gerarHtmlLista(
     .no-print button{padding:7px 18px;cursor:pointer;border:none;border-radius:6px;font-weight:700;font-size:13px}
     .btn-imp{background:#2563eb;color:#fff}
     table{width:100%;border-collapse:collapse;margin-top:14px}
-    h2{font-size:15pt;margin:0 0 2px}p.sub{margin:0;font-size:9pt;color:#64748b}
     @media print{.no-print{display:none}}
+    ${CABECALHO_CSS}
   </style></head><body>
   <div class="no-print">
     <button class="btn-imp" onclick="window.print()">🖨️ IMPRIMIR / SALVAR PDF</button>
   </div>
-  <div style="border-left:4px solid #3b82f6;padding-left:12px;margin-bottom:14px">
-    <p style="font-size:7pt;margin:0;color:#64748b">PREFEITURA DO MUNICÍPIO DE CAMPOS DOS GOYTACAZES · SECRETARIA MUNICIPAL DE EDUCAÇÃO, CIÊNCIA E TECNOLOGIA</p>
-    <h2>E. M. JOSÉ GIRÓ FAÍSCA</h2>
-    <p class="sub">${titulo} · ${pessoas.length} registro${pessoas.length !== 1 ? "s" : ""} · Emitido em ${hoje}</p>
-  </div>
+  ${cabecalhoHtml}
   <table><thead><tr>${ths}</tr></thead><tbody>${linhas}</tbody></table>
   </body></html>`;
 }
@@ -147,21 +150,17 @@ function gerarHtmlTodasTurmas(
         }).join("")}</tr>`)
         .join("");
       const isLast = idx === arr.length - 1;
+
+      const infoDinamicaHTML = `
+        ${showProfessor && professor ? `<span>PROFESSOR(A): ${professor}</span>` : ""}
+        ${showTurma ? `<span>TURMA: ${t.nomeTurma}</span>` : ""}
+        <span>EMISSÃO: ${hoje}</span>
+      `;
+      const cabecalhoHtml = obterCabecalhoHTML("Listagem de Alunos", infoDinamicaHTML);
+
       return `
         <div class="turma-bloco${isLast ? "" : " page-break"}">
-          <div class="cabecalho-container">
-            <div class="textos-prefeitura">
-              <p>Prefeitura do Município de Campos dos Goytacazes</p>
-              <p>Secretaria Municipal de Educação, Ciência e Tecnologia</p>
-              <p>E. M. José Giró Faísca</p>
-              <div class="info-dinamica">
-                ${showProfessor && professor ? `<span>PROFESSOR(A): ${professor}</span>` : ""}
-                ${showTurma ? `<span>TURMA: ${t.nomeTurma}</span>` : ""}
-                <span>EMISSÃO: ${hoje}</span>
-              </div>
-            </div>
-            <img src="https://i.postimg.cc/bwn72w4F/So-logo-sem-fundo.png" class="logo-escola" alt="Logo Escola">
-          </div>
+          ${cabecalhoHtml}
           <table>
             <thead><tr>${colunas.map((c) => `<th>${c.label.toUpperCase()}</th>`).join("")}</tr></thead>
             <tbody>${linhas}</tbody>
@@ -181,11 +180,6 @@ function gerarHtmlTodasTurmas(
     .no-print { display: flex; gap: 10px; margin-bottom: 16px; padding: 10px; background: #f0f0f0; border-radius: 5px; border: 1px solid #ccc; }
     button { padding: 10px 20px; cursor: pointer; font-weight: bold; border-radius: 5px; border: 1px solid #000; }
     .btn-imp { background: #10b981; color: #fff; border: none; }
-    .cabecalho-container { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #000; margin-bottom: 14px; padding-bottom: 12px; }
-    .textos-prefeitura p { margin: 2px 0; font-weight: bold; text-transform: uppercase; font-size: 12px; }
-    .logo-escola { width: 80px; height: 80px; object-fit: contain; }
-    .info-dinamica { margin-top: 8px; font-size: 11px; border-top: 1px solid #eee; padding-top: 4px; }
-    .info-dinamica span { font-weight: bold; text-transform: uppercase; margin-right: 18px; }
     table { width: 100%; border-collapse: collapse; margin-top: 8px; table-layout: auto; }
     th, td { border: 1px solid #000; padding: 5px 6px; font-size: ${fontSize}; text-align: left; word-wrap: break-word; }
     th { background: #f2f2f2; text-transform: uppercase; font-weight: bold; }
@@ -196,6 +190,7 @@ function gerarHtmlTodasTurmas(
       body { padding: 0; }
       tr { page-break-inside: avoid; }
     }
+    ${CABECALHO_CSS}
   </style>
 </head>
 <body>
@@ -246,6 +241,13 @@ function gerarHtmlImpressao(
     )
     .join("");
 
+  const infoDinamicaHTML = `
+    ${showProfessor && professor ? `<span>PROFESSOR(A): ${professor}</span>` : ""}
+    ${showTurma ? `<span>TURMA: ${turma}</span>` : ""}
+    <span>EMISSÃO: ${hoje}</span>
+  `;
+  const cabecalhoHtml = obterCabecalhoHTML("Listagem de Alunos", infoDinamicaHTML);
+
   return `<!DOCTYPE html>
 <html>
 <head>
@@ -257,12 +259,6 @@ function gerarHtmlImpressao(
     .no-print { display: flex; gap: 10px; margin-bottom: 16px; padding: 10px; background: #f0f0f0; border-radius: 5px; border: 1px solid #ccc; }
     button { padding: 10px 20px; cursor: pointer; font-weight: bold; border-radius: 5px; border: 1px solid #000; }
     .btn-imp { background: #10b981; color: #fff; border: none; }
-    .cabecalho-container { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #000; margin-bottom: 14px; padding-bottom: 12px; }
-    .textos-prefeitura p { margin: 2px 0; font-weight: bold; text-transform: uppercase; font-size: 12px; }
-    .logo-escola { width: 80px; height: 80px; object-fit: contain; }
-    .info-dinamica { margin-top: 8px; font-size: 11px; border-top: 1px solid #eee; padding-top: 4px; }
-    .info-dinamica span { font-weight: bold; text-transform: uppercase; margin-right: 18px; }
-    .orientacao-badge { display:inline-block; margin-left:8px; font-size:10px; color:#666; border:1px solid #ccc; border-radius:3px; padding:1px 5px; }
     table { width: 100%; border-collapse: collapse; margin-top: 8px; table-layout: auto; }
     th, td { border: 1px solid #000; padding: 5px 6px; font-size: ${fontSize}; text-align: left; word-wrap: break-word; }
     th { background: #f2f2f2; text-transform: uppercase; font-weight: bold; }
@@ -271,6 +267,7 @@ function gerarHtmlImpressao(
       body { padding: 0; }
       tr { page-break-inside: avoid; }
     }
+    ${CABECALHO_CSS}
   </style>
 </head>
 <body>
@@ -280,19 +277,7 @@ function gerarHtmlImpressao(
       Orientação: <strong>${orientacao === "paisagem" ? "📄 Paisagem (Landscape)" : "📄 Retrato (Portrait)"}</strong>
     </span>
   </div>
-  <div class="cabecalho-container">
-    <div class="textos-prefeitura">
-      <p>Prefeitura do Município de Campos dos Goytacazes</p>
-      <p>Secretaria Municipal de Educação, Ciência e Tecnologia</p>
-      <p>E. M. José Giró Faísca</p>
-      <div class="info-dinamica">
-        ${showProfessor && professor ? `<span>PROFESSOR(A): ${professor}</span>` : ""}
-        ${showTurma ? `<span>TURMA: ${turma}</span>` : ""}
-        <span>EMISSÃO: ${hoje}</span>
-      </div>
-    </div>
-    <img src="https://i.postimg.cc/bwn72w4F/So-logo-sem-fundo.png" class="logo-escola" alt="Logo Escola">
-  </div>
+  ${cabecalhoHtml}
   <table>
     <thead><tr>${colunas.map((c) => `<th>${c.label.toUpperCase()}</th>`).join("")}</tr></thead>
     <tbody>${linhasTabela}</tbody>

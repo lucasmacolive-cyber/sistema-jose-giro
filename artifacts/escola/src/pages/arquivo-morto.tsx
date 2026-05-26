@@ -475,13 +475,36 @@ export default function ArquivoMortoPage() {
   const [dialogAdd, setDialogAdd] = useState(false);
   const [alunoSelecionado, setAlunoSelecionado] = useState<number | null>(null);
 
-  const filtered = (lista ?? []).filter(
-    (a) =>
-      (a.nomeAluno ?? "").toLowerCase().includes(search.toLowerCase()) ||
-      (a.matricula ?? "").toLowerCase().includes(search.toLowerCase()) ||
-      (a.turma ?? "").toLowerCase().includes(search.toLowerCase()) ||
-      (a.anoSaida ?? "").includes(search)
-  );
+  const filtered = (() => {
+    const list = (lista ?? []).filter(
+      (a) =>
+        (a.nomeAluno ?? "").toLowerCase().includes(search.toLowerCase()) ||
+        (a.matricula ?? "").toLowerCase().includes(search.toLowerCase()) ||
+        (a.turma ?? "").toLowerCase().includes(search.toLowerCase()) ||
+        (a.anoSaida ?? "").includes(search)
+    );
+
+    if (!search) return list;
+
+    const queryNorm = search.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    const getScore = (name: string) => {
+      const n = name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      if (n === queryNorm) return 100;
+      if (n.startsWith(queryNorm)) return 90;
+      const words = n.split(/\s+/);
+      if (words.some(w => w.startsWith(queryNorm))) return 80;
+      const idx = n.indexOf(queryNorm);
+      if (idx !== -1) return 70 - idx;
+      return 0;
+    };
+
+    return [...list].sort((a, b) => {
+      const scoreA = getScore(a.nomeAluno ?? "");
+      const scoreB = getScore(b.nomeAluno ?? "");
+      if (scoreB !== scoreA) return scoreB - scoreA;
+      return (a.nomeAluno ?? "").localeCompare(b.nomeAluno ?? "");
+    });
+  })();
 
   return (
     <AppLayout>

@@ -745,6 +745,9 @@ export async function sincronizarDiariosSUAP(
       // mapeados para "NI" (ou qualquer outro nome normalizado vindo do listing).
       for (const secao of secoes) {
         secao.turmaLocal = diario.turmaLocal;
+        if (diario.disciplina) {
+          secao.disciplina = diario.disciplina;
+        }
       }
 
       todasSecoes.push(...secoes);

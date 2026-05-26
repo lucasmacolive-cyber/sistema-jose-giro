@@ -27,12 +27,35 @@ export default function NotasPresencasPage() {
 
   const listaTurmas = [...new Set((alunos ?? []).map((a) => a.turmaAtual).filter(Boolean))].sort();
 
-  const filtered = (alunos ?? []).filter((a) => {
-    const q = search.toLowerCase();
-    const matchSearch = !q || a.nomeCompleto.toLowerCase().includes(q) || (a.matricula ?? "").includes(q);
-    const matchTurma = !turmaFiltro || a.turmaAtual === turmaFiltro;
-    return matchSearch && matchTurma;
-  });
+  const filtered = (() => {
+    const list = (alunos ?? []).filter((a) => {
+      const q = search.toLowerCase();
+      const matchSearch = !q || a.nomeCompleto.toLowerCase().includes(q) || (a.matricula ?? "").includes(q);
+      const matchTurma = !turmaFiltro || a.turmaAtual === turmaFiltro;
+      return matchSearch && matchTurma;
+    });
+
+    if (!search) return list;
+
+    const queryNorm = search.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    const getScore = (name: string) => {
+      const n = name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      if (n === queryNorm) return 100;
+      if (n.startsWith(queryNorm)) return 90;
+      const words = n.split(/\s+/);
+      if (words.some(w => w.startsWith(queryNorm))) return 80;
+      const idx = n.indexOf(queryNorm);
+      if (idx !== -1) return 70 - idx;
+      return 0;
+    };
+
+    return [...list].sort((a, b) => {
+      const scoreA = getScore(a.nomeCompleto);
+      const scoreB = getScore(b.nomeCompleto);
+      if (scoreB !== scoreA) return scoreB - scoreA;
+      return a.nomeCompleto.localeCompare(b.nomeCompleto);
+    });
+  })();
 
   return (
     <AppLayout>

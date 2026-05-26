@@ -13,6 +13,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import * as XLSX from "xlsx";
+import { CABECALHO_CSS, obterCabecalhoHTML } from "@/components/CabecalhoTimbrado";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -113,6 +114,8 @@ function gerarHtmlPonto(
   const mapaEspecial: Record<number, DiaEspecial> = {};
   diasEspeciais.forEach(d => { mapaEspecial[d.dia] = d; });
 
+  const cabecalhoHtml = obterCabecalhoHTML();
+
   /* função: gera a tabela de dias para 1 pessoa */
   function tabelaPessoa(p: Pessoa): string {
     const linhas = Array.from({ length: diasNoMes }, (_, i) => {
@@ -164,14 +167,7 @@ function gerarHtmlPonto(
 
     return `
     <div class="folha-ponto">
-      <div class="cabecalho">
-        <div class="cab-textos">
-          <p class="cab-linha1">Prefeitura do Município de Campos dos Goytacazes</p>
-          <p class="cab-linha2">Secretaria Municipal de Educação, Ciência e Tecnologia</p>
-          <p class="cab-nome-escola">E. M. José Giró Faísca</p>
-        </div>
-        <img src="https://i.postimg.cc/bwn72w4F/So-logo-sem-fundo.png" class="cab-logo" alt="Logo" />
-      </div>
+      ${cabecalhoHtml}
 
       <table class="tab-info">
         <tr>
@@ -248,18 +244,7 @@ function gerarHtmlPonto(
     .folha-ponto { page-break-after: always; padding-bottom: 8px; }
     .folha-ponto:last-child { page-break-after: auto; }
 
-    /* ── cabeçalho ── */
-    .cabecalho {
-      display: flex; justify-content: space-between;
-      align-items: center;
-      border-bottom: 2.5px solid #000;
-      padding-bottom: 10px; margin-bottom: 8px;
-    }
-    .cab-textos { flex: 1; }
-    .cab-linha1 { font-size: 9pt; font-weight: bold; text-transform: uppercase; margin-bottom: 1px; }
-    .cab-linha2 { font-size: 8.5pt; font-weight: bold; text-transform: uppercase; margin-bottom: 2px; }
-    .cab-nome-escola { font-size: 11pt; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px; }
-    .cab-logo { width: 68px; height: 68px; object-fit: contain; }
+    ${CABECALHO_CSS}
 
     /* ── info do funcionário ── */
     .tab-info {

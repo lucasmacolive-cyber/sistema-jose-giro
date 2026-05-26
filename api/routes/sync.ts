@@ -1,8 +1,8 @@
 // @ts-nocheck
 import { Router, type IRouter } from "express";
 import { db } from "../lib/db/index.ts";
-import { syncStatusTable, alunosTable, configuracoesTable, diarioAulasTable, diarioPresencasTable, turmasTable, professoresTable } from "../lib/db/index.ts";
-import { desc, eq, isNotNull } from "drizzle-orm";
+import { syncStatusTable, alunosTable, configuracoesTable, diarioAulasTable, diarioPresencasTable, turmasTable, professoresTable, notasTable, presencasTable } from "../lib/db/index.ts";
+import { desc, eq, isNotNull, and } from "drizzle-orm";
 import * as XLSX from "xlsx";
 import archiver from "archiver";
 import path from "path";
@@ -1361,6 +1361,91 @@ async function importarSecao(
       } catch (e: any) {
         erros.push(`Presença aluno ${alunoId} dia ${f.data}: ${e.message}`);
       }
+    }
+
+    // 3. Importar nota bimestral
+    const disciplinaNome = secao.disciplina || "Sem Disciplina";
+    if (aluno.nota !== undefined) {
+      try {
+        const existingNota = await db
+          .select()
+          .from(notasTable)
+          .where(and(
+            eq(notasTable.alunoId, alunoId),
+            eq(notasTable.bimestre, secao.bimestre),
+            eq(notasTable.disciplina, disciplinaNome)
+          ))
+          .limit(1);
+
+        const notaValStr = aluno.nota !== null ? String(aluno.nota) : null;
+
+        if (existingNota.length > 0) {
+          await db
+            .update(notasTable)
+            .set({
+              notaFinal: notaValStr,
+              mediaFinal: notaValStr,
+              dataAtualizacao: new Date()
+            })
+            .where(eq(notasTable.id, existingNota[0].id));
+        } else {
+          await db
+            .insert(notasTable)
+            .values({
+              alunoId,
+              bimestre: secao.bimestre,
+              disciplina: disciplinaNome,
+              notaFinal: notaValStr,
+              mediaFinal: notaValStr
+            });
+        }
+      } catch (e: any) {
+        erros.push(`Erro ao importar nota do aluno ${aluno.nome}: ${e.message}`);
+      }
+    }
+
+    // 4. Importar resumo de presenças bimestral
+    try {
+      const totalAulasBim = todasDatas.size;
+      const faltasBim = aluno.totalFaltasPDF || 0;
+      const freqCalc = totalAulasBim > 0
+        ? (((totalAulasBim - faltasBim) / totalAulasBim) * 100).toFixed(2)
+        : "100.00";
+
+      const existingPresenca = await db
+        .select()
+        .from(presencasTable)
+        .where(and(
+          eq(presencasTable.alunoId, alunoId),
+          eq(presencasTable.bimestre, secao.bimestre),
+          eq(presencasTable.disciplina, disciplinaNome)
+        ))
+        .limit(1);
+
+      if (existingPresenca.length > 0) {
+        await db
+          .update(presencasTable)
+          .set({
+            totalAulas: totalAulasBim,
+            faltas: faltasBim,
+            percentualFrequencia: freqCalc,
+            dataAtualizacao: new Date()
+          })
+          .where(eq(presencasTable.id, existingPresenca[0].id));
+      } else {
+        await db
+          .insert(presencasTable)
+          .values({
+            alunoId,
+            bimestre: secao.bimestre,
+            disciplina: disciplinaNome,
+            totalAulas: totalAulasBim,
+            faltas: faltasBim,
+            percentualFrequencia: freqCalc
+          });
+      }
+    } catch (e: any) {
+      erros.push(`Erro ao importar resumo de presenças do aluno ${aluno.nome}: ${e.message}`);
     }
   }
 

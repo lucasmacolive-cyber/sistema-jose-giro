@@ -13,6 +13,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
+import { CABECALHO_CSS, obterCabecalhoHTML } from "@/components/CabecalhoTimbrado";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
@@ -2189,28 +2190,19 @@ function FicaiAlunosModal({
           `;
         }).join("");
 
+        const cabecalhoHtml = obterCabecalhoHTML(undefined, `
+          <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+            <span>FICHA DE COMUNICAÇÃO DE ALUNO INFREQUENTE</span>
+            <span style="font-size: 9pt; font-weight: 950; text-transform: uppercase; background: #000; color: #fff; padding: 2px 8px; border-radius: 4px; margin: 0;">FICAI - 2026</span>
+          </div>
+        `);
+
         return `
           <div class="student-ficai-doc" style="width: 100%; page-break-after: always; box-sizing: border-box; padding: 1.5cm; min-height: 29.7cm;">
             <!-- PAGE 1: DADOS DO ALUNO E DADOS DA ESCOLA -->
             <div class="ficai-page" style="background: #fff; color: #000; font-family: Arial, Helvetica, sans-serif; display: flex; flex-direction: column; justify-content: space-between; height: 100%;">
               <div>
-                <!-- Cabeçalho -->
-                <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 2px solid #000; padding-bottom: 16px; margin-bottom: 16px;">
-                  <div style="display: flex; align-items: center; gap: 16px;">
-                    <img 
-                      src="https://i.postimg.cc/bwn72w4F/So-logo-sem-fundo.png" 
-                      alt="Brasão" 
-                      style="width: 48px; height: 48px; object-fit: contain;"
-                    />
-                    <div style="text-align: left; line-height: 1.2;">
-                      <p style="font-size: 10pt; font-weight: bold; text-transform: uppercase; margin: 0;">Prefeitura Municipal de Campos dos Goytacazes</p>
-                      <p style="font-size: 8pt; font-weight: 600; color: #475569; margin: 0;">Secretaria Municipal de Educação, Ciência e Tecnologia</p>
-                    </div>
-                  </div>
-                  <div style="text-align: right;">
-                    <p style="font-size: 9pt; font-weight: 900; text-transform: uppercase; background: #000; color: #fff; padding: 2px 8px; border-radius: 4px; margin: 0;">FICAI - 2026</p>
-                  </div>
-                </div>
+                ${cabecalhoHtml}
 
                 <h2 style="text-align: center; font-weight: bold; font-size: 11pt; text-transform: uppercase; margin-bottom: 16px; line-height: 1.4;">
                   FICHA DE COMUNICAÇÃO DE ALUNO INFREQUENTE<br/>
@@ -2443,6 +2435,7 @@ function FicaiAlunosModal({
           <meta charset="utf-8">
           <title>FICAI - E.M. José Giró Faísca</title>
           <style>
+            ${CABECALHO_CSS}
             body { font-family: Arial, Helvetica, sans-serif; margin: 0; padding: 0; color: #000; background: #fff; }
             .ficai-page { page-break-after: always; box-sizing: border-box; padding: 1.5cm; width: 100%; min-height: 29.7cm; font-family: Arial, Helvetica, sans-serif; }
             .ficai-page:last-child { page-break-after: avoid; }

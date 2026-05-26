@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { useEffect, useState } from "react";
 import { ArrowLeft, Printer } from "lucide-react";
+import { CabecalhoTimbrado } from "@/components/CabecalhoTimbrado";
 
 export default function CompensacaoAusenciaPage() {
   const [params, setParams] = useState<Record<string, string>>({});
@@ -81,35 +82,11 @@ export default function CompensacaoAusenciaPage() {
       <div className="w-full max-w-[800px] bg-white text-black p-12 sm:p-16 rounded-2xl shadow-2xl flex flex-col justify-between font-sans aspect-[1/1.414] border border-slate-200 print:border-none print:shadow-none print:rounded-none print:p-0 print:m-0 print:w-full print:max-w-none print:aspect-auto">
         
         {/* Cabeçalho */}
-        <div>
-          <div className="flex items-center justify-center gap-6 font-sans mb-10 select-none border-b border-slate-100 pb-6 print:border-none print:pb-0">
-            {/* Lado Esquerdo: Brasão + Prefeitura de Campos */}
-            <div className="flex items-center gap-3">
-              <img 
-                src="https://i.postimg.cc/bwn72w4F/So-logo-sem-fundo.png" 
-                alt="Brasão de Campos" 
-                className="w-14 h-14 object-contain"
-              />
-              <div className="flex flex-col text-left leading-none">
-                <span className="text-[9px] font-extrabold text-slate-400 tracking-wider">PREFEITURA DE</span>
-                <span className="text-2xl font-black text-[#51759b] tracking-wide">CAMPOS</span>
-              </div>
-            </div>
-
-            {/* Divisor Vertical */}
-            <div className="w-[1.5px] h-11 bg-slate-300" />
-
-            {/* Lado Direito: Secretaria */}
-            <div className="flex flex-col text-left leading-tight justify-center">
-              <span className="text-[11px] font-extrabold text-[#51759b] tracking-wider">SECRETARIA MUNICIPAL</span>
-              <span className="text-[11px] font-extrabold text-[#51759b] tracking-wider">DE EDUCAÇÃO, CIÊNCIA</span>
-              <span className="text-[11px] font-extrabold text-[#51759b] tracking-wider">E TECNOLOGIA</span>
-            </div>
-          </div>
-
-          <h1 className="text-center font-sans font-bold text-sm sm:text-base underline decoration-1 underline-offset-4 tracking-wide uppercase mt-8 mb-12 leading-relaxed">
-            DECLARAÇÃO DE ACOMPANHAMENTO DO PROGRAMA DE COMPENSAÇÃO DE AUSÊNCIAS
-          </h1>
+        <div className="w-full">
+          <CabecalhoTimbrado 
+            tituloDoc="DECLARAÇÃO DE ACOMPANHAMENTO DO PROGRAMA DE COMPENSAÇÃO DE AUSÊNCIAS"
+            className="mb-8"
+          />
         </div>
 
         {/* Conteúdo */}

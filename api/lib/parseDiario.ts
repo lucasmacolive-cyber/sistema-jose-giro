@@ -21,6 +21,7 @@ export interface AlunoFrequencia {
   nome: string;
   frequencias: { data: string; status: "P" | "F" }[];
   totalFaltasPDF: number;
+  nota?: number | null;
 }
 
 export interface AtividadeDiario {
@@ -35,6 +36,7 @@ export interface SecaoDiario {
   bimestre: number;
   ano: number;
   professorRegente: string;
+  disciplina: string;
   alunos: AlunoFrequencia[];
   atividades: AtividadeDiario[];
 }
@@ -122,6 +124,7 @@ function parseSecao(linhas: string[], erros: string[]): SecaoDiario | null {
   let bimestre = 1;
   let ano = new Date().getFullYear();
   let professorRegente = "";
+  let disciplina = "";
 
   for (let i = 0; i < linhas.length; i++) {
     const l = linhas[i];
@@ -139,7 +142,16 @@ function parseSecao(linhas: string[], erros: string[]): SecaoDiario | null {
     if (/\d+ - FUND\.\d+/.test(l)) {
       const mBim = l.match(/\b([1-4])\s*$/);
       if (mBim) bimestre = parseInt(mBim[1]);
+
+      const parts = l.split(/\s+-\s+/);
+      if (parts.length >= 4) {
+        disciplina = parts[3].replace(/\s+[1-4]\s*$/, "").trim();
+      }
     }
+
+    // Fallback para Componente Curricular
+    const mComp = l.match(/Componente Curricular:\s*(.+)$/i);
+    if (mComp) disciplina = mComp[1].trim();
 
     // Professor Regente: aparece antes de "(Professor Regente)" na seção de assinatura
     if (/\(\s*Professor\s+Regente\s*\)/i.test(l)) {
@@ -167,6 +179,7 @@ function parseSecao(linhas: string[], erros: string[]): SecaoDiario | null {
     bimestre,
     ano,
     professorRegente,
+    disciplina,
     alunos,
     atividades,
   };
@@ -266,20 +279,33 @@ function parsePresencas(
     const nome = nomeParts.join(" ").trim();
     const attTokens = tokens.slice(attStart);
 
-    // Separar attendance de faltas: attendance são ".", "-" e "1",
-    // Nota (opcional) e faltas (último número) ficam no final
+    // Separar presenças diárias usando a contagem de datas
     const attValues: ("P" | "F")[] = [];
-    let totalFaltasPDF = 0;
-    let passingFaltas = false;
-
-    for (let t = 0; t < attTokens.length; t++) {
+    const numFrequencias = datas.length;
+    for (let t = 0; t < Math.min(numFrequencias, attTokens.length); t++) {
       const tk = attTokens[t];
-      if (!passingFaltas && isAtt(tk)) {
-        attValues.push(isPresenca(tk) ? "P" : "F");
-      } else if (/^\d+$/.test(tk)) {
-        // Último número ao final é o total de faltas
-        totalFaltasPDF = parseInt(tk);
-        passingFaltas = true;
+      attValues.push(isPresenca(tk) ? "P" : "F");
+    }
+
+    // Separar colunas finais (Nota e Faltas)
+    const extraTokens = attTokens.slice(numFrequencias);
+    let totalFaltasPDF = 0;
+    let nota: number | null = null;
+
+    if (extraTokens.length > 0) {
+      // O último é sempre o total de faltas
+      const faltasStr = extraTokens[extraTokens.length - 1];
+      totalFaltasPDF = parseInt(faltasStr, 10) || 0;
+
+      // Se houver pelo menos 2 tokens extras, o penúltimo é a Nota
+      if (extraTokens.length >= 2) {
+        const notaStr = extraTokens[extraTokens.length - 2].trim();
+        if (notaStr && notaStr !== "—" && notaStr !== "-" && notaStr !== "--") {
+          const parsedNota = parseFloat(notaStr.replace(",", "."));
+          if (!isNaN(parsedNota)) {
+            nota = parsedNota;
+          }
+        }
       }
     }
 
@@ -289,7 +315,7 @@ function parsePresencas(
     );
 
     if (nome) {
-      alunos.push({ matricula, nome: normNome(nome), frequencias, totalFaltasPDF });
+      alunos.push({ matricula, nome: normNome(nome), frequencias, totalFaltasPDF, nota });
     }
   }
 

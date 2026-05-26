@@ -20,16 +20,40 @@ export default function AlunosPage() {
     if (t.nomeTurma) corPorTurma[t.nomeTurma] = t.cor || COR_PADRAO;
   });
 
-  const filtered = (alunos ?? []).filter((a) => {
-    // Excluir transferidos — só aparecem na lista de turma com toggle explícito
-    if (a.situacao?.toLowerCase().startsWith("transferido")) return false;
-    const q = search.toLowerCase();
-    return (
-      a.nomeCompleto.toLowerCase().includes(q) ||
-      (a.matricula ?? "").includes(q) ||
-      (a.turmaAtual ?? "").toLowerCase().includes(q)
-    );
-  });
+  const filtered = (() => {
+    const list = (alunos ?? []).filter((a) => {
+      // Excluir transferidos — só aparecem na lista de turma com toggle explícito
+      if (a.situacao?.toLowerCase().startsWith("transferido")) return false;
+      if (!search) return true;
+      const q = search.toLowerCase();
+      return (
+        a.nomeCompleto.toLowerCase().includes(q) ||
+        (a.matricula ?? "").includes(q) ||
+        (a.turmaAtual ?? "").toLowerCase().includes(q)
+      );
+    });
+
+    if (!search) return list;
+
+    const queryNorm = search.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    const getScore = (name: string) => {
+      const n = name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      if (n === queryNorm) return 100;
+      if (n.startsWith(queryNorm)) return 90;
+      const words = n.split(/\s+/);
+      if (words.some(w => w.startsWith(queryNorm))) return 80;
+      const idx = n.indexOf(queryNorm);
+      if (idx !== -1) return 70 - idx;
+      return 0;
+    };
+
+    return [...list].sort((a, b) => {
+      const scoreA = getScore(a.nomeCompleto);
+      const scoreB = getScore(b.nomeCompleto);
+      if (scoreB !== scoreA) return scoreB - scoreA;
+      return a.nomeCompleto.localeCompare(b.nomeCompleto);
+    });
+  })();
 
   return (
     <AppLayout>

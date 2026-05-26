@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { ArrowLeft, Printer, Loader2, Check } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "@/hooks/use-toast";
+import { CabecalhoTimbrado } from "@/components/CabecalhoTimbrado";
 
 const BASE = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "") + "/";
 
@@ -250,22 +251,14 @@ export default function FicaiPage() {
               <div className="ficai-page bg-white text-black p-12 rounded-2xl shadow-2xl border border-slate-200 print:border-none print:shadow-none print:rounded-none print:p-0 print:m-0 print:w-full print:min-h-screen flex flex-col justify-between font-sans">
                 <div>
                   {/* Cabeçalho */}
-                  <div className="flex items-center justify-between border-b-2 border-black pb-4 mb-4 select-none">
-                    <div className="flex items-center gap-4">
-                      <img 
-                        src="https://i.postimg.cc/bwn72w4F/So-logo-sem-fundo.png" 
-                        alt="Brasão" 
-                        className="w-12 h-12 object-contain"
-                      />
-                      <div className="text-left leading-tight">
-                        <p className="text-[10pt] font-bold uppercase tracking-wide">Prefeitura Municipal de Campos dos Goytacazes</p>
-                        <p className="text-[8pt] font-semibold text-slate-600">Secretaria Municipal de Educação, Ciência e Tecnologia</p>
+                  <CabecalhoTimbrado 
+                    infoDinamica={
+                      <div className="flex justify-end w-full">
+                        <span className="bg-black text-white px-2 py-0.5 rounded font-extrabold text-[8pt] tracking-normal normal-case">FICAI - 2026</span>
                       </div>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-[9pt] font-extrabold uppercase bg-black text-white px-2 py-0.5 rounded">FICAI - 2026</p>
-                    </div>
-                  </div>
+                    }
+                    className="mb-4 select-none"
+                  />
 
                   <h2 className="text-center font-bold text-[11pt] uppercase tracking-wide mb-4">
                     FICHA DE COMUNICAÇÃO DE ALUNO INFREQUENTE<br/>

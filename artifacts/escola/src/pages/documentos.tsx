@@ -7,7 +7,7 @@ import {
   FileText, Search, Loader2, ChevronRight, ChevronLeft,
   Baby, BookOpen, ClipboardList, Plus, X, Calendar,
   Pencil, Trash2, UserPlus, Check, Users, FileSpreadsheet,
-  Printer,
+  Printer, AlertTriangle, ExternalLink,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -134,6 +134,8 @@ function detectarNivel(turma: string): "infantil" | "fundamental" | "" {
   return "";
 }
 
+import { CABECALHO_CSS, obterCabecalhoHTML } from "@/components/CabecalhoTimbrado";
+
 // ─── CSS do documento impresso ───────────────────────────────────────────────
 const CSS_DOC = `
   @page { size: A4; margin: 1.8cm 1.5cm; }
@@ -143,22 +145,7 @@ const CSS_DOC = `
   .no-print button { padding: 10px 22px; cursor: pointer; font-weight: bold; border-radius: 5px; border: none; font-size: 14px; background: #10b981; color: #fff; }
   @media print { .no-print { display: none !important; } }
 
-  /* ── Cabeçalho ── */
-  .cab { display: flex; align-items: center; justify-content: space-between; gap: 10px;
-         border-bottom: 2.5px solid #000; padding-bottom: 8px; margin-bottom: 6px; }
-  .cab-info { font-size: 11pt; font-weight: bold; text-transform: uppercase; }
-  .cab-info p { margin: 1.5px 0; }
-  .cab-info p.pref { font-size: 10.5pt; }
-  .cab-info p.escola { font-size: 12pt; }
-  .logo { width: 75px; height: 75px; object-fit: contain; }
-
-  /* Bloco de dados institucionais (tamanho 11pt) */
-  .dados-inst { font-size: 11pt; margin-bottom: 6px; border-bottom: 1px solid #000; padding-bottom: 6px; }
-  .dados-inst p { margin: 1px 0; }
-
-  /* ── Título ── */
-  .titulo { text-align: center; font-size: 18pt; font-weight: bold; text-transform: uppercase;
-            letter-spacing: 1px; margin: 8px 0 8px; text-decoration: underline; }
+  ${CABECALHO_CSS}
 
   /* ── Corpo da declaração (10pt) ── */
   .corpo { line-height: 1.75; font-size: 10pt; text-align: justify; }
@@ -185,37 +172,13 @@ const CSS_DOC = `
 // ─── Cabeçalho institucional ──────────────────────────────────────────────────
 const CABECALHO_HTML = `
   <div class="no-print"><button onclick="window.print()">🖨️ IMPRIMIR / SALVAR PDF</button></div>
-  <div class="cab">
-    <div class="cab-info">
-      <p class="pref">Prefeitura do Município de Campos dos Goytacazes</p>
-      <p class="pref">Secretaria Municipal de Educação, Ciência e Tecnologia</p>
-      <p class="escola">E. M. José Giró Faísca</p>
-    </div>
-    <img class="logo" src="https://i.postimg.cc/bwn72w4F/So-logo-sem-fundo.png" alt="Logo">
-  </div>
-  <div class="dados-inst">
-    <p>Unidade Escolar: Escola Municipal José Giró Faísca</p>
-    <p>Endereço: Rua São José s/nº - Travessão de Campos – Campos dos Goytacazes &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; CEP 28175-000</p>
-    <p>Identificação Única (Educacenso): 33011966 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Telefone Institucional: (22) 981310965</p>
-    <p>E-mail Institucional: em.josegirofaisca@edu.campos.rj.gov.br</p>
-    <p>CNPJ da Prefeitura Municipal de Campos dos Goytacazes: 29.116.894/0001-61</p>
-  </div>
-  <div class="titulo">Declaração de Comprovação Escolar</div>
+  ${obterCabecalhoHTML("Declaração de Comprovação Escolar")}
 `;
 
 // ─── Página 2 — Tabela de Equivalência da Educação Infantil ──────────────────
 const VERSO_HTML = `
   <div class="page2">
-    <div class="cab">
-      <div class="cab-info">
-        <p class="pref">Prefeitura do Município de Campos dos Goytacazes</p>
-        <p class="pref">Secretaria Municipal de Educação, Ciência e Tecnologia</p>
-        <p class="escola">E. M. José Giró Faísca</p>
-      </div>
-      <img class="logo" src="https://i.postimg.cc/bwn72w4F/So-logo-sem-fundo.png" alt="Logo">
-    </div>
-
-    <div class="titulo-tab">Tabela de Equivalência da Educação Infantil</div>
+    ${obterCabecalhoHTML("Tabela de Equivalência da Educação Infantil")}
 
     <table class="tabela-equiv">
       <thead>
@@ -422,9 +385,28 @@ function SecaoDeclaracoes() {
   const sugestoes = useMemo(() => {
     if (!busca || busca.length < 1) return [];
     const q = busca.toLowerCase();
-    return (todosAlunos ?? []).filter(a =>
+    let list = (todosAlunos ?? []).filter(a =>
       a.nomeCompleto.toLowerCase().includes(q) || (a.matricula ?? "").includes(q)
-    ).slice(0, 15);
+    );
+
+    const queryNorm = busca.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    const getScore = (name: string) => {
+      const n = name.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      if (n === queryNorm) return 100;
+      if (n.startsWith(queryNorm)) return 90;
+      const words = n.split(/\s+/);
+      if (words.some(w => w.startsWith(queryNorm))) return 80;
+      const idx = n.indexOf(queryNorm);
+      if (idx !== -1) return 70 - idx;
+      return 0;
+    };
+
+    return list.sort((a, b) => {
+      const scoreA = getScore(a.nomeCompleto);
+      const scoreB = getScore(b.nomeCompleto);
+      if (scoreB !== scoreA) return scoreB - scoreA;
+      return a.nomeCompleto.localeCompare(b.nomeCompleto);
+    }).slice(0, 15);
   }, [busca, todosAlunos]);
 
   function selecionarAluno(a: any) {
@@ -1874,6 +1856,595 @@ function SecaoPreDiario() {
   );
 }
 
+function SecaoFicai() {
+  const BASE = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "") + "/";
+  const [mesSel, setMesSel] = useState(() => {
+    const meses = [
+      "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+      "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
+    ];
+    return meses[new Date().getMonth()];
+  });
+  const [anoSel, setAnoSel] = useState(() => new Date().getFullYear());
+  const [alertas, setAlertas] = useState<any[]>([]);
+  const [carregando, setCarregando] = useState(false);
+  const [imprimindoRicoh, setImprimindoRicoh] = useState(false);
+  const [selecionados, setSelecionados] = useState<Record<number, boolean>>({});
+  const [erro, setErro] = useState("");
+
+  const { data: me } = useGetMe({ query: { retry: false } } as any);
+
+  useEffect(() => {
+    setCarregando(true);
+    setErro("");
+    fetch(`${BASE}api/diario/ficai?mes=${encodeURIComponent(mesSel)}&ano=${anoSel}`, { credentials: "include" })
+      .then(res => {
+        if (!res.ok) throw new Error("Erro ao carregar alunos infrequentes");
+        return res.json();
+      })
+      .then(data => {
+        setAlertas(data.alertas || []);
+        const initial: Record<number, boolean> = {};
+        (data.alertas || []).forEach((a: any) => {
+          initial[a.alunoId] = true;
+        });
+        setSelecionados(initial);
+      })
+      .catch(err => {
+        setErro(err.message);
+        setAlertas([]);
+      })
+      .finally(() => {
+        setCarregando(false);
+      });
+  }, [mesSel, anoSel, BASE]);
+
+  const totalSelecionados = Object.values(selecionados).filter(Boolean).length;
+  const todosSelecionados = alertas.length > 0 && totalSelecionados === alertas.length;
+
+  const toggleAll = () => {
+    const next: Record<number, boolean> = {};
+    if (!todosSelecionados) {
+      alertas.forEach(a => {
+        next[a.alunoId] = true;
+      });
+    }
+    setSelecionados(next);
+  };
+
+  const toggleAluno = (id: number) => {
+    setSelecionados(prev => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const getSelectedIds = () => {
+    return Object.entries(selecionados)
+      .filter(([_, sel]) => sel)
+      .map(([id]) => Number(id));
+  };
+
+  const handleVisualizar = () => {
+    const ids = getSelectedIds();
+    if (ids.length === 0) return;
+    const url = `${BASE}diarios/ficai?ids=${ids.join(",")}&mes=${encodeURIComponent(mesSel)}&ano=${anoSel}`;
+    window.open(url, "_blank");
+  };
+
+  const handleImprimirLocal = () => {
+    const ids = getSelectedIds();
+    if (ids.length === 0) return;
+    const url = `${BASE}diarios/ficai?ids=${ids.join(",")}&mes=${encodeURIComponent(mesSel)}&ano=${anoSel}&print=true`;
+    window.open(url, "_blank");
+  };
+
+  async function handlePrintRicoh() {
+    const ids = getSelectedIds();
+    if (ids.length === 0) return;
+    setImprimindoRicoh(true);
+    try {
+      const promises = ids.map(id =>
+        fetch(`${BASE}api/alunos/${id}`, { credentials: "include" }).then(res => {
+          if (!res.ok) throw new Error(`Erro ao carregar dados do aluno ${id}`);
+          return res.json();
+        })
+      );
+      const fullAlunos = await Promise.all(promises);
+
+      const htmlContent = fullAlunos.map(aluno => {
+        const formatCPF = (c: string | null | undefined) => {
+          if (!c) return "____________________";
+          const clean = c.replace(/\D/g, "");
+          if (clean.length !== 11) return c;
+          return `${clean.substring(0, 3)}.${clean.substring(3, 6)}.${clean.substring(6, 9)}-${clean.substring(9)}`;
+        };
+
+        const getAnoEscolaridade = (tName: string | null | undefined) => {
+          if (!tName) return null;
+          const upper = tName.toUpperCase();
+          if (upper.includes("P1") || upper.includes("PRE 1") || upper.includes("PRÉ 1") || upper.includes("PRÉ I")) return "P1";
+          if (upper.includes("P2") || upper.includes("PRE 2") || upper.includes("PRÉ 2") || upper.includes("PRÉ II")) return "P2";
+          if (upper.includes("1º") || upper.includes("1O ") || upper.includes("1 AN")) return "1º";
+          if (upper.includes("2º") || upper.includes("2O ") || upper.includes("2 AN")) return "2º";
+          if (upper.includes("3º") || upper.includes("3O ") || upper.includes("3 AN")) return "3º";
+          if (upper.includes("4º") || upper.includes("4O ") || upper.includes("4 AN")) return "4º";
+          if (upper.includes("5º") || upper.includes("5O ") || upper.includes("5 AN")) return "5º";
+          if (upper.includes("6º") || upper.includes("6O ") || upper.includes("6 AN")) return "6º";
+          if (upper.includes("7º") || upper.includes("7O ") || upper.includes("7 AN")) return "7º";
+          if (upper.includes("8º") || upper.includes("8O ") || upper.includes("8 AN")) return "8º";
+          if (upper.includes("9º") || upper.includes("9O ") || upper.includes("9 AN")) return "9º";
+          if (upper.includes("EJA") || upper.includes("FASE")) return "EJA";
+          return null;
+        };
+
+        const anoEscolaridade = getAnoEscolaridade(aluno.turmaAtual);
+        const dataAtual = new Date();
+        const diaStr = String(dataAtual.getDate()).padStart(2, "0");
+        const mesStr = MESES_NOME[dataAtual.getMonth()];
+        const anoStr = String(dataAtual.getFullYear());
+        
+        const formattedCpf = formatCPF(aluno.cpf);
+        const etnia = aluno.etnia || "________________";
+        const telefone = aluno.telefone || "________________";
+        const filiacao = [
+          aluno.nomeMae ? `Mãe: ${aluno.nomeMae}` : "",
+          aluno.nomePai ? `Pai: ${aluno.nomePai}` : ""
+        ].filter(Boolean).join(" / ") || "________________________________________________";
+        const responsavel = aluno.responsavel || "________________________________________________";
+        const endereco = aluno.endereco || "________________________________________________";
+        
+        let bairro = "________________";
+        if (aluno.endereco) {
+          const match = aluno.endereco.match(/bairro\s*:?\s*([^,;]+)/i);
+          if (match) bairro = match[1].trim();
+        }
+
+        const checkboxesHtml = ["P1", "P2", "1º", "2º", "3º", "4º", "5º", "6º", "7º", "8º", "9º", "EJA"].map((anoItem) => {
+          const isChecked = anoEscolaridade === anoItem;
+          return `
+            <div style="display: inline-flex; align-items: center; margin-right: 16px; margin-bottom: 8px; font-weight: 500;">
+              <span class="checkbox-box">${isChecked ? "X" : ""}</span>
+              <span style="margin-left: 6px;">${anoItem}</span>
+            </div>
+          `;
+        }).join("");
+
+        const cabecalhoHtml = obterCabecalhoHTML(undefined, `
+          <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+            <span>FICHA DE COMUNICAÇÃO DE ALUNO INFREQUENTE</span>
+            <span style="font-size: 9pt; font-weight: 950; text-transform: uppercase; background: #000; color: #fff; padding: 2px 8px; border-radius: 4px; margin: 0;">FICAI - 2026</span>
+          </div>
+        `);
+
+        return `
+          <div class="student-ficai-doc" style="width: 100%; page-break-after: always; box-sizing: border-box; padding: 1.5cm; min-height: 29.7cm;">
+            <!-- PAGE 1: DADOS DO ALUNO E DADOS DA ESCOLA -->
+            <div class="ficai-page" style="background: #fff; color: #000; font-family: Arial, Helvetica, sans-serif; display: flex; flex-direction: column; justify-content: space-between; height: 100%;">
+              <div>
+                ${cabecalhoHtml}
+
+                <h2 style="text-align: center; font-weight: bold; font-size: 11pt; text-transform: uppercase; margin-top: 10px; margin-bottom: 16px; line-height: 1.4;">
+                  FICHA DE COMUNICAÇÃO DE ALUNO INFREQUENTE<br/>
+                  <span style="font-size: 9.5pt; font-weight: 600;">EDUCAÇÃO INFANTIL / ENSINO FUNDAMENTAL I, II E EJA</span>
+                </h2>
+
+                <!-- Informações Básicas -->
+                <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 8px; font-size: 9pt; margin-bottom: 16px; background: #f8fafc; padding: 12px; border: 1px solid #e2e8f0; border-radius: 8px;">
+                  <div>
+                    <span style="font-weight: bold;">Mês de Referência:</span>
+                    <p style="text-decoration: underline; text-decoration-style: dotted; font-weight: 600; margin: 4px 0 0 0;">${mesSel}</p>
+                  </div>
+                  <div>
+                    <span style="font-weight: bold;">Escola Municipal:</span>
+                    <p style="font-weight: 600; margin: 4px 0 0 0;">José Giró Faísca</p>
+                  </div>
+                  <div>
+                    <span style="font-weight: bold;">Articulador(a):</span>
+                    <p style="font-weight: 600; margin: 4px 0 0 0;">Karine Trajano Silveira Martins</p>
+                  </div>
+                  <div>
+                    <span style="font-weight: bold;">Tel. Articulador(a):</span>
+                    <p style="font-weight: 600; margin: 4px 0 0 0;">(22) 99847-9624</p>
+                  </div>
+                </div>
+
+                <p style="font-size: 8pt; font-style: italic; color: #64748b; margin-bottom: 16px; text-align: center;">
+                  A frequência deverá ser consultada no Sistema Unificado de Administração Pública (SUAP).
+                </p>
+
+                <!-- Dados do Aluno -->
+                <div style="border: 1px solid #000; border-radius: 8px; padding: 16px; margin-bottom: 16px; font-size: 9pt;">
+                  <h3 style="font-weight: bold; font-size: 9.5pt; border-bottom: 1px solid #000; padding-bottom: 4px; text-transform: uppercase; margin: 0 0 12px 0;">1 - DADOS DO ALUNO(A):</h3>
+                  
+                  <div style="display: grid; grid-template-columns: 3fr 1fr; gap: 8px; margin-bottom: 12px;">
+                    <div>
+                      <span style="color: #64748b; font-weight: 600;">Nome:</span>
+                      <p style="font-weight: bold; border-bottom: 1px solid #cbd5e1; padding-bottom: 2px; margin: 4px 0 0 0;">${aluno.nomeCompleto}</p>
+                    </div>
+                    <div>
+                      <span style="color: #64748b; font-weight: 600;">Data de Nascimento:</span>
+                      <p style="font-weight: bold; border-bottom: 1px solid #cbd5e1; padding-bottom: 2px; margin: 4px 0 0 0;">${aluno.dataNascimento || "___/___/______"}</p>
+                    </div>
+                  </div>
+
+                  <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 12px;">
+                    <div>
+                      <span style="color: #64748b; font-weight: 600;">CPF do aluno:</span>
+                      <p style="font-weight: bold; border-bottom: 1px solid #cbd5e1; padding-bottom: 2px; margin: 4px 0 0 0;">${formattedCpf}</p>
+                    </div>
+                    <div>
+                      <span style="color: #64748b; font-weight: 600;">Cor/Raça:</span>
+                      <p style="font-weight: bold; border-bottom: 1px solid #cbd5e1; padding-bottom: 2px; margin: 4px 0 0 0;">${etnia}</p>
+                    </div>
+                    <div>
+                      <span style="color: #64748b; font-weight: 600;">Telefone:</span>
+                      <p style="font-weight: bold; border-bottom: 1px solid #cbd5e1; padding-bottom: 2px; margin: 4px 0 0 0;">${telefone}</p>
+                    </div>
+                  </div>
+
+                  <div style="margin-bottom: 12px;">
+                    <span style="color: #64748b; font-weight: 600;">Filiação (Mãe/Pai):</span>
+                    <p style="font-weight: bold; border-bottom: 1px solid #cbd5e1; padding-bottom: 2px; margin: 4px 0 0 0;">${filiacao}</p>
+                  </div>
+
+                  <div style="margin-bottom: 12px;">
+                    <span style="color: #64748b; font-weight: 600;">Responsável pelo aluno(a):</span>
+                    <p style="font-weight: bold; border-bottom: 1px solid #cbd5e1; padding-bottom: 2px; margin: 4px 0 0 0;">${responsavel}</p>
+                  </div>
+
+                  <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 8px; margin-bottom: 12px;">
+                    <div>
+                      <span style="color: #64748b; font-weight: 600;">Endereço:</span>
+                      <p style="font-weight: bold; border-bottom: 1px solid #cbd5e1; padding-bottom: 2px; margin: 4px 0 0 0;">${endereco}</p>
+                    </div>
+                    <div>
+                      <span style="color: #64748b; font-weight: 600;">Bairro:</span>
+                      <p style="font-weight: bold; border-bottom: 1px solid #cbd5e1; padding-bottom: 2px; margin: 4px 0 0 0;">${bairro}</p>
+                    </div>
+                  </div>
+
+                  <div>
+                    <span style="color: #64748b; font-weight: 600;">Ponto de referência:</span>
+                    <p style="font-weight: bold; border-bottom: 1px solid #cbd5e1; padding-bottom: 2px; margin: 4px 0 0 0;">____________________________________________________________________</p>
+                  </div>
+                </div>
+
+                <!-- Ano de Escolaridade -->
+                <div style="border: 1px solid #000; border-radius: 8px; padding: 16px; margin-bottom: 16px; font-size: 9pt;">
+                  <h3 style="font-weight: bold; font-size: 9.5pt; border-bottom: 1px solid #000; padding-bottom: 4px; text-transform: uppercase; margin: 0 0 12px 0;">2 - ANO DE ESCOLARIDADE:</h3>
+                  <div style="display: flex; flex-wrap: wrap;">
+                    ${checkboxesHtml}
+                  </div>
+                </div>
+
+                <!-- Relato Busca Ativa -->
+                <div style="border: 1px solid #000; border-radius: 8px; padding: 16px; margin-bottom: 16px; font-size: 9pt;">
+                  <h3 style="font-weight: bold; font-size: 9.5pt; border-bottom: 1px solid #000; padding-bottom: 4px; text-transform: uppercase; margin: 0 0 12px 0;">3 - RELATO DO ARTICULADOR / DIRETOR REFERENTE À BUSCA ATIVA:</h3>
+                  <div>
+                    <div style="border-bottom: 1px solid #ccc; height: 28px; width: 100%; margin-top: 4px;"></div>
+                    <div style="border-bottom: 1px solid #ccc; height: 28px; width: 100%; margin-top: 4px;"></div>
+                    <div style="border-bottom: 1px solid #ccc; height: 28px; width: 100%; margin-top: 4px;"></div>
+                    <div style="border-bottom: 1px solid #ccc; height: 28px; width: 100%; margin-top: 4px;"></div>
+                    <div style="border-bottom: 1px solid #ccc; height: 28px; width: 100%; margin-top: 4px;"></div>
+                  </div>
+                </div>
+
+                <!-- Motivos Identificados -->
+                <div style="border: 1px solid #000; border-radius: 8px; padding: 16px; margin-bottom: 16px; font-size: 9pt;">
+                  <h3 style="font-weight: bold; font-size: 9.5pt; border-bottom: 1px solid #000; padding-bottom: 4px; text-transform: uppercase; margin: 0 0 8px 0;">4 - MOTIVOS IDENTIFICADOS PELA ESCOLA ENCAMINHADOS AO SERVIÇO SOCIAL:</h3>
+                  <table class="motivos-table" style="width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 8.5pt;">
+                    <tbody>
+                      <tr>
+                        <td style="border: 1px solid #000; padding: 5px; vertical-align: top; width: 3%;"><span class="checkbox-box" style="width: 12px; height: 12px; border: 1px solid #000; display: inline-block;"></span></td>
+                        <td style="border: 1px solid #000; padding: 5px; vertical-align: top; width: 47%; font-weight: 500;">1 - Trabalho infantojuvenil</td>
+                        <td style="border: 1px solid #000; padding: 5px; vertical-align: top; width: 3%;"><span class="checkbox-box" style="width: 12px; height: 12px; border: 1px solid #000; display: inline-block;"></span></td>
+                        <td style="border: 1px solid #000; padding: 5px; vertical-align: top; width: 47%; font-weight: 500;">7 - Aluno(a) com suspeita de envolvimento com substâncias ilícitas ou com envolvimento no tráfico</td>
+                      </tr>
+                      <tr>
+                        <td style="border: 1px solid #000; padding: 5px; vertical-align: top;"><span class="checkbox-box" style="width: 12px; height: 12px; border: 1px solid #000; display: inline-block;"></span></td>
+                        <td style="border: 1px solid #000; padding: 5px; vertical-align: top; font-weight: 500;">2 - Evasão do aluno do núcleo familiar</td>
+                        <td style="border: 1px solid #000; padding: 5px; vertical-align: top;"><span class="checkbox-box" style="width: 12px; height: 12px; border: 1px solid #000; display: inline-block;"></span></td>
+                        <td style="border: 1px solid #000; padding: 5px; vertical-align: top; font-weight: 500;">8 - Possível situação de suspeita de exploração e abuso sexual.</td>
+                      </tr>
+                      <tr>
+                        <td style="border: 1px solid #000; padding: 5px; vertical-align: top;"><span class="checkbox-box" style="width: 12px; height: 12px; border: 1px solid #000; display: inline-block;"></span></td>
+                        <td style="border: 1px solid #000; padding: 5px; vertical-align: top; font-weight: 500;">3 - Gravidez da aluna na adolescência</td>
+                        <td style="border: 1px solid #000; padding: 5px; vertical-align: top;"><span class="checkbox-box" style="width: 12px; height: 12px; border: 1px solid #000; display: inline-block;"></span></td>
+                        <td style="border: 1px solid #000; padding: 5px; vertical-align: top; font-weight: 500;">9 - Violência sofrida pelo responsável ou membro familiar</td>
+                      </tr>
+                      <tr>
+                        <td style="border: 1px solid #000; padding: 5px; vertical-align: top;"><span class="checkbox-box" style="width: 12px; height: 12px; border: 1px solid #000; display: inline-block;"></span></td>
+                        <td style="border: 1px solid #000; padding: 5px; vertical-align: top; font-weight: 500;">4 - Possível negligência dos responsáveis relacionada a situação de saúde, maus tratos, compromisso com a frequência escolar, etc...</td>
+                        <td style="border: 1px solid #000; padding: 5px; vertical-align: top;"><span class="checkbox-box" style="width: 12px; height: 12px; border: 1px solid #000; display: inline-block;"></span></td>
+                        <td style="border: 1px solid #000; padding: 5px; vertical-align: top; font-weight: 500;">10 - Violência sofrida pelo(a) aluno(a) no ambiente familiar</td>
+                      </tr>
+                      <tr>
+                        <td style="border: 1px solid #000; padding: 5px; vertical-align: top;"><span class="checkbox-box" style="width: 12px; height: 12px; border: 1px solid #000; display: inline-block;"></span></td>
+                        <td style="border: 1px solid #000; padding: 5px; vertical-align: top; font-weight: 500;">5 - Faltas recorrentes pela necessidade de cuidar de familiares e/ou serviços domésticos</td>
+                        <td style="border: 1px solid #000; padding: 5px; vertical-align: top;"><span class="checkbox-box" style="width: 12px; height: 12px; border: 1px solid #000; display: inline-block;"></span></td>
+                        <td style="border: 1px solid #000; padding: 5px; vertical-align: top; font-weight: 500;">11 - Violência sofrida pelo aluno no ambiente escolar (física, psicológica, ameaça).</td>
+                      </tr>
+                      <tr>
+                        <td style="border: 1px solid #000; padding: 5px; vertical-align: top;"><span class="checkbox-box" style="width: 12px; height: 12px; border: 1px solid #000; display: inline-block;"></span></td>
+                        <td style="border: 1px solid #000; padding: 5px; vertical-align: top; font-weight: 500;">6 - Suspeita de envolvimento com substâncias ilícitas (por parte da família).</td>
+                        <td style="border: 1px solid #000; padding: 5px; vertical-align: top;"></td>
+                        <td style="border: 1px solid #000; padding: 5px; vertical-align: top;"></td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <!-- Assinaturas Parte 1 -->
+              <div style="margin-top: 32px; font-size: 9pt; border-top: 1px solid #cbd5e1; padding-top: 16px;">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 32px; text-align: center;">
+                  <div>
+                    <p style="text-align: left; margin-bottom: 24px;">Campos dos Goytacazes, <span style="font-weight: bold; text-decoration: underline;">&nbsp;&nbsp;${diaStr}&nbsp;&nbsp;</span> de <span style="font-weight: bold; text-decoration: underline;">&nbsp;&nbsp;${mesStr}&nbsp;&nbsp;</span> de <span style="font-weight: bold; text-decoration: underline;">&nbsp;&nbsp;${anoStr}&nbsp;&nbsp;</span>.</p>
+                    <div style="border-top: 1px solid #000; width: 80%; margin: 40px auto 4px auto;"></div>
+                    <p style="font-weight: bold; font-size: 8pt; text-transform: uppercase; margin: 0;">Assinatura e Matrícula do/a Diretor/a</p>
+                  </div>
+                  <div>
+                    <p style="text-align: left; margin-bottom: 24px;">Campos dos Goytacazes, <span style="font-weight: bold; text-decoration: underline;">&nbsp;&nbsp;${diaStr}&nbsp;&nbsp;</span> de <span style="font-weight: bold; text-decoration: underline;">&nbsp;&nbsp;${mesStr}&nbsp;&nbsp;</span> de <span style="font-weight: bold; text-decoration: underline;">&nbsp;&nbsp;${anoStr}&nbsp;&nbsp;</span>.</p>
+                    <div style="border-top: 1px solid #000; width: 80%; margin: 40px auto 4px auto;"></div>
+                    <p style="font-weight: bold; font-size: 8pt; text-transform: uppercase; margin: 0;">Assinatura e Matrícula do/a Articulador/a</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- PAGE 2: RELATO DO ATENDIMENTO DO SERVIÇO SOCIAL -->
+            <div class="ficai-page" style="background: #fff; color: #000; font-family: Arial, Helvetica, sans-serif; display: flex; flex-direction: column; justify-content: space-between; page-break-before: always; height: 100%; box-sizing: border-box; padding-top: 1.5cm;">
+              <div>
+                <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #000; padding-bottom: 12px; margin-bottom: 24px;">
+                  <p style="font-size: 8.5pt; font-weight: bold; color: #64748b; text-transform: uppercase; margin: 0;">Ficha FICAI - Serviço Social</p>
+                  <p style="font-size: 8.5pt; font-weight: 600; color: #64748b; margin: 0;">Aluno: ${aluno.nomeCompleto}</p>
+                </div>
+                
+                <h3 style="font-weight: bold; font-size: 10pt; text-transform: uppercase; border-bottom: 2px solid #000; padding-bottom: 4px; margin-bottom: 16px; letter-spacing: 0.05em;">
+                  RELATO DO ATENDIMENTO DO SERVIÇO SOCIAL:
+                </h3>
+                
+                <div>
+                  ${Array.from({ length: 26 }).map(() => '<div class="line-row"></div>').join("")}
+                </div>
+              </div>
+
+              <div style="margin-top: 32px; font-size: 9pt;">
+                <div style="width: 50%; margin-left: auto; text-align: center;">
+                  <p style="text-align: left; margin-bottom: 24px;">Campos dos Goytacazes, <span style="font-weight: bold; text-decoration: underline;">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span> de <span style="font-weight: bold; text-decoration: underline;">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span> de 2026.</p>
+                  <div style="border-top: 1px solid #000; width: 80%; margin: 40px auto 4px auto;"></div>
+                  <p style="font-weight: bold; font-size: 8pt; text-transform: uppercase; margin: 0;">Assinatura do/a Assistente Social</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- PAGE 3: MEDIDAS APLICADAS PELO CONSELHO TUTELAR -->
+            <div class="ficai-page" style="background: #fff; color: #000; font-family: Arial, Helvetica, sans-serif; display: flex; flex-direction: column; justify-content: space-between; page-break-before: always; height: 100%; box-sizing: border-box; padding-top: 1.5cm;">
+              <div>
+                <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #000; padding-bottom: 12px; margin-bottom: 24px;">
+                  <p style="font-size: 8.5pt; font-weight: bold; color: #64748b; text-transform: uppercase; margin: 0;">Ficha FICAI - Conselho Tutelar</p>
+                  <p style="font-size: 8.5pt; font-weight: 600; color: #64748b; margin: 0;">Aluno: ${aluno.nomeCompleto}</p>
+                </div>
+                
+                <h3 style="font-weight: bold; font-size: 10pt; text-transform: uppercase; border-bottom: 2px solid #000; padding-bottom: 4px; margin-bottom: 16px; letter-spacing: 0.05em;">
+                  MEDIDAS APLICADAS PELO CONSELHO TUTELAR:
+                </h3>
+                
+                <div>
+                  ${Array.from({ length: 22 }).map(() => '<div class="line-row"></div>').join("")}
+                </div>
+              </div>
+
+              <div style="margin-top: 32px; font-size: 9pt;">
+                <div style="width: 50%; margin-left: auto; text-align: center;">
+                  <p style="text-align: left; margin-bottom: 24px;">Campos dos Goytacazes, <span style="font-weight: bold; text-decoration: underline;">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span> de <span style="font-weight: bold; text-decoration: underline;">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span> de 2026.</p>
+                  <div style="border-top: 1px solid #000; width: 80%; margin: 40px auto 4px auto;"></div>
+                  <p style="font-weight: bold; font-size: 8pt; text-transform: uppercase; margin: 0;">Assinatura do/a Conselheiro/a Tutelar</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join("");
+
+      const htmlDocument = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <title>FICAI - E.M. José Giró Faísca</title>
+          <style>
+            body { font-family: Arial, Helvetica, sans-serif; margin: 0; padding: 0; color: #000; background: #fff; }
+            .ficai-page { page-break-after: always; box-sizing: border-box; padding: 1.5cm; width: 100%; min-height: 29.7cm; font-family: Arial, Helvetica, sans-serif; }
+            .ficai-page:last-child { page-break-after: avoid; }
+            .text-center { text-align: center; }
+            .font-bold { font-weight: bold; }
+            .uppercase { text-transform: uppercase; }
+            .underline { text-decoration: underline; }
+            .border { border: 1px solid #000; }
+            .border-t { border-top: 1px solid #000; }
+            .border-b { border-bottom: 1px solid #000; }
+            .p-2 { padding: 8px; }
+            .mb-4 { margin-bottom: 16px; }
+            .mt-4 { margin-top: 16px; }
+            .w-full { width: 100%; }
+            .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+            .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+            .flex-col { display: flex; flex-direction: column; }
+            .justify-between { justify-content: space-between; }
+            table.motivos-table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 8.5pt; }
+            table.motivos-table td { border: 1px solid #000; padding: 5px; vertical-align: top; }
+            .checkbox-box { width: 12px; height: 12px; border: 1px solid #000; display: inline-block; text-align: center; line-height: 10px; font-size: 8pt; font-weight: bold; }
+            .line-row { border-bottom: 1px solid #ccc; height: 28px; width: 100%; margin-top: 4px; }
+            
+            ${CABECALHO_CSS}
+          </style>
+        </head>
+        <body>
+          ${htmlContent}
+        </body>
+        </html>
+      `;
+
+      const blob = new Blob([htmlDocument], { type: "text/html" });
+      const file = new File([blob], `FICAI_${fullAlunos.map(a => a.nomeCompleto.split(" ")[0]).join("_")}.html`, { type: "text/html" });
+
+      const form = new FormData();
+      form.append("professorSolicitante", me?.nomeCompleto || "Articulador - Karine Trajano");
+      form.append("quantidadeCopias", "1");
+      form.append("impressoraNome", "RICOH");
+      form.append("arquivo", file);
+
+      const res = await fetch(`${BASE}api/impressoes`, { method: "POST", body: form });
+      if (!res.ok) throw new Error("Erro ao registrar impressão");
+
+      alert("Fichas de FICAI enviadas com sucesso para a RICOH!");
+    } catch (err: any) {
+      console.error(err);
+      alert(err.message || "Erro ao enviar impressão.");
+    } finally {
+      setImprimindoRicoh(false);
+    }
+  }
+
+  return (
+    <div className="bg-[#1e293b] p-6 rounded-2xl border border-white/10 shadow-[0_10px_30px_rgba(0,0,0,0.3)] space-y-6">
+      <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
+        <h2 className="text-xl font-bold text-white flex items-center gap-2">
+          <AlertTriangle className="h-5 w-5 text-emerald-400" />
+          Ficha FICAI
+        </h2>
+        
+        {/* Filtro de Período */}
+        <div className="flex items-center gap-3">
+          <select
+            value={mesSel}
+            onChange={e => setMesSel(e.target.value)}
+            className="h-10 px-3 bg-[#0f172a] border border-[#334155] text-white text-sm rounded-xl focus:outline-none focus:border-emerald-500 cursor-pointer"
+          >
+            {MESES_NOME.map(m => (
+              <option key={m} value={m}>{m}</option>
+            ))}
+          </select>
+          <select
+            value={anoSel}
+            onChange={e => setAnoSel(Number(e.target.value))}
+            className="h-10 px-3 bg-[#0f172a] border border-[#334155] text-white text-sm rounded-xl focus:outline-none focus:border-emerald-500 cursor-pointer"
+          >
+            {ANOS_DISP.map(y => (
+              <option key={y} value={y}>{y}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {erro && <div className="text-red-400 text-sm bg-red-500/10 p-3 rounded-xl border border-red-500/20">{erro}</div>}
+
+      {carregando ? (
+        <div className="flex items-center justify-center py-20">
+          <Loader2 className="h-8 w-8 text-emerald-400 animate-spin" />
+        </div>
+      ) : alertas.length === 0 ? (
+        <div className="text-center py-16 text-slate-400 bg-[#0f172a]/50 rounded-2xl border border-white/5 border-dashed">
+          <p className="font-semibold text-sm">Nenhum aluno com alerta FICAI em {mesSel}/{anoSel}</p>
+          <p className="text-xs opacity-60 mt-1">Os critérios são: 3+ faltas consecutivas ou 5+ faltas totais no mês.</p>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          <div className="flex justify-between items-center text-xs text-slate-400 px-1">
+            <span>{alertas.length} aluno{alertas.length !== 1 ? "s" : ""} crítico{alertas.length !== 1 ? "s" : ""}</span>
+            <button onClick={toggleAll} className="text-emerald-400 font-bold hover:underline">
+              {todosSelecionados ? "Deselecionar todos" : "Selecionar todos"}
+            </button>
+          </div>
+
+          <div className="border border-white/5 rounded-xl overflow-hidden bg-[#0f172a]/30">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm text-left">
+                <thead className="bg-[#0f172a] text-slate-400 text-xs uppercase font-bold">
+                  <tr>
+                    <th className="p-4 w-10"></th>
+                    <th className="p-4">Aluno</th>
+                    <th className="p-4">Turma</th>
+                    <th className="p-4">Motivo Alerta</th>
+                    <th className="p-4">Datas com Falta</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5 text-white">
+                  {alertas.map(a => {
+                    const isChecked = !!selecionados[a.alunoId];
+                    return (
+                      <tr key={a.alunoId} className="hover:bg-white/[0.02] transition-colors">
+                        <td className="p-4 text-center">
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() => toggleAluno(a.alunoId)}
+                            className="rounded border-white/20 bg-white/10 text-emerald-500 focus:ring-emerald-500 h-4 w-4"
+                          />
+                        </td>
+                        <td className="p-4 font-bold text-xs uppercase">{a.nome}</td>
+                        <td className="p-4">
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                            {a.turma}
+                          </span>
+                        </td>
+                        <td className="p-4 text-xs text-slate-300">
+                          {a.motivos.join(" e ")}
+                        </td>
+                        <td className="p-4">
+                          {a.datasFaltas.map((dStr: string, idx: number) => (
+                            <span
+                              key={idx}
+                              className="bg-red-500/10 text-red-400 border border-red-500/20 px-1.5 py-0.5 rounded text-[10px] mr-1 inline-block font-mono"
+                            >
+                              {dStr.split("/").slice(0, 2).join("/")}
+                            </span>
+                          ))}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {totalSelecionados > 0 && (
+            <div className="flex flex-col sm:flex-row gap-3 pt-4 border-t border-white/5">
+              <Button
+                onClick={handleVisualizar}
+                disabled={imprimindoRicoh}
+                className="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-bold h-11 rounded-xl flex items-center justify-center gap-1.5"
+              >
+                <ExternalLink className="h-4 w-4" />
+                Visualizar PDF ({totalSelecionados})
+              </Button>
+              <Button
+                onClick={handleImprimirLocal}
+                disabled={imprimindoRicoh}
+                className="flex-1 bg-amber-600 hover:bg-amber-500 text-white font-bold h-11 rounded-xl flex items-center justify-center gap-1.5"
+              >
+                <Printer className="h-4 w-4" />
+                Imprimir Local ({totalSelecionados})
+              </Button>
+              <Button
+                onClick={handlePrintRicoh}
+                disabled={imprimindoRicoh}
+                className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold h-11 rounded-xl flex items-center justify-center gap-1.5"
+              >
+                {imprimindoRicoh ? (
+                  <><Loader2 className="h-4 w-4 animate-spin mr-1.5" />Enviando...</>
+                ) : (
+                  <><Printer className="h-4 w-4" />Imprimir na RICOH ({totalSelecionados})</>
+                )}
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Seção: Em Breve ─────────────────────────────────────────────────────────
 function SecaoEmBreve({ titulo, cor, descricao }: { titulo: string; cor: string; descricao?: string }) {
   const corMap: Record<string, { bg: string; text: string; border: string }> = {
@@ -1895,15 +2466,17 @@ function SecaoEmBreve({ titulo, cor, descricao }: { titulo: string; cor: string;
 }
 
 // ─── Hub ──────────────────────────────────────────────────────────────────────
-type SecaoId = "declaracoes" | "infantil" | "fundamental" | "ponto" | "prediario" | "relatorio_individual";
+type SecaoId = "declaracoes" | "infantil" | "fundamental" | "ponto" | "prediario" | "relatorio_individual" | "ficai" | "modelos_dinamicos";
 
 const SECOES: { id: SecaoId; label: string; descricao: string; icone: any; cor: string; badge?: string }[] = [
   { id: "declaracoes",  label: "Declarações",                   descricao: "Gere declarações preenchidas automaticamente",                      icone: FileText,      cor: "blue" },
   { id: "prediario",    label: "Pré-Diário de Classe",          descricao: "Folha de presença para os professores marcarem manualmente",        icone: ClipboardList, cor: "orange" },
+  { id: "ficai",        label: "Ficha FICAI",                   descricao: "Gere a Ficha de Comunicação de Aluno Infrequente",                 icone: AlertTriangle, cor: "emerald" },
   { id: "infantil",     label: "Documentos Ensino Infantil",    descricao: "Documentos específicos da Educação Infantil",                       icone: Baby,          cor: "violet",  badge: "Em breve" },
   { id: "fundamental",  label: "Documentos Ensino Fundamental", descricao: "Documentos específicos do Ensino Fundamental",                      icone: BookOpen,      cor: "emerald", badge: "Em breve" },
   { id: "ponto",        label: "Ponto dos Funcionários",        descricao: "Registro e controle de ponto da equipe escolar",                    icone: ClipboardList, cor: "cyan" },
   { id: "relatorio_individual", label: "Relatório individual do aluno", descricao: "Gere o relatório individual de avaliação e comportamento", icone: ClipboardList, cor: "violet",  badge: "Em breve" },
+  { id: "modelos_dinamicos", label: "Modelos Dinâmicos", descricao: "Gere documentos não-padrão preenchidos automaticamente para vários alunos", icone: FileText, cor: "cyan" },
 ];
 
 const COR_CARD: Record<string, { bg: string; border: string; text: string; icon: string; hover: string }> = {
@@ -1913,6 +2486,310 @@ const COR_CARD: Record<string, { bg: string; border: string; text: string; icon:
   cyan:    { bg: "bg-cyan-500/10",    border: "border-cyan-500/20",    text: "text-cyan-400",    icon: "bg-cyan-500/20",    hover: "hover:border-cyan-500/50" },
   orange:  { bg: "bg-orange-500/10",  border: "border-orange-500/20",  text: "text-orange-400",  icon: "bg-orange-500/20",  hover: "hover:border-orange-500/50" },
 };
+
+// ─── Seção: Modelos Dinâmicos ──────────────────────────────────────────────────
+function SecaoModelosDinamicos() {
+  const { data: todosAlunos, isLoading } = useListarAlunos();
+  const { data: me } = useGetMe({ query: { retry: false } } as any);
+  
+  const [template, setTemplate] = useState("Cole ou digite o texto do seu documento aqui...\n\nO(a) aluno(a) {{NOME_ALUNO}}, nascido(a) em {{DATA_NASCIMENTO}}, filho(a) de {{NOME_MAE}} e {{NOME_PAI}}, natural de {{NATURALIDADE}}, está regularmente matriculado(a) na turma {{TURMA}} desta Unidade Escolar.");
+  
+  const [filtroTurma, setFiltroTurma] = useState<string>("todas");
+  const [filtroTurno, setFiltroTurno] = useState<string>("todos");
+  const [filtroNivel, setFiltroNivel] = useState<string>("todos");
+  const [buscaAluno, setBuscaAluno] = useState("");
+  
+  const [incluirCabecalho, setIncluirCabecalho] = useState(true);
+  const [imprimindoRicoh, setImprimindoRicoh] = useState(false);
+
+  const alunosFiltrados = useMemo(() => {
+    if (!todosAlunos) return [];
+    let list = todosAlunos;
+    
+    if (filtroTurma !== "todas") {
+      list = list.filter(a => a.turmaAtual === filtroTurma);
+    }
+    if (filtroTurno !== "todos") {
+      list = list.filter(a => a.turno === filtroTurno);
+    }
+    if (filtroNivel !== "todos") {
+      list = list.filter(a => {
+        const t = (a.turmaAtual || "").toUpperCase();
+        const isInfantil = SERIES_INFANTIL.some(s => t.includes(s));
+        const isFund = !isInfantil && t.match(/[1-9]/);
+        if (filtroNivel === "infantil") return isInfantil;
+        if (filtroNivel === "fundamental") return isFund;
+        return true;
+      });
+    }
+    if (buscaAluno.trim().length > 0) {
+      const q = buscaAluno.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+      list = list.filter(a => {
+        const nomeNorm = a.nomeCompleto.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+        return nomeNorm.includes(q) || (a.matricula || "").includes(q);
+      });
+    }
+    
+    return list.sort((a, b) => a.nomeCompleto.localeCompare(b.nomeCompleto));
+  }, [todosAlunos, filtroTurma, filtroTurno, filtroNivel, buscaAluno]);
+
+  const turmasUnicas = useMemo(() => {
+    if (!todosAlunos) return [];
+    const setT = new Set(todosAlunos.map(a => a.turmaAtual).filter(Boolean));
+    return Array.from(setT).sort();
+  }, [todosAlunos]);
+
+  function formatarValor(val: string | null | undefined, padrao: string) {
+    if (!val || val.trim() === "" || val.toLowerCase().includes("não informado") || val === "-") return padrao;
+    return val;
+  }
+
+  function renderDocumentoHtml(aluno: any) {
+    let html = template;
+    const tokens: Record<string, string> = {
+      "{{NOME_ALUNO}}": aluno.nomeCompleto || "___________________",
+      "{{DATA_NASCIMENTO}}": aluno.dataNascimento || "___/___/______",
+      "{{NOME_MAE}}": formatarValor(aluno.nomeMae, "___________________"),
+      "{{NOME_PAI}}": formatarValor(aluno.nomePai, "___________________"),
+      "{{NATURALIDADE}}": formatarValor(aluno.naturalidade, "Campos dos Goytacazes/RJ"),
+      "{{TURMA}}": aluno.turmaAtual || "___",
+    };
+    
+    for (const [key, val] of Object.entries(tokens)) {
+      const regex = new RegExp(key.replace(/[{}]/g, "\\$&"), "gi");
+      html = html.replace(regex, \`<strong>\${val}</strong>\`);
+    }
+    
+    html = html.replace(/\\n/g, "<br/>");
+    
+    return \`
+      <div class="page-break" style="page-break-after: always; padding: 20px 0; font-family: 'Times New Roman', Times, serif; font-size: 12pt; line-height: 1.6; text-align: justify; position: relative; min-height: 90vh;">
+        \${incluirCabecalho ? obterCabecalhoHTML("") : "<br/><br/>"}
+        <div style="margin-top: 30px;">
+          \${html}
+        </div>
+        <div class="ass" style="margin-top: 80px; text-align: center;">
+          <div class="linha-ass" style="display: inline-block; width: 280px; border-top: 1.5px solid #000; margin-bottom: 5px;"></div><br>
+          <strong>E. M. José Giró Faísca</strong><br>Direção / Coordenação Pedagógica
+        </div>
+      </div>
+    \`;
+  }
+
+  function gerarHtmlFinal() {
+    let finalHtml = \`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Modelos Dinâmicos</title>
+      <style>
+        @page { size: A4; margin: 1.8cm 1.5cm; }
+        * { box-sizing: border-box; }
+        body { background: #fff; color: #000; padding: 0; margin: 0; }
+        .no-print { display: flex; gap: 10px; margin-bottom: 16px; padding: 10px; background: #f0f0f0; border-radius: 6px; }
+        .no-print button { padding: 10px 22px; cursor: pointer; font-weight: bold; border-radius: 5px; border: none; font-size: 14px; background: #10b981; color: #fff; }
+        @media print { .no-print { display: none !important; } .page-break { page-break-after: always; } }
+        \${CABECALHO_CSS}
+      </style></head><body>
+      <div class="no-print"><button onclick="window.print()">🖨️ IMPRIMIR / SALVAR PDF</button></div>
+    \`;
+    
+    alunosFiltrados.forEach(a => {
+      finalHtml += renderDocumentoHtml(a);
+    });
+    
+    finalHtml += "</body></html>";
+    return finalHtml;
+  }
+
+  function handleVisualizar() {
+    if (alunosFiltrados.length === 0) return;
+    const win = window.open("", "_blank");
+    if (win) { win.document.write(gerarHtmlFinal()); win.document.close(); }
+  }
+
+  function handleImprimirLocal() {
+    if (alunosFiltrados.length === 0) return;
+    const win = window.open("", "_blank");
+    if (win) { 
+      win.document.write(gerarHtmlFinal()); 
+      win.document.close();
+      setTimeout(() => { win.print(); }, 500);
+    }
+  }
+
+  async function handlePrintRicoh() {
+    if (alunosFiltrados.length === 0) return;
+    setImprimindoRicoh(true);
+    try {
+      const html = gerarHtmlFinal();
+      const blob = new Blob([html], { type: "text/html" });
+      const file = new File([blob], \`Documentos_Dinamicos_\${alunosFiltrados.length}_alunos.html\`, { type: "text/html" });
+
+      const form = new FormData();
+      form.append("professorSolicitante", me?.nomeCompleto || "Master");
+      form.append("quantidadeCopias", "1");
+      form.append("impressoraNome", "RICOH");
+      form.append("arquivo", file);
+
+      const BASE = (import.meta.env.BASE_URL ?? "/").replace(/\\/$/, "") + "/";
+      const res = await fetch(\`\${BASE}api/impressoes\`, { method: "POST", body: form });
+      if (!res.ok) throw new Error("Erro ao enviar para impressora");
+
+      alert("Enviado para a RICOH com sucesso!");
+    } catch (err) {
+      console.error(err);
+      alert("Erro ao tentar imprimir diretamente.");
+    } finally {
+      setImprimindoRicoh(false);
+    }
+  }
+
+  // Helper de UI
+  const btnBase = "text-center px-3 py-2 rounded-lg border text-xs font-medium transition-colors";
+  const btnOff  = \`\${btnBase} bg-[#0f172a] border-[#334155] text-slate-300 hover:border-slate-500\`;
+  const btnOn   = (cor: string) => \`\${btnBase} bg-\${cor}-500/20 border-\${cor}-500 text-\${cor}-300\`;
+
+  return (
+    <div className="max-w-4xl mx-auto space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      <div className="bg-[#1e293b] p-8 rounded-2xl border border-white/10 shadow-2xl space-y-8">
+        
+        {/* Passo 1 - Texto do Documento */}
+        <div className="space-y-4">
+          <Label className="text-xs font-bold uppercase tracking-widest text-slate-400 flex items-center gap-1.5">
+            <span className="text-cyan-400">01.</span> Escreva ou Cole o Documento
+          </Label>
+          
+          <div className="bg-[#0f172a] p-4 rounded-xl border border-[#334155] space-y-3">
+            <p className="text-xs text-slate-400">
+              Use as palavras-chave abaixo para que o sistema substitua automaticamente pelos dados do aluno:
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {["{{NOME_ALUNO}}", "{{DATA_NASCIMENTO}}", "{{NOME_MAE}}", "{{NOME_PAI}}", "{{NATURALIDADE}}", "{{TURMA}}"].map(k => (
+                <span key={k} className="px-2 py-1 bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 rounded font-mono text-[10px]">
+                  {k}
+                </span>
+              ))}
+            </div>
+            <textarea
+              className="w-full h-64 bg-[#1e293b] border border-[#334155] rounded-xl p-4 text-white text-sm font-serif leading-relaxed focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none resize-y"
+              value={template}
+              onChange={e => setTemplate(e.target.value)}
+              placeholder="Cole seu texto aqui..."
+            />
+            <div className="flex items-center gap-2 mt-2">
+              <input 
+                type="checkbox" 
+                id="incCabecalho" 
+                checked={incluirCabecalho} 
+                onChange={e => setIncluirCabecalho(e.target.checked)} 
+                className="rounded border-slate-500 bg-transparent text-cyan-500 focus:ring-cyan-500"
+              />
+              <label htmlFor="incCabecalho" className="text-sm text-slate-300 cursor-pointer">
+                Incluir o Cabeçalho Timbrado Unificado (Logo da Prefeitura) no topo de cada página
+              </label>
+            </div>
+          </div>
+        </div>
+
+        {/* Passo 2 - Filtros de Alunos */}
+        <div className="space-y-4">
+          <Label className="text-xs font-bold uppercase tracking-widest text-slate-400 flex items-center gap-1.5">
+            <span className="text-cyan-400">02.</span> Público-Alvo (Selecionar Alunos)
+          </Label>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-5 bg-[#0f172a] rounded-xl border border-[#334155]">
+            <div className="space-y-4">
+              {/* Nível */}
+              <div className="space-y-2">
+                <Label className="text-[10px] uppercase text-slate-500 font-bold tracking-widest">Nível de Ensino</Label>
+                <div className="grid grid-cols-3 gap-2">
+                  <button onClick={() => setFiltroNivel("todos")} className={filtroNivel === "todos" ? btnOn("cyan") : btnOff}>Todos</button>
+                  <button onClick={() => setFiltroNivel("infantil")} className={filtroNivel === "infantil" ? btnOn("violet") : btnOff}>Infantil</button>
+                  <button onClick={() => setFiltroNivel("fundamental")} className={filtroNivel === "fundamental" ? btnOn("emerald") : btnOff}>Fundamental</button>
+                </div>
+              </div>
+              {/* Turno */}
+              <div className="space-y-2">
+                <Label className="text-[10px] uppercase text-slate-500 font-bold tracking-widest">Turno</Label>
+                <div className="grid grid-cols-3 gap-2">
+                  <button onClick={() => setFiltroTurno("todos")} className={filtroTurno === "todos" ? btnOn("cyan") : btnOff}>Todos</button>
+                  <button onClick={() => setFiltroTurno("Manhã")} className={filtroTurno === "Manhã" ? btnOn("orange") : btnOff}>Manhã</button>
+                  <button onClick={() => setFiltroTurno("Tarde")} className={filtroTurno === "Tarde" ? btnOn("blue") : btnOff}>Tarde</button>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              {/* Turma Específica */}
+              <div className="space-y-2">
+                <Label className="text-[10px] uppercase text-slate-500 font-bold tracking-widest">Turma Específica</Label>
+                <select 
+                  className="w-full h-10 bg-[#1e293b] border border-[#334155] rounded-lg px-3 text-sm text-white focus:border-cyan-500 outline-none"
+                  value={filtroTurma}
+                  onChange={e => setFiltroTurma(e.target.value)}
+                >
+                  <option value="todas">Todas as Turmas</option>
+                  {turmasUnicas.map(t => <option key={t as string} value={t as string}>{t}</option>)}
+                </select>
+              </div>
+              {/* Busca Específica */}
+              <div className="space-y-2">
+                <Label className="text-[10px] uppercase text-slate-500 font-bold tracking-widest">Ou busque por nome</Label>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-500" />
+                  <Input 
+                    placeholder="Digite para filtrar a lista abaixo..." 
+                    className="pl-9 h-10 bg-[#1e293b] border-[#334155] text-sm text-white"
+                    value={buscaAluno}
+                    onChange={e => setBuscaAluno(e.target.value)}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Resumo e Ações */}
+        <div className="space-y-4 pt-4 border-t border-white/5">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-bold text-white flex items-center gap-2">
+              <Users className="h-5 w-5 text-cyan-400" />
+              Alunos Afetados: <span className="text-cyan-400">{alunosFiltrados.length}</span>
+            </h3>
+            {isLoading && <Loader2 className="h-5 w-5 text-slate-400 animate-spin" />}
+          </div>
+
+          <div className="flex flex-col sm:flex-row gap-3 mt-4">
+            <Button
+              onClick={handleVisualizar}
+              disabled={imprimindoRicoh || alunosFiltrados.length === 0}
+              className="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-bold h-12 rounded-xl flex items-center justify-center gap-2"
+            >
+              <ExternalLink className="h-4 w-4" />
+              Visualizar PDF ({alunosFiltrados.length})
+            </Button>
+            <Button
+              onClick={handleImprimirLocal}
+              disabled={imprimindoRicoh || alunosFiltrados.length === 0}
+              className="flex-1 bg-amber-600 hover:bg-amber-500 text-white font-bold h-12 rounded-xl flex items-center justify-center gap-2"
+            >
+              <Printer className="h-4 w-4" />
+              Imprimir Local ({alunosFiltrados.length})
+            </Button>
+            <Button
+              onClick={handlePrintRicoh}
+              disabled={imprimindoRicoh || alunosFiltrados.length === 0}
+              className="flex-1 bg-cyan-600 hover:bg-cyan-500 text-white font-bold h-12 rounded-xl flex items-center justify-center gap-2"
+            >
+              {imprimindoRicoh ? (
+                <><Loader2 className="h-4 w-4 animate-spin" />Enviando...</>
+              ) : (
+                <><Printer className="h-4 w-4" />Imprimir na RICOH ({alunosFiltrados.length})</>
+              )}
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ─── Página principal ─────────────────────────────────────────────────────────
 export default function DocumentosPage() {
@@ -1992,6 +2869,8 @@ export default function DocumentosPage() {
         {/* Conteúdo da seção */}
         {secaoAtiva === "declaracoes"  && <SecaoDeclaracoes />}
         {secaoAtiva === "prediario"   && <SecaoPreDiario />}
+        {secaoAtiva === "ficai"        && <SecaoFicai />}
+        {secaoAtiva === "modelos_dinamicos" && <SecaoModelosDinamicos />}
         {secaoAtiva === "infantil"     && <SecaoEmBreve titulo="Documentos Ensino Infantil"    cor="violet"  />}
         {secaoAtiva === "fundamental"  && <SecaoEmBreve titulo="Documentos Ensino Fundamental" cor="emerald" />}
         {secaoAtiva === "relatorio_individual" && <SecaoEmBreve titulo="Relatório individual do aluno" cor="violet" />}

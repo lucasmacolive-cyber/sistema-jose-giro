@@ -767,9 +767,34 @@ router.get("/diario/ficai", requireAuth, async (req, res) => {
     const thresholdMensais = Number(cfgMap["ficai_faltas_mensais"]      ?? 5);
 
     const hoje = new Date();
-    const hojeStr = `${String(hoje.getDate()).padStart(2,"0")}/${String(hoje.getMonth()+1).padStart(2,"0")}/${hoje.getFullYear()}`;
-    const mesAtual = hoje.getMonth() + 1;
-    const anoAtual = hoje.getFullYear();
+    
+    // Mapeamento de meses por nome
+    const MESES_MAPA: Record<string, number> = {
+      "janeiro": 1, "fevereiro": 2, "marco": 3, "março": 3, "abril": 4, "maio": 5, "junho": 6,
+      "julho": 7, "agosto": 8, "setembro": 9, "outubro": 10, "novembro": 11, "dezembro": 12
+    };
+
+    let mesAtual = hoje.getMonth() + 1;
+    if (req.query.mes) {
+      const mStr = String(req.query.mes).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      if (MESES_MAPA[mStr]) {
+        mesAtual = MESES_MAPA[mStr];
+      } else if (!isNaN(Number(req.query.mes))) {
+        mesAtual = Number(req.query.mes);
+      }
+    }
+
+    let anoAtual = req.query.ano ? Number(req.query.ano) : hoje.getFullYear();
+    
+    // Data limite: fim do mês selecionado se for mês diferente do atual, senão hoje.
+    let hojeStr = `${String(hoje.getDate()).padStart(2,"0")}/${String(hoje.getMonth()+1).padStart(2,"0")}/${hoje.getFullYear()}`;
+    if (req.query.mes || req.query.ano) {
+      const isMesAtual = mesAtual === (hoje.getMonth() + 1) && anoAtual === hoje.getFullYear();
+      if (!isMesAtual) {
+        const ultimoDia = new Date(anoAtual, mesAtual, 0).getDate();
+        hojeStr = `${String(ultimoDia).padStart(2,"0")}/${String(mesAtual).padStart(2,"0")}/${anoAtual}`;
+      }
+    }
 
     function parseDate(s: string) {
       const [d, m, y] = s.split("/").map(Number);
@@ -799,7 +824,7 @@ router.get("/diario/ficai", requireAuth, async (req, res) => {
     type AlertaFicai = {
       alunoId: number; nome: string; turma: string;
       maxConsecutivo: number; faltasMensais: number;
-      motivos: string[];
+      motivos: string[]; datasFaltas: string[];
     };
     const alertas: AlertaFicai[] = [];
 
@@ -810,22 +835,32 @@ router.get("/diario/ficai", requireAuth, async (req, res) => {
         .sort((a, b) => parseDate(a.data).getTime() - parseDate(b.data).getTime());
       if (!aulasAluno.length) continue;
 
-      // ── 1) Faltas consecutivas (qualquer sequência de dias letivos) ──
+      // ── 1) Faltas consecutivas (qualquer sequência de dias letivos que afeta o mês selecionado) ──
       let maxConsec = 0, currentConsec = 0;
+      let sequenceHasSelectedMonth = false;
       for (const aula of aulasAluno) {
         const status = presMap[aula.id]?.[aluno.id] ?? "P";
+        const [, m, y] = aula.data.split("/").map(Number);
+        
         if (status === "F") {
           currentConsec++;
-          if (currentConsec > maxConsec) maxConsec = currentConsec;
+          if (m === mesAtual && y === anoAtual) {
+            sequenceHasSelectedMonth = true;
+          }
+          if (sequenceHasSelectedMonth && currentConsec > maxConsec) {
+            maxConsec = currentConsec;
+          }
         } else {
           currentConsec = 0;
+          sequenceHasSelectedMonth = false;
         }
       }
 
-      // ── 2) Total de faltas no mês atual ──
-      const faltasMensais = aulasAluno
-        .filter(a => ehMesAtual(a.data) && (presMap[a.id]?.[aluno.id] ?? "P") === "F")
-        .length;
+      // ── 2) Total de faltas no mês selecionado ──
+      const aulasComFalta = aulasAluno
+        .filter(a => ehMesAtual(a.data) && (presMap[a.id]?.[aluno.id] ?? "P") === "F");
+      const faltasMensais = aulasComFalta.length;
+      const datasFaltas = aulasComFalta.map(a => a.data);
 
       const motivos: string[] = [];
       if (maxConsec  >= thresholdConsec)  motivos.push(`${maxConsec} dias consecutivos`);
@@ -839,6 +874,7 @@ router.get("/diario/ficai", requireAuth, async (req, res) => {
           maxConsecutivo: maxConsec,
           faltasMensais,
           motivos,
+          datasFaltas,
         });
       }
     }
