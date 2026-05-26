@@ -2566,6 +2566,16 @@ function SecaoModelosDinamicos() {
       "{{ENDERECO}}": formatarValor(aluno.endereco, "___________________________________"),
     };
     
+    for (const key of Object.keys(tokens)) {
+      const keyEscaped = key.replace(/[{}]/g, "\\$&");
+      let prev;
+      do {
+        prev = html;
+        const regex = new RegExp(`<[^>]+>\\s*(${keyEscaped})\\s*<\\/[^>]+>`, "gi");
+        html = html.replace(regex, "$1");
+      } while(html !== prev);
+    }
+
     for (const [key, val] of Object.entries(tokens)) {
       const regex = new RegExp(key.replace(/[{}]/g, "\\$&"), "gi");
       html = html.replace(regex, `<strong>${val}</strong>`);
