@@ -6,9 +6,13 @@ const router: IRouter = Router();
 
 const upload = multer({ storage: multer.memoryStorage() });
 
-router.get("/whatsapp/status", (req, res) => {
-  const status = getWhatsAppStatus();
-  res.json(status);
+router.get("/whatsapp/status", async (req, res) => {
+  try {
+    const status = await getWhatsAppStatus();
+    res.json(status);
+  } catch(err) {
+    res.json({ ready: false, qr: null });
+  }
 });
 
 router.post("/whatsapp/send", async (req, res) => {

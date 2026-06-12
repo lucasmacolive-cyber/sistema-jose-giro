@@ -1,99 +1,44 @@
-import { Client, LocalAuth } from "whatsapp-web.js";
-import qrcode from "qrcode";
 import { db, configuracoesTable } from "./db/index.ts";
 import { eq } from "drizzle-orm";
-
-let client: Client | null = null;
-let qrCodeData: string | null = null;
-let isReady = false;
+import { filaWhatsappTable } from "./db/schema/fila-whatsapp.ts";
 
 export function initWhatsApp() {
-  if (client) return;
-  console.log("[WhatsApp] Inicializando cliente...");
-
-  client = new Client({
-    authStrategy: new LocalAuth({ clientId: "escola-bot" }),
-    puppeteer: {
-      headless: true,
-      args: ["--no-sandbox", "--disable-setuid-sandbox"],
-    },
-  });
-
-  client.on("qr", async (qr) => {
-    console.log("[WhatsApp] QR Code recebido, aguardando scan...");
-    // Generate data URI
-    qrCodeData = await qrcode.toDataURL(qr);
-    isReady = false;
-  });
-
-  client.on("ready", () => {
-    console.log("[WhatsApp] Cliente está pronto!");
-    isReady = true;
-    qrCodeData = null;
-  });
-
-  client.on("authenticated", () => {
-    console.log("[WhatsApp] Autenticado com sucesso!");
-  });
-
-  client.on("auth_failure", msg => {
-    console.error("[WhatsApp] Falha na autenticação:", msg);
-    isReady = false;
-    qrCodeData = null;
-  });
-
-  client.on("disconnected", (reason) => {
-    console.log("[WhatsApp] Desconectado:", reason);
-    isReady = false;
-    qrCodeData = null;
-    client?.initialize(); // Tenta reconectar
-  });
-
-  client.initialize().catch(err => {
-    console.error("[WhatsApp] Erro ao inicializar:", err);
-  });
+  // A inicialização agora é feita pelo robô local (robo_whatsapp.js).
+  // A Vercel não roda o Puppeteer mais.
+  console.log("[WhatsApp] Vercel configurada em modo fila para o robô local.");
 }
 
-export function getWhatsAppStatus() {
+export async function getWhatsAppStatus() {
+  const qrRow = await db.select().from(configuracoesTable).where(eq(configuracoesTable.chave, "whatsapp_qr"));
+  const readyRow = await db.select().from(configuracoesTable).where(eq(configuracoesTable.chave, "whatsapp_ready"));
+  
+  const qr = qrRow[0]?.valor || null;
+  const ready = readyRow[0]?.valor === "true";
+
   return {
-    ready: isReady,
-    qr: qrCodeData,
+    ready: ready,
+    qr: qr,
   };
 }
 
 export async function sendWhatsAppMessage(to: string, message: string) {
-  if (!client || !isReady) {
-    throw new Error("WhatsApp não está conectado.");
-  }
-  // Formatar número para o padrão do whatsapp-web.js (ex: 5521999999999@c.us)
-  let formattedNumber = to.replace(/\D/g, "");
-  if (!formattedNumber.startsWith("55")) {
-    formattedNumber = "55" + formattedNumber;
-  }
-  if (!formattedNumber.endsWith("@c.us") && !formattedNumber.endsWith("@g.us")) {
-    formattedNumber += "@c.us";
-  }
-
-  await client.sendMessage(formattedNumber, message);
+  // Apenas salva na fila
+  await db.insert(filaWhatsappTable).values({
+    numero: to,
+    mensagem: message,
+    status: "Pendente",
+  });
 }
 
 export async function sendWhatsAppDocument(to: string, fileBuffer: Buffer, fileName: string, mimetype: string, caption?: string) {
-  if (!client || !isReady) {
-    throw new Error("WhatsApp não está conectado.");
-  }
-  
-  // Need to import MessageMedia if not already imported at top
-  // I will dynamically import it or use require since I need it now
-  const { MessageMedia } = await import("whatsapp-web.js");
-  
-  let formattedNumber = to.replace(/\D/g, "");
-  if (!formattedNumber.startsWith("55")) {
-    formattedNumber = "55" + formattedNumber;
-  }
-  if (!formattedNumber.endsWith("@c.us") && !formattedNumber.endsWith("@g.us")) {
-    formattedNumber += "@c.us";
-  }
-
-  const media = new MessageMedia(mimetype, fileBuffer.toString("base64"), fileName);
-  await client.sendMessage(formattedNumber, media, { caption });
+  // Salva o buffer como base64 na fila
+  const base64 = fileBuffer.toString("base64");
+  await db.insert(filaWhatsappTable).values({
+    numero: to,
+    mensagem: caption || null,
+    arquivoBase64: base64,
+    mimetype: mimetype,
+    nomeArquivo: fileName,
+    status: "Pendente",
+  });
 }
