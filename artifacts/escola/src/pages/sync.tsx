@@ -7,7 +7,7 @@ import {
   ChevronLeft, ChevronRight, ChevronDown, AlertTriangle, Palette,
   RefreshCcw, Check, Settings2, Eye, EyeOff,
   Globe, Copy, ExternalLink, Upload, FileSpreadsheet,
-  Zap, ServerCrash, Camera, ImagePlus, Bookmark, ShieldCheck, WifiOff
+  Zap, ServerCrash, Camera, ImagePlus, Bookmark, ShieldCheck, WifiOff, MessageCircle
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
@@ -18,11 +18,12 @@ import { HexColorPicker, HexColorInput } from "react-colorful";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
+import { useSyncGlobal } from "@/contexts/SyncContext";
 
 /* ─── Menu ─── */
 type SecaoId =
   | "sincronizacao" | "cores" | "alunos"
-  | "turmas" | "professores" | "funcionarios" | "usuarios" | "logins" | "diario";
+  | "turmas" | "professores" | "funcionarios" | "usuarios" | "logins" | "diario" | "whatsapp";
 
 const MENU: { id: SecaoId; label: string; icon: React.ElementType; desc: string; cor: string }[] = [
   { id: "sincronizacao", label: "Sincronização",    icon: RefreshCcw,  desc: "Integração com o SUAP",             cor: "#06b6d4" },
@@ -34,6 +35,7 @@ const MENU: { id: SecaoId; label: string; icon: React.ElementType; desc: string;
   { id: "usuarios",      label: "Editar Usuários",  icon: KeyRound,    desc: "Gerenciar acessos ao sistema",      cor: "#ef4444" },
   { id: "logins",        label: "Logins Externos",  icon: Globe,       desc: "Logins de sites externos",          cor: "#f97316" },
   { id: "diario",        label: "Config. Diário",   icon: BookOpen,    desc: "Configurações do Diário de Classe", cor: "#10b981" },
+  { id: "whatsapp",      label: "Bot do WhatsApp",  icon: MessageCircle, desc: "Sincronizar número da escola",  cor: "#22c55e" },
 ];
 
 const TABELA_KEY: Record<string, string> = {
@@ -494,6 +496,7 @@ type DiarioSyncPhase =
 
 function BlocoDiariosSinc({ extensaoInstalada, apiBase }: { extensaoInstalada: boolean | null; apiBase: string }) {
   const { toast } = useToast();
+  const syncGlobal = useSyncGlobal();
   const [phase, setPhase]         = useState<DiarioSyncPhase>("idle");
   const [msg, setMsg]             = useState("");
   const [progAtual, setProgAtual] = useState(0);
@@ -719,17 +722,60 @@ function BlocoDiariosSinc({ extensaoInstalada, apiBase }: { extensaoInstalada: b
       style={{ borderColor: ativo ? `${cor}55` : "rgba(255,255,255,0.07)" }}
     >
       {/* Cabeçalho */}
-      <div className="flex items-start justify-between gap-4 mb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
         <div>
           <div className="flex items-center gap-2 mb-1">
             <BookOpen className="h-4 w-4 text-violet-400" />
             <h3 className="text-sm font-bold text-white">Sincronizar Diários de Classe</h3>
             <span className="text-[0.6rem] font-black uppercase tracking-widest bg-violet-500/20 text-violet-300 px-2 py-0.5 rounded-full">v3.1</span>
           </div>
-          <p className="text-xs text-slate-400 leading-relaxed">
+          <p className="text-xs text-slate-400 leading-relaxed max-w-xl">
             Importa as presenças de cada diário do SUAP. Cole os links das páginas ou use o modo automático.
           </p>
         </div>
+        
+        <div className="flex flex-col items-end gap-2">
+          {/* Botão Global Sync */}
+          <button
+            onClick={syncGlobal.iniciarSincronizacaoGlobal}
+            disabled={syncGlobal.fase === "baixando"}
+            className={cn(
+              "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all border",
+              syncGlobal.fase === "baixando"
+                ? "bg-amber-500/15 border-amber-500/30 text-amber-300 cursor-wait"
+                : "bg-blue-600 border-blue-500 text-white hover:bg-blue-500 shadow-lg shadow-blue-900/20"
+            )}
+          >
+            {syncGlobal.fase === "baixando" ? (
+              <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Atualizando Tudo...</>
+            ) : syncGlobal.fase === "done" ? (
+              <><Check className="h-3.5 w-3.5" /> Atualizado</>
+            ) : (
+              <><RefreshCcw className="h-3.5 w-3.5" /> Atualizar Todos (Servidor)</>
+            )}
+          </button>
+        </div>
+      </div>
+
+      {/* Barra de Progresso Global Sync */}
+      {syncGlobal.fase === "baixando" && (
+        <div className="mb-4 p-4 rounded-xl border border-amber-500/30 bg-amber-500/5 backdrop-blur-md animate-pulse">
+          <div className="flex items-center justify-between text-xs font-bold text-amber-400 mb-2">
+            <span>Sincronização em andamento (Servidor)</span>
+            <span>{syncGlobal.progresso.total > 0 ? Math.round((syncGlobal.progresso.atual / syncGlobal.progresso.total) * 100) : 0}%</span>
+          </div>
+          <div className="h-2 rounded-full bg-black/50 overflow-hidden mb-2">
+            <div 
+              className="h-full bg-amber-400 transition-all duration-300"
+              style={{ width: `${syncGlobal.progresso.total > 0 ? (syncGlobal.progresso.atual / syncGlobal.progresso.total) * 100 : 0}%` }}
+            />
+          </div>
+          <div className="flex justify-between text-[0.65rem] text-amber-300/80">
+            <span>{syncGlobal.progresso.turmaAtual}</span>
+            <span>{syncGlobal.progresso.atual} de {syncGlobal.progresso.total}</span>
+          </div>
+        </div>
+      )}
         <button
           onClick={iniciarSyncDiarios}
           disabled={ativo || naoInstalada}
@@ -2236,14 +2282,15 @@ function SecaoCores() {
             <button
               key={turma.id}
               onClick={() => abrirPicker(turma)}
-              className="flex flex-col items-center gap-2 p-3 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 transition-all group"
+              className="flex flex-col items-center p-3 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 transition-all group overflow-hidden"
             >
               <div
-                className="w-12 h-12 rounded-2xl border-2 border-white/20 shadow-lg transition-transform group-hover:scale-110"
+                className="w-full h-16 rounded-2xl border-2 border-white/20 shadow-lg transition-transform group-hover:scale-[1.02] flex flex-col items-center justify-center p-2"
                 style={{ background: cor, boxShadow: `0 6px 16px ${cor}55` }}
-              />
-              <span className="text-xs font-bold text-white">{turma.nome_turma}</span>
-              <span className="text-[0.6rem] text-muted-foreground">{turma.turno ?? ""}</span>
+              >
+                <span className="text-xs font-black text-white text-center drop-shadow-md">{turma.nome_turma}</span>
+                <span className="text-[0.6rem] text-white/80 font-bold drop-shadow-md">{turma.turno ?? ""}</span>
+              </div>
             </button>
           );
         })}
@@ -3440,6 +3487,63 @@ function SecaoConfigDiario() {
   );
 }
 
+/* ══════════════════════════════════════════
+   SEÇÃO: WhatsApp
+══════════════════════════════════════════ */
+function SecaoWhatsApp() {
+  const [status, setStatus] = useState<{ ready: boolean; qr: string | null } | null>(null);
+  const [carregando, setCarregando] = useState(true);
+
+  useEffect(() => {
+    let timeout: ReturnType<typeof setTimeout>;
+    async function check() {
+      try {
+        const res = await fetch(API("/whatsapp/status"));
+        const data = await res.json();
+        setStatus(data);
+      } catch (err) {
+        console.error("Erro ao checar whatsapp:", err);
+      } finally {
+        setCarregando(false);
+      }
+      timeout = setTimeout(check, 3000);
+    }
+    check();
+    return () => clearTimeout(timeout);
+  }, []);
+
+  if (carregando) return <div className="flex justify-center p-10"><Loader2 className="w-8 h-8 animate-spin" /></div>;
+
+  return (
+    <div className="max-w-md space-y-6">
+      <div className="bg-[#1a2332] rounded-3xl p-6 border border-white/5 text-center">
+        <MessageCircle className="w-12 h-12 text-[#22c55e] mx-auto mb-4" />
+        <h3 className="text-xl font-bold text-white mb-2">Bot do WhatsApp</h3>
+        <p className="text-sm text-white/50 mb-6">
+          Sincronize o número da escola escaneando o QR Code abaixo para habilitar mensagens automáticas.
+        </p>
+
+        {status?.ready ? (
+          <div className="bg-[#22c55e]/10 border border-[#22c55e]/30 rounded-2xl p-4">
+            <CheckCircle2 className="w-8 h-8 text-[#22c55e] mx-auto mb-2" />
+            <p className="text-white font-bold">Autenticado com sucesso!</p>
+            <p className="text-xs text-[#22c55e] mt-1">O bot já pode enviar mensagens.</p>
+          </div>
+        ) : status?.qr ? (
+          <div className="bg-white p-4 rounded-xl inline-block mx-auto">
+            <img src={status.qr} alt="QR Code WhatsApp" className="w-48 h-48" />
+            <p className="text-xs text-black/50 mt-2">Abra o WhatsApp no celular,<br/>toque em Aparelhos Conectados<br/>e escaneie o código.</p>
+          </div>
+        ) : (
+          <div className="flex items-center justify-center gap-2 text-white/50 bg-white/5 py-4 rounded-xl">
+            <Loader2 className="w-4 h-4 animate-spin" /> Aguardando QR Code...
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function AjustesPage() {
   const [secao, setSecao] = useState<SecaoId>("sincronizacao");
   const ativo = MENU.find((m) => m.id === secao)!;
@@ -3455,6 +3559,7 @@ export default function AjustesPage() {
       case "usuarios":       return <SecaoEditarTabela tabela="usuarios" />;
       case "logins":         return <SecaoLogins />;
       case "diario":         return <SecaoConfigDiario />;
+      case "whatsapp":       return <SecaoWhatsApp />;
     }
   };
 

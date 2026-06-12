@@ -4,12 +4,14 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { useGetAluno, useListarAlunos, useListarTurmas, useGetMe } from "@workspace/api-client-react";
 import { useParams, useLocation } from "wouter";
 import {
+import {
   ArrowLeft, ArrowRight, Camera, GraduationCap,
   User, Phone, MapPin, Loader2, ChevronLeft, ChevronRight,
   Hash, Calendar, FileText, Users, Activity, BookOpen, ChevronRight as Chevron,
   ArrowRightLeft, CalendarDays, Printer
 } from "lucide-react";
 import { motion } from "framer-motion";
+import html2pdf from "html2pdf.js";
 
 const COR_PADRAO = "#3b82f6";
 
@@ -88,55 +90,51 @@ export default function AlunoPerfilPage() {
     if (!aluno) return;
     setImprimindo(true);
     try {
-      const html = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <meta charset="UTF-8">
-          <title>Perfil - ${aluno.nomeCompleto}</title>
-          <style>
-            body { font-family: Arial, sans-serif; padding: 20px; color: #333; }
-            h1 { color: #000; border-bottom: 2px solid #333; padding-bottom: 10px; }
-            .section { margin-top: 20px; }
-            .section h2 { font-size: 14px; text-transform: uppercase; border-bottom: 1px solid #ccc; }
-            .item { margin-bottom: 8px; font-size: 13px; }
-            .label { font-weight: bold; color: #666; }
-          </style>
-        </head>
-        <body>
+      const container = document.createElement("div");
+      container.innerHTML = `
+        <div style="font-family: Arial, sans-serif; padding: 20px; color: #333;">
           <div style="text-align: center; margin-bottom: 20px;">
              <p style="font-size: 10px; margin: 0;">E. M. JOSÉ GIRÓ FAÍSCA</p>
-             <h1 style="margin: 5px 0;">PERFIL DO ALUNO</h1>
+             <h1 style="margin: 5px 0; color: #000; border-bottom: 2px solid #333; padding-bottom: 10px;">PERFIL DO ALUNO</h1>
           </div>
-          <div class="section">
-            <h2>DADOS ESCOLARES</h2>
-            <div class="item"><span class="label">NOME:</span> ${aluno.nomeCompleto}</div>
-            <div class="item"><span class="label">MATRÍCULA:</span> ${aluno.matricula || "—"}</div>
-            <div class="item"><span class="label">TURMA:</span> ${aluno.turmaAtual || "—"}</div>
-            <div class="item"><span class="label">TURNO:</span> ${aluno.turno || "—"}</div>
-            <div class="item"><span class="label">SITUAÇÃO:</span> ${aluno.situacao || "—"}</div>
+          <div style="margin-top: 20px;">
+            <h2 style="font-size: 14px; text-transform: uppercase; border-bottom: 1px solid #ccc;">DADOS ESCOLARES</h2>
+            <div style="margin-bottom: 8px; font-size: 13px;"><span style="font-weight: bold; color: #666;">NOME:</span> ${aluno.nomeCompleto}</div>
+            <div style="margin-bottom: 8px; font-size: 13px;"><span style="font-weight: bold; color: #666;">MATRÍCULA:</span> ${aluno.matricula || "—"}</div>
+            <div style="margin-bottom: 8px; font-size: 13px;"><span style="font-weight: bold; color: #666;">TURMA:</span> ${aluno.turmaAtual || "—"}</div>
+            <div style="margin-bottom: 8px; font-size: 13px;"><span style="font-weight: bold; color: #666;">TURNO:</span> ${aluno.turno || "—"}</div>
+            <div style="margin-bottom: 8px; font-size: 13px;"><span style="font-weight: bold; color: #666;">SITUAÇÃO:</span> ${aluno.situacao || "—"}</div>
           </div>
-          <div class="section">
-            <h2>DADOS PESSOAIS</h2>
-            <div class="item"><span class="label">DATA NASC.:</span> ${aluno.dataNascimento || "—"}</div>
-            <div class="item"><span class="label">CPF:</span> ${aluno.cpf || "—"}</div>
-            <div class="item"><span class="label">RG:</span> ${aluno.rg || "—"}</div>
+          <div style="margin-top: 20px;">
+            <h2 style="font-size: 14px; text-transform: uppercase; border-bottom: 1px solid #ccc;">DADOS PESSOAIS</h2>
+            <div style="margin-bottom: 8px; font-size: 13px;"><span style="font-weight: bold; color: #666;">DATA NASC.:</span> ${aluno.dataNascimento || "—"}</div>
+            <div style="margin-bottom: 8px; font-size: 13px;"><span style="font-weight: bold; color: #666;">CPF:</span> ${aluno.cpf || "—"}</div>
+            <div style="margin-bottom: 8px; font-size: 13px;"><span style="font-weight: bold; color: #666;">RG:</span> ${aluno.rg || "—"}</div>
           </div>
-          <div class="section">
-            <h2>FAMÍLIA E CONTATO</h2>
-            <div class="item"><span class="label">MÃE:</span> ${aluno.nomeMae || "—"}</div>
-            <div class="item"><span class="label">PAI:</span> ${aluno.nomePai || "—"}</div>
-            <div class="item"><span class="label">TEL:</span> ${aluno.telefone || "—"}</div>
-            <div class="item"><span class="label">ENDEREÇO:</span> ${aluno.endereco || "—"}</div>
+          <div style="margin-top: 20px;">
+            <h2 style="font-size: 14px; text-transform: uppercase; border-bottom: 1px solid #ccc;">FAMÍLIA E CONTATO</h2>
+            <div style="margin-bottom: 8px; font-size: 13px;"><span style="font-weight: bold; color: #666;">MÃE:</span> ${aluno.nomeMae || "—"}</div>
+            <div style="margin-bottom: 8px; font-size: 13px;"><span style="font-weight: bold; color: #666;">PAI:</span> ${aluno.nomePai || "—"}</div>
+            <div style="margin-bottom: 8px; font-size: 13px;"><span style="font-weight: bold; color: #666;">TEL:</span> ${aluno.telefone || "—"}</div>
+            <div style="margin-bottom: 8px; font-size: 13px;"><span style="font-weight: bold; color: #666;">ENDEREÇO:</span> ${aluno.endereco || "—"}</div>
           </div>
           <p style="margin-top: 40px; font-size: 10px; color: #999; text-align: center;">
             Documento gerado em ${new Date().toLocaleString("pt-BR")}
           </p>
-        </body>
-        </html>
+        </div>
       `;
-      const blob = new Blob([html], { type: "text/html" });
-      const file = new File([blob], `Perfil_${aluno.nomeCompleto.replace(/\s+/g, "_")}.html`, { type: "text/html" });
+
+      const filename = `Perfil_${aluno.nomeCompleto.replace(/\s+/g, "_")}.pdf`;
+      const opt = {
+        margin:       10,
+        filename:     filename,
+        image:        { type: 'jpeg', quality: 0.98 },
+        html2canvas:  { scale: 2 },
+        jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+      };
+
+      const pdfBlob = await html2pdf().set(opt).from(container).outputPdf('blob');
+      const file = new File([pdfBlob], filename, { type: "application/pdf" });
 
       const form = new FormData();
       form.append("professorSolicitante", me?.nomeCompleto || "Master");

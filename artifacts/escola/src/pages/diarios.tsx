@@ -17,6 +17,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
+import { format, differenceInDays } from "date-fns";
+import { ptBR } from "date-fns/locale";
+import html2pdf from "html2pdf.js";
+import { useSyncGlobal } from "@/contexts/SyncContext";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -57,7 +61,7 @@ function darkenColor(hex: string, amount = 55): string {
 function formatarDataHora(iso: string): string {
   const d = new Date(iso);
   return d.toLocaleDateString("pt-BR") + " " + d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
-}
+import { useSyncGlobal } from "@/contexts/SyncContext";
 
 export default function DiariosPage() {
   const { data: turmas, isLoading } = useQuery<TurmaInfo[]>({
@@ -66,14 +70,14 @@ export default function DiariosPage() {
       fetch(`${BASE}/api/diario/turmas`, { credentials: "include" }).then((r) => r.json()),
   });
 
-  const [fase, setFase] = useState<"idle"|"baixando"|"done"|"error">("idle");
-  const [progresso, setProgresso] = useState({ atual: 0, total: 0, msg: "", turmaAtual: "" });
-  const [ultimaSync, setUltimaSync] = useState<string | null>(null);
-  const [relatorio, setRelatorio] = useState<{
-    resultados: { turma: string; aulas: number; presencas: number; erro?: string }[];
-    turmasSemLink: string[];
-  } | null>(null);
-  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const { data: linksMeta } = useQuery({
+    queryKey: ["diario-links-meta"],
+    queryFn: () =>
+      fetch(`${BASE}/api/sync/diario-links-meta`, { credentials: "include" }).then((r) => r.json()),
+  });
+
+  const { fase, progresso, ultimaSyncGlob, relatorio, iniciarSincronizacaoGlobal } = useSyncGlobal();
+  const ultimaSync = ultimaSyncGlob;
 
   // States for report modal
   const [showReportModal, setShowReportModal] = useState(false);
@@ -122,8 +126,20 @@ export default function DiariosPage() {
       if (!resp.ok) throw new Error("Erro ao obter o HTML do relatório");
       const html = await resp.text();
       
-      const blob = new Blob([html], { type: "text/html" });
-      const file = new File([blob], `Relatorio_Frequencia_${reportMonth}_${reportYear}.html`, { type: "text/html" });
+      const container = document.createElement("div");
+      container.innerHTML = html;
+      
+      const filename = `Relatorio_Frequencia_${reportMonth}_${reportYear}.pdf`;
+      const opt = {
+        margin:       10,
+        filename:     filename,
+        image:        { type: 'jpeg', quality: 0.98 },
+        html2canvas:  { scale: 2 },
+        jsPDF:        { unit: 'mm', format: 'a4', orientation: 'landscape' }
+      };
+
+      const pdfBlob = await html2pdf().set(opt).from(container).outputPdf('blob');
+      const file = new File([pdfBlob], filename, { type: "application/pdf" });
 
       const form = new FormData();
       form.append("professorSolicitante", "Master");
@@ -152,119 +168,7 @@ export default function DiariosPage() {
     }
   };
 
-  const pararPolling = useCallback(() => {
-    if (pollingRef.current) { clearInterval(pollingRef.current); pollingRef.current = null; }
-  }, []);
-
-  const carregarUltimaSync = useCallback(() => {
-    fetch(`${BASE}/api/sync/diario-links-meta`, { credentials: "include" })
-      .then(r => r.json())
-      .then(d => {
-        if (!d.links?.length) return;
-        const datas = (d.links as { ultimaSync: string | null }[])
-          .map(l => l.ultimaSync)
-          .filter(Boolean)
-          .map(s => new Date(s!).getTime());
-        if (datas.length > 0) setUltimaSync(new Date(Math.max(...datas)).toISOString());
-      })
-      .catch(() => {});
-  }, []);
-
-  useEffect(() => { carregarUltimaSync(); }, [carregarUltimaSync]);
-
-  const iniciarSincronizacao = async () => {
-    if (fase === "baixando") return;
-    setFase("baixando");
-    setRelatorio(null);
-
-    try {
-      // Busca turmas com link cadastrado
-      const turmasResp = await fetch(`${BASE}/api/diario/turmas`, { credentials: "include" }).then(r => r.json());
-      const todasTurmas: TurmaInfo[] = Array.isArray(turmasResp) ? turmasResp : [];
-
-      // Busca quais turmas têm link SUAP cadastrado em diario_links
-      const linksResp = await fetch(`${BASE}/api/sync/diario-links-meta`, { credentials: "include" }).then(r => r.json()).catch(() => ({ links: [] }));
-
-      // Busca links na tabela de turmas também (campo linkSuap)
-      const turmasDetalhes = await fetch(`${BASE}/api/turmas`, { credentials: "include" }).then(r => r.json()).catch(() => []);
-
-      const turmasComLinkSet = new Set<string>();
-
-      // 1. Da tabela de turmas
-      (Array.isArray(turmasDetalhes) ? turmasDetalhes : [])
-        .filter((t: any) => t.linkSuap)
-        .forEach((t: any) => {
-          if (t.nomeTurma) turmasComLinkSet.add(t.nomeTurma);
-        });
-
-      // 2. Da tabela diario_links
-      (linksResp.links ?? []).forEach((l: any) => {
-        if (l.turma) {
-          const correspondente = todasTurmas.find(t => t.nomeTurma.toUpperCase() === l.turma.toUpperCase());
-          if (correspondente) {
-            turmasComLinkSet.add(correspondente.nomeTurma);
-          } else {
-            turmasComLinkSet.add(l.turma);
-          }
-        }
-      });
-
-      const turmasComLink = Array.from(turmasComLinkSet);
-
-      if (turmasComLink.length === 0) {
-        setFase("error");
-        toast({ title: "Nenhum link cadastrado", description: "Configure os links SUAP em Ajustes → Turmas.", variant: "destructive" });
-        setTimeout(() => setFase("idle"), 6000);
-        return;
-      }
-
-      const total = turmasComLink.length;
-      const resultados: { turma: string; aulas: number; presencas: number; erro?: string }[] = [];
-      const turmasSemLink = todasTurmas.map(t => t.nomeTurma).filter(n => !turmasComLink.includes(n));
-      let ultimaSyncLocal: string | null = null;
-
-      for (let i = 0; i < turmasComLink.length; i++) {
-        const nomeTurma = turmasComLink[i];
-        setProgresso({ atual: i, total, msg: `Baixando ${nomeTurma} (${i + 1}/${total})...`, turmaAtual: nomeTurma });
-
-        try {
-          const r = await fetch(`${BASE}/api/sync/baixar-diario-turma`, {
-            method: "POST",
-            credentials: "include",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ turma: nomeTurma }),
-          });
-          const data = await r.json();
-          if (!r.ok || !data.ok) {
-            resultados.push({ turma: nomeTurma, aulas: 0, presencas: 0, erro: data.mensagem ?? "Erro desconhecido" });
-          } else {
-            resultados.push({ turma: nomeTurma, aulas: data.totalAulas ?? 0, presencas: data.totalPresencas ?? 0 });
-            ultimaSyncLocal = new Date().toISOString();
-          }
-        } catch (e: any) {
-          resultados.push({ turma: nomeTurma, aulas: 0, presencas: 0, erro: e.message ?? "Erro de conexão" });
-        }
-      }
-
-      const concluidos = resultados.filter(r => !r.erro).length;
-      const comErro = resultados.filter(r => r.erro).length;
-
-      setProgresso({ atual: total, total, msg: `${concluidos} turmas sincronizadas${comErro > 0 ? ` · ${comErro} com erro` : ""}`, turmaAtual: "" });
-      setFase("done");
-      setRelatorio({ resultados, turmasSemLink });
-      if (ultimaSyncLocal) setUltimaSync(ultimaSyncLocal);
-      carregarUltimaSync();
-      toast({ title: "Diários sincronizados!", description: `${concluidos} turmas atualizadas${comErro > 0 ? ` · ${comErro} com erro` : ""}` });
-
-    } catch (e: any) {
-      setFase("error");
-      setProgresso(p => ({ ...p, msg: e.message || "Erro de conexão" }));
-      toast({ title: "Erro de conexão", variant: "destructive" });
-      setTimeout(() => setFase("idle"), 5000);
-    }
-  };
-
-  useEffect(() => () => pararPolling(), [pararPolling]);
+  const iniciarSincronizacao = iniciarSincronizacaoGlobal;
 
   const lista = Array.isArray(turmas) ? turmas : [];
   const manha = lista.filter((t) => t.turno?.toLowerCase().includes("man"));
@@ -406,13 +310,13 @@ export default function DiariosPage() {
       </div>
 
       {manha.length > 0 && (
-        <Section titulo="Turno da Manhã" icon={<Sun className="w-4 h-4" />} turmas={manha} />
+        <Section titulo="Turno da Manhã" icon={<Sun className="w-4 h-4" />} turmas={manha} linksMeta={linksMeta} />
       )}
       {tarde.length > 0 && (
-        <Section titulo="Turno da Tarde" icon={<Sunset className="w-4 h-4" />} turmas={tarde} />
+        <Section titulo="Turno da Tarde" icon={<Sunset className="w-4 h-4" />} turmas={tarde} linksMeta={linksMeta} />
       )}
       {outros.length > 0 && (
-        <Section titulo="Outros Turnos" icon={<GraduationCap className="w-4 h-4" />} turmas={outros} />
+        <Section titulo="Outros Turnos" icon={<GraduationCap className="w-4 h-4" />} turmas={outros} linksMeta={linksMeta} />
       )}
 
       {turmas?.length === 0 && (
@@ -630,7 +534,7 @@ export default function DiariosPage() {
   );
 }
 
-function Section({ titulo, icon, turmas }: { titulo: string; icon: React.ReactNode; turmas: TurmaInfo[] }) {
+function Section({ titulo, icon, turmas, linksMeta }: { titulo: string; icon: React.ReactNode; turmas: TurmaInfo[]; linksMeta: any }) {
   return (
     <div className="mb-8">
       <div className="flex items-center gap-2 mb-4">
@@ -640,15 +544,18 @@ function Section({ titulo, icon, turmas }: { titulo: string; icon: React.ReactNo
         <span className="text-xs text-gray-500">{turmas.length} turmas</span>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-        {turmas.map((t) => (
-          <TurmaCard key={t.id} turma={t} />
-        ))}
+        {turmas.map((t) => {
+          const syncInfo = linksMeta?.links?.find(
+            (l: any) => l.turma?.toUpperCase() === t.nomeTurma.toUpperCase()
+          );
+          return <TurmaCard key={t.id} turma={t} ultimaSync={syncInfo?.ultimaSync} />;
+        })}
       </div>
     </div>
   );
 }
 
-function TurmaCard({ turma }: { turma: TurmaInfo }) {
+function TurmaCard({ turma, ultimaSync }: { turma: TurmaInfo; ultimaSync?: string | null }) {
   const cor = turma.cor || "#3b82f6";
   const textColor = contrastColor(cor);
   const hoje = new Date();
@@ -679,12 +586,32 @@ function TurmaCard({ turma }: { turma: TurmaInfo }) {
             </div>
           </div>
 
-          <div
-            className="flex items-center gap-1.5 text-xs rounded-lg px-2 py-1 w-fit"
-            style={{ background: "rgba(0,0,0,0.18)" }}
-          >
-            <Users className="w-3 h-3" />
-            <span>{turma.totalAlunos} alunos</span>
+          <div className="flex items-center justify-between mt-4">
+            <div
+              className="flex items-center gap-1.5 text-xs rounded-lg px-2 py-1"
+              style={{ background: "rgba(0,0,0,0.18)" }}
+            >
+              <Users className="w-3 h-3" />
+              <span>{turma.totalAlunos} alunos</span>
+            </div>
+            
+            {ultimaSync && (
+              <div 
+                className={cn(
+                  "flex items-center gap-1 text-[10px] rounded-md px-1.5 py-0.5",
+                  (Date.now() - new Date(ultimaSync).getTime() > 5 * 24 * 60 * 60 * 1000)
+                    ? "bg-red-500/80 text-white font-bold animate-pulse"
+                    : "opacity-60"
+                )}
+              >
+                {(Date.now() - new Date(ultimaSync).getTime() > 5 * 24 * 60 * 60 * 1000) ? (
+                  <AlertCircle className="w-3 h-3" />
+                ) : (
+                  <Clock className="w-2.5 h-2.5" />
+                )}
+                {new Date(ultimaSync).toLocaleDateString("pt-BR", { day: '2-digit', month: '2-digit' })}
+              </div>
+            )}
           </div>
         </div>
 

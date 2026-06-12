@@ -10,6 +10,7 @@ import app from "./app.js";
 import * as dbModule from "./lib/db/index.ts";
 const { db, usuariosTable, usuarios } = dbModule as any;
 import { eq } from "drizzle-orm";
+import { initWhatsApp } from "./lib/whatsapp.ts";
 
 // Usar o que estiver disponível
 const table = usuariosTable || usuarios;
@@ -51,6 +52,9 @@ async function setup() {
 
 // Chamar setup
 setup().catch(console.error);
+
+// Iniciar WhatsApp
+initWhatsApp();
 
 // Exportar para o Vercel
 export default app;

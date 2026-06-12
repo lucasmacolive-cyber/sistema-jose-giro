@@ -15,6 +15,14 @@ import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
 import { CABECALHO_CSS, obterCabecalhoHTML } from "@/components/CabecalhoTimbrado";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { contraste, contrastColor } from "@/lib/utils";
+import html2pdf from "html2pdf.js";
+import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
@@ -73,7 +81,11 @@ interface Aluno {
   nivelEnsino: string | null;
   turmaAtual: string | null;
 }
-interface Aula { id: number; turmaNome: string; data: string; numeroAulas?: number | null; conteudo?: string | null; }
+interface Aula { id: number; turmaNome: string;  data: string;
+  numeroAulas: number;
+  conteudo?: string | null;
+  tipo: string;
+}
 interface AulaAtividade extends Aula { _editConteudo: string; _editNA: number; _salvando: boolean; }
 interface DiarioData {
   alunos: Aluno[];
@@ -164,15 +176,27 @@ export default function DiarioTurmaPage() {
   });
 
   const addAulaMut = useMutation({
-    mutationFn: (data: string) =>
+    mutationFn: ({ data, tipo }: { data: string; tipo: string }) =>
       fetch(`${BASE}/api/diario/aula`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ turmaNome, data }),
+        body: JSON.stringify({ turmaNome, data, tipo }),
       }).then((r) => r.json()),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["diario-mes"] }); },
     onError: () => toast({ title: "Erro ao adicionar dia", variant: "destructive" }),
+  });
+
+  const updateTipoAulaMut = useMutation({
+    mutationFn: ({ id, tipo }: { id: number; tipo: string }) =>
+      fetch(`${BASE}/api/diario/aula/${id}/tipo`, {
+        method: "PUT",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tipo }),
+      }).then((r) => r.json()),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["diario-mes"] }); },
+    onError: () => toast({ title: "Erro ao atualizar tipo de dia", variant: "destructive" }),
   });
 
   const removeAulaMut = useMutation({
@@ -310,10 +334,17 @@ export default function DiarioTurmaPage() {
   function toggleDia(dataStr: string) {
     const aula = aulasMap[dataStr];
     if (aula) {
-      if (!confirm(`Remover ${dataStr} como dia letivo? As presenças registradas serão apagadas.`)) return;
-      removeAulaMut.mutate(aula.id);
+      if (aula.tipo === "normal") {
+        updateTipoAulaMut.mutate({ id: aula.id, tipo: "feriado" });
+      } else if (aula.tipo === "feriado") {
+        updateTipoAulaMut.mutate({ id: aula.id, tipo: "recesso" });
+      } else {
+        // If recesso, remove
+        if (!confirm(`Remover ${dataStr} como dia letivo? As presenças registradas serão apagadas.`)) return;
+        removeAulaMut.mutate(aula.id);
+      }
     } else {
-      addAulaMut.mutate(dataStr);
+      addAulaMut.mutate({ data: dataStr, tipo: "normal" });
     }
   }
 
@@ -334,20 +365,26 @@ export default function DiarioTurmaPage() {
   function calcFreq(alunoId: number) {
     const todasAulas = data?.aulas ?? [];
     const aulasPassadas = todasAulas.filter((a) => dateStrLe(a.data, hojeStr));
-    const totalDoMes = todasAulas.length; // inclui dias futuros já marcados
-    if (totalDoMes === 0) return null; // nenhuma aula registrada ainda
+    const totalAulasPassadas = aulasPassadas.length; 
+    if (todasAulas.length === 0) return null; // Nenhuma aula registrada ainda no mês
+    
     let presencas = 0;
     for (const aula of aulasPassadas) {
       const s = data?.presencas?.[aula.id]?.[alunoId] ?? "P";
       if (s === "P") presencas++;
     }
-    const faltas = aulasPassadas.length - presencas;
+    const faltas = totalAulasPassadas - presencas;
+    
+    // O total do mês será mostrado apenas para base (total de aulas do mês inteiro),
+    // mas a porcentagem é calculada até "hoje" (totalAulasPassadas).
+    const pct = totalAulasPassadas > 0 ? Math.round((presencas / totalAulasPassadas) * 100) : 100;
+    
     return {
       presencas,
       faltas,
-      total: totalDoMes,           // total do mês (denominador correto)
-      aulasPassadas: aulasPassadas.length,
-      pct: Math.round((presencas / totalDoMes) * 100), // cresce gradualmente
+      total: todasAulas.length,           // Mantém o total para mostrar "faltam X dias úteis"
+      aulasPassadas: totalAulasPassadas,
+      pct, 
     };
   }
 
@@ -464,30 +501,19 @@ export default function DiarioTurmaPage() {
   async function imprimirDiarioNaRicoh() {
     setImprimindoRicoh(true);
     try {
-      let html = `
-        <html>
-        <head>
-          <meta charset="UTF-8">
-          <style>
-            body { font-family: Arial, sans-serif; font-size: 10px; }
-            table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-            th, td { border: 1px solid #000; padding: 2px; text-align: center; }
-            th { background: #f0f0f0; }
-            .header { text-align: center; margin-bottom: 10px; }
-            .aluno-nome { text-align: left; padding-left: 5px; width: 200px; }
-          </style>
-        </head>
-        <body>
-          <div class="header">
+      const container = document.createElement("div");
+      container.innerHTML = `
+        <div style="padding: 20px; font-family: Arial, sans-serif; font-size: 10px;">
+          <div style="text-align: center; margin-bottom: 10px;">
             <h2>DIÁRIO DE CLASSE - ${turmaNome}</h2>
-            <p>${MESES[mes-1]} / ${ano} · Professor: ${turma?.professorResponsavel || "—"}</p>
+            <p>${MESES[mes-1]} / ${ano} &middot; Professor: ${turma?.professorResponsavel || "—"}</p>
           </div>
-          <table>
+          <table style="width: 100%; border-collapse: collapse; margin-top: 10px;">
             <thead>
               <tr>
-                <th class="aluno-nome">ALUNO</th>
-                ${(data?.aulas ?? []).map(a => `<th>${a.data.split("/")[0]}</th>`).join("")}
-                <th>%</th>
+                <th style="border: 1px solid #000; padding: 2px; text-align: left; background: #f0f0f0;">ALUNO</th>
+                ${(data?.aulas ?? []).map(a => `<th style="border: 1px solid #000; padding: 2px; text-align: center; background: #f0f0f0;">${a.data.split("/")[0]}</th>`).join("")}
+                <th style="border: 1px solid #000; padding: 2px; text-align: center; background: #f0f0f0;">%</th>
               </tr>
             </thead>
             <tbody>
@@ -495,20 +521,28 @@ export default function DiarioTurmaPage() {
                 const f = calcFreq(aluno.id);
                 return `
                   <tr>
-                    <td class="aluno-nome">${aluno.nomeCompleto}</td>
-                    ${(data?.aulas ?? []).map(aula => `<td>${(data?.presencas?.[aula.id]?.[aluno.id] || "P")}</td>`).join("")}
-                    <td>${f?.pct ?? 0}%</td>
+                    <td style="border: 1px solid #000; padding: 2px; text-align: left;">${aluno.nomeCompleto}</td>
+                    ${(data?.aulas ?? []).map(aula => `<td style="border: 1px solid #000; padding: 2px; text-align: center;">${(data?.presencas?.[aula.id]?.[aluno.id] || "P")}</td>`).join("")}
+                    <td style="border: 1px solid #000; padding: 2px; text-align: center;">${f?.pct ?? 0}%</td>
                   </tr>
                 `;
               }).join("")}
             </tbody>
           </table>
-        </body>
-        </html>
+        </div>
       `;
 
-      const blob = new Blob([html], { type: "text/html" });
-      const file = new File([blob], `Diario_${turmaNome.replace(/\s+/g, "_")}_${mes}_${ano}.html`, { type: "text/html" });
+      const filename = `Diario_${turmaNome.replace(/\s+/g, "_")}_${mes}_${ano}.pdf`;
+      const opt = {
+        margin:       10,
+        filename:     filename,
+        image:        { type: 'jpeg', quality: 0.98 },
+        html2canvas:  { scale: 2 },
+        jsPDF:        { unit: 'mm', format: 'a4', orientation: 'landscape' }
+      };
+
+      const pdfBlob = await html2pdf().set(opt).from(container).outputPdf('blob');
+      const file = new File([pdfBlob], filename, { type: "application/pdf" });
 
       const form = new FormData();
       form.append("professorSolicitante", me?.nomeCompleto || "Master");
@@ -547,7 +581,7 @@ export default function DiarioTurmaPage() {
       {/* ── Cabeçalho da Turma ── */}
       <div
         className="print:block shrink-0"
-        style={{ background: `linear-gradient(135deg, ${cor}dd, ${cor}88)`, color: textoCor }}
+        style={{ backgroundColor: cor, color: textoCor }}
       >
         <div className="px-4 pt-4 pb-3 flex items-center gap-3 print:hidden">
           <Link href="/diarios">
@@ -1426,13 +1460,20 @@ function DiarioGrid({
               Nome do Aluno
             </th>
             {diasUteis.map((d) => {
-              const isLetivo = !!aulasMap[d.dataStr];
+              const aula = aulasMap[d.dataStr];
+              const isLetivo = !!aula;
               const isHoje = d.dataStr === hojeStr;
+              
+              const isFeriado = aula?.tipo === "feriado";
+              const isRecesso = aula?.tipo === "recesso";
+              const bgColor = isFeriado ? "#7f1d1d" : isRecesso ? "#713f12" : "#1e293b"; // Dark red/yellow
+              const brandColor = isFeriado ? "#ef4444" : isRecesso ? "#eab308" : cor;
+              
               return (
                 <th
                   key={d.dataStr}
-                  onClick={() => onToggleDia(d.dataStr)}
-                  title={`${d.dataStr} (${DIAS_SEMANA_CURTO[d.diaSemana]}) — clique para ${isLetivo ? "remover" : "marcar"} como dia letivo`}
+                  onClick={() => toggleDia(d.dataStr)}
+                  title={`${d.dataStr} (${DIAS_SEMANA_CURTO[d.diaSemana]}) — clique para alterar (Normal → Feriado → Recesso → Remover)`}
                   className={cn(
                     "sticky top-0 z-20 relative text-center py-2 border-b cursor-pointer select-none transition-all duration-200",
                     isHoje
@@ -1444,22 +1485,22 @@ function DiarioGrid({
                   style={
                     isHoje
                       ? {
-                          borderBottomColor: cor,
-                          borderLeftColor: `${cor}60`,
+                          borderBottomColor: brandColor,
+                          borderLeftColor: `${brandColor}60`,
                           borderLeftWidth: "2px",
                           color: "#ffffff",
-                          background: `${cor}22`,
-                          boxShadow: `0 0 12px 2px ${cor}33`,
+                          background: `${brandColor}22`,
+                          boxShadow: `0 0 12px 2px ${brandColor}33`,
                         }
                       : isLetivo
-                        ? { borderLeftColor: cor, color: cor, background: "#1e293b" }
+                        ? { borderLeftColor: brandColor, color: brandColor, background: bgColor }
                         : { color: "#6b7280", background: "#1e293b" }
                   }
                 >
                   {isHoje && (
                     <div
                       className="absolute top-0 left-0 right-0 text-[8px] font-black tracking-widest uppercase text-center leading-none pt-0.5"
-                      style={{ color: cor }}
+                      style={{ color: brandColor }}
                     >
                       hoje
                     </div>
@@ -1470,8 +1511,8 @@ function DiarioGrid({
                     className="h-1 rounded-full mx-auto mt-1"
                     style={{
                       width: isHoje ? "20px" : isLetivo ? "16px" : "0px",
-                      background: isHoje ? cor : isLetivo ? cor : "transparent",
-                      boxShadow: isHoje ? `0 0 6px ${cor}` : "none",
+                      background: isHoje ? brandColor : isLetivo ? brandColor : "transparent",
+                      boxShadow: isHoje ? `0 0 6px ${brandColor}` : "none",
                       opacity: isLetivo || isHoje ? 1 : 0,
                     }}
                   />
@@ -1586,28 +1627,46 @@ function DiarioGrid({
                     return (
                       <td
                         key={d.dataStr}
-                        className="text-center py-1.5 select-none"
+                        className="text-center py-1.5 select-none border-l border-white/5"
                         style={isHoje ? { background: `${cor}15` } : undefined}
                       >
                         <span className="text-gray-800">—</span>
                       </td>
                     );
                   }
+                  
+                  const isFeriado = aula.tipo === "feriado";
+                  const isRecesso = aula.tipo === "recesso";
+                  const brandColor = isFeriado ? "#ef4444" : isRecesso ? "#eab308" : cor;
+                  const cellBg = isHoje ? `${brandColor}18` : isFeriado ? "rgba(239,68,68,0.05)" : isRecesso ? "rgba(234,179,8,0.05)" : undefined;
+
                   const key = `${aula.id}-${aluno.id}`;
                   const isPendente = pendentes[key];
                   const status = presencas[aula.id]?.[aluno.id] ?? "P";
                   const isP = status === "P";
 
+                  if (isFeriado || isRecesso) {
+                    return (
+                      <td
+                        key={d.dataStr}
+                        className="text-center py-1.5 select-none border-l border-white/5"
+                        style={{ background: cellBg }}
+                      >
+                        <span className="text-lg font-black" style={{ color: brandColor }}>-</span>
+                      </td>
+                    );
+                  }
+
                   return (
                     <td
                       key={d.dataStr}
                       data-status={status}
-                      onClick={() => !isPendente && onTogglePresenca(aula.id, aluno.id)}
+                      onClick={() => !isPendente && togglePresenca(aula.id, aluno.id)}
                       className={cn(
                         "text-center py-1.5 cursor-pointer select-none transition-all duration-150 border-l border-white/5",
                         isPendente ? "opacity-40" : "hover:scale-125"
                       )}
-                      style={isHoje ? { background: `${cor}18` } : undefined}
+                      style={{ background: cellBg }}
                       title={isP ? "Presente — clique para marcar falta" : "Falta — clique para marcar presença"}
                     >
                       {isPendente ? (

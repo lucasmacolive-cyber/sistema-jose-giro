@@ -907,6 +907,23 @@ router.put("/diario/aula/:id", requireAuth, async (req, res) => {
   }
 });
 
+/* ─── PUT /diario/aula/:id/tipo ─── */
+router.put("/diario/aula/:id/tipo", requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { tipo } = req.body;
+    if (!tipo) return res.status(400).json({ ok: false, mensagem: "tipo é obrigatório" });
+    
+    await db
+      .update(diarioAulasTable)
+      .set({ tipo })
+      .where(eq(diarioAulasTable.id, Number(id)));
+    res.json({ ok: true });
+  } catch (e: any) {
+    res.status(500).json({ ok: false, mensagem: e.message });
+  }
+});
+
 /* ─── GET /diario/:turma/atividades — todas as aulas com conteúdo ─── */
 router.get("/diario/:turma/atividades", requireAuth, async (req, res) => {
   try {
@@ -925,12 +942,12 @@ router.get("/diario/:turma/atividades", requireAuth, async (req, res) => {
 /* ─── POST /diario/aula ─── */
 router.post("/diario/aula", requireAuth, async (req, res) => {
   try {
-    const { turmaNome, data } = req.body;
+    const { turmaNome, data, tipo = "normal" } = req.body;
     if (!turmaNome || !data) return res.status(400).json({ ok: false, mensagem: "turmaNome e data são obrigatórios" });
 
     const [aula] = await db
       .insert(diarioAulasTable)
-      .values({ turmaNome, data })
+      .values({ turmaNome, data, tipo })
       .onConflictDoNothing()
       .returning();
 

@@ -14,6 +14,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
+import html2pdf from "html2pdf.js";
 import * as XLSX from "xlsx";
 
 // ─── Constantes ──────────────────────────────────────────────────────────────
@@ -518,9 +519,20 @@ function SecaoDeclaracoes() {
         matriculadoEm: nivel === "fundamental" ? matriculadoEm : undefined,
       });
 
-      // Criar um arquivo temporário para enviar
-      const blob = new Blob([html], { type: "text/html" });
-      const file = new File([blob], `Declaracao_${alunoSel.nomeCompleto.replace(/\s+/g, "_")}.html`, { type: "text/html" });
+      const container = document.createElement("div");
+      container.innerHTML = html;
+
+      const filename = `Declaracao_${alunoSel.nomeCompleto.replace(/\s+/g, "_")}.pdf`;
+      const opt = {
+        margin:       10,
+        filename:     filename,
+        image:        { type: 'jpeg', quality: 0.98 },
+        html2canvas:  { scale: 2 },
+        jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+      };
+
+      const pdfBlob = await html2pdf().set(opt).from(container).outputPdf('blob');
+      const file = new File([pdfBlob], filename, { type: "application/pdf" });
 
       const form = new FormData();
       form.append("professorSolicitante", me?.nomeCompleto || "Master");
@@ -2578,7 +2590,7 @@ function SecaoModelosDinamicos() {
 
     for (const [key, val] of Object.entries(tokens)) {
       const regex = new RegExp(key.replace(/[{}]/g, "\\$&"), "gi");
-      html = html.replace(regex, `<strong>${val}</strong>`);
+      html = html.replace(regex, val);
     }
 
     
@@ -2616,7 +2628,8 @@ function SecaoModelosDinamicos() {
       <style>
         @page { size: A4; margin: 1.8cm 1.5cm; }
         * { box-sizing: border-box; }
-        body { background: #fff; color: #000; padding: 0; margin: 0; }
+        body { background: #fff; color: #000; padding: 0; margin: 0; text-align: justify; }
+        p, div { text-align: justify; }
         .no-print { display: flex; gap: 10px; margin-bottom: 16px; padding: 10px; background: #f0f0f0; border-radius: 6px; }
         .no-print button { padding: 10px 22px; cursor: pointer; font-weight: bold; border-radius: 5px; border: none; font-size: 14px; background: #10b981; color: #fff; }
         @media print { .no-print { display: none !important; } .page-break { page-break-after: always; } }
