@@ -7,8 +7,9 @@ import {
   FileText, Search, Loader2, ChevronRight, ChevronLeft,
   Baby, BookOpen, ClipboardList, Plus, X, Calendar,
   Pencil, Trash2, UserPlus, Check, Users, FileSpreadsheet,
-  Printer, AlertTriangle, ExternalLink, Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight, AlignJustify
+  Printer, AlertTriangle, ExternalLink, Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight, AlignJustify, Send
 } from "lucide-react";
+import { WhatsAppSendModal } from "@/components/WhatsAppSendModal";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -2513,6 +2514,7 @@ function SecaoModelosDinamicos() {
   
   const [incluirCabecalho, setIncluirCabecalho] = useState(true);
   const [imprimindoRicoh, setImprimindoRicoh] = useState(false);
+  const [showWhatsAppModal, setShowWhatsAppModal] = useState(false);
   const [assDirecao, setAssDirecao] = useState(true);
   const [assPedagoga, setAssPedagoga] = useState(false);
   const [assProfessora, setAssProfessora] = useState(false);
@@ -2689,6 +2691,42 @@ function SecaoModelosDinamicos() {
     }
   }
 
+  async function handleSendWhatsApp(numero: string, mensagem: string) {
+    if (alunosFiltrados.length === 0) return;
+    
+    try {
+      const html = gerarHtmlFinal();
+      
+      const container = document.createElement("div");
+      container.innerHTML = html;
+      
+      const filename = `Documentos_${alunosFiltrados.length}_alunos.pdf`;
+      const opt = {
+        margin:       10,
+        filename:     filename,
+        image:        { type: 'jpeg', quality: 0.98 },
+        html2canvas:  { scale: 2 },
+        jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+      };
+
+      const pdfBlob = await html2pdf().set(opt).from(container).outputPdf('blob');
+      const file = new File([pdfBlob], filename, { type: "application/pdf" });
+
+      const form = new FormData();
+      form.append("numero", numero);
+      form.append("mensagem", mensagem);
+      form.append("arquivo", file);
+
+      const BASE = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "") + "/";
+      const sendResp = await fetch(`${BASE}api/whatsapp/send-document`, { method: "POST", body: form });
+      const data = await sendResp.json();
+      if (!sendResp.ok) throw new Error(data.error || "Erro ao enviar via WhatsApp");
+    } catch (err: any) {
+      console.error(err);
+      throw err;
+    }
+  }
+
   // Helper de UI
   const btnBase = "text-center px-3 py-2 rounded-lg border text-xs font-medium transition-colors";
   const btnOff  = `${btnBase} bg-[#0f172a] border-[#334155] text-slate-300 hover:border-slate-500`;
@@ -2859,6 +2897,14 @@ function SecaoModelosDinamicos() {
               Visualizar PDF ({alunosFiltrados.length})
             </Button>
             <Button
+              onClick={() => setShowWhatsAppModal(true)}
+              disabled={imprimindoRicoh || alunosFiltrados.length === 0}
+              className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold h-12 rounded-xl flex items-center justify-center gap-2"
+            >
+              <Send className="h-4 w-4" />
+              WhatsApp ({alunosFiltrados.length})
+            </Button>
+            <Button
               onClick={handleImprimirLocal}
               disabled={imprimindoRicoh || alunosFiltrados.length === 0}
               className="flex-1 bg-amber-600 hover:bg-amber-500 text-white font-bold h-12 rounded-xl flex items-center justify-center gap-2"
@@ -2874,12 +2920,18 @@ function SecaoModelosDinamicos() {
               {imprimindoRicoh ? (
                 <><Loader2 className="h-4 w-4 animate-spin" />Enviando...</>
               ) : (
-                <><Printer className="h-4 w-4" />Imprimir na RICOH ({alunosFiltrados.length})</>
+                <><Printer className="h-4 w-4" />RICOH ({alunosFiltrados.length})</>
               )}
             </Button>
           </div>
         </div>
       </div>
+      
+      <WhatsAppSendModal 
+        open={showWhatsAppModal} 
+        onOpenChange={setShowWhatsAppModal} 
+        onSend={handleSendWhatsApp} 
+      />
     </div>
   );
 }

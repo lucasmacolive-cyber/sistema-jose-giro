@@ -6,7 +6,7 @@ import {
   BookOpen, Users, Sun, Sunset, Loader2, ChevronRight,
   GraduationCap, RefreshCcw, Check, Clock, XCircle,
   FileText, Printer, Share2, Download, Copy, CalendarDays,
-  ChevronDown, AlertCircle
+  ChevronDown, AlertCircle, Send
 } from "lucide-react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { toast } from "@/hooks/use-toast";
@@ -21,6 +21,7 @@ import { format, differenceInDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import html2pdf from "html2pdf.js";
 import { useSyncGlobal } from "@/contexts/SyncContext";
+import { WhatsAppSendModal } from "@/components/WhatsAppSendModal";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -87,6 +88,7 @@ export default function DiariosPage() {
   const [selectedTurmasReport, setSelectedTurmasReport] = useState<Set<string>>(new Set());
   const [imprimindoRicoh, setImprimindoRicoh] = useState(false);
   const [copiandoLink, setCopiandoLink] = useState(false);
+  const [showWhatsAppModal, setShowWhatsAppModal] = useState(false);
 
   const getReportUrl = () => {
     let url = `${window.location.origin}${BASE}/api/diario/relatorio-frequencia-mensal?mes=${reportMonth}&ano=${reportYear}`;
@@ -165,6 +167,42 @@ export default function DiariosPage() {
       window.open(getReportUrl(), "_blank");
     } finally {
       setImprimindoRicoh(false);
+    }
+  };
+
+  const handleSendWhatsApp = async (numero: string, mensagem: string) => {
+    try {
+      const url = getReportUrl();
+      const resp = await fetch(url);
+      if (!resp.ok) throw new Error("Erro ao obter o HTML do relatório");
+      const html = await resp.text();
+      
+      const container = document.createElement("div");
+      container.innerHTML = html;
+      
+      const filename = `Relatorio_Frequencia_${reportMonth}_${reportYear}.pdf`;
+      const opt = {
+        margin:       10,
+        filename:     filename,
+        image:        { type: 'jpeg', quality: 0.98 },
+        html2canvas:  { scale: 2 },
+        jsPDF:        { unit: 'mm', format: 'a4', orientation: 'landscape' }
+      };
+
+      const pdfBlob = await html2pdf().set(opt).from(container).outputPdf('blob');
+      const file = new File([pdfBlob], filename, { type: "application/pdf" });
+
+      const form = new FormData();
+      form.append("numero", numero);
+      form.append("mensagem", mensagem);
+      form.append("arquivo", file);
+
+      const sendResp = await fetch(`${BASE}/api/whatsapp/send-document`, { method: "POST", body: form });
+      const data = await sendResp.json();
+      if (!sendResp.ok) throw new Error(data.error || "Erro ao enviar via WhatsApp");
+    } catch (err: any) {
+      console.error(err);
+      throw err;
     }
   };
 
@@ -518,18 +556,32 @@ export default function DiariosPage() {
                 {copiandoLink ? "Copiado!" : "Copiar Link"}
               </button>
               <button
+                disabled={(reportTurmaMode === "custom" && selectedTurmasReport.size === 0)}
+                onClick={() => setShowWhatsAppModal(true)}
+                className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-500 transition-all disabled:opacity-40"
+              >
+                <Send className="w-3.5 h-3.5" />
+                WhatsApp
+              </button>
+              <button
                 disabled={(reportTurmaMode === "custom" && selectedTurmasReport.size === 0) || imprimindoRicoh}
                 onClick={handlePrintRicoh}
                 className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-bold bg-slate-700 hover:bg-slate-600 text-white border border-white/10 transition-all active:scale-95 disabled:bg-slate-800/40 disabled:border-white/5 disabled:text-white/20"
               >
                 {imprimindoRicoh ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Printer className="w-3.5 h-3.5" />}
-                Imprimir na RICOH
+                RICOH
               </button>
             </div>
           </div>
         </div>
       </DialogContent>
     </Dialog>
+
+    <WhatsAppSendModal 
+      open={showWhatsAppModal} 
+      onOpenChange={setShowWhatsAppModal} 
+      onSend={handleSendWhatsApp} 
+    />
     </AppLayout>
   );
 }

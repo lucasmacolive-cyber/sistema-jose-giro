@@ -76,3 +76,24 @@ export async function sendWhatsAppMessage(to: string, message: string) {
 
   await client.sendMessage(formattedNumber, message);
 }
+
+export async function sendWhatsAppDocument(to: string, fileBuffer: Buffer, fileName: string, mimetype: string, caption?: string) {
+  if (!client || !isReady) {
+    throw new Error("WhatsApp não está conectado.");
+  }
+  
+  // Need to import MessageMedia if not already imported at top
+  // I will dynamically import it or use require since I need it now
+  const { MessageMedia } = await import("whatsapp-web.js");
+  
+  let formattedNumber = to.replace(/\D/g, "");
+  if (!formattedNumber.startsWith("55")) {
+    formattedNumber = "55" + formattedNumber;
+  }
+  if (!formattedNumber.endsWith("@c.us") && !formattedNumber.endsWith("@g.us")) {
+    formattedNumber += "@c.us";
+  }
+
+  const media = new MessageMedia(mimetype, fileBuffer.toString("base64"), fileName);
+  await client.sendMessage(formattedNumber, media, { caption });
+}

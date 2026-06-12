@@ -7,10 +7,11 @@ import {
   ArrowLeft, ArrowRight, Camera, GraduationCap,
   User, Phone, MapPin, Loader2, ChevronLeft, ChevronRight,
   Hash, Calendar, FileText, Users, Activity, BookOpen, ChevronRight as Chevron,
-  ArrowRightLeft, CalendarDays, Printer
+  ArrowRightLeft, CalendarDays, Printer, Send
 } from "lucide-react";
 import { motion } from "framer-motion";
 import html2pdf from "html2pdf.js";
+import { WhatsAppSendModal } from "@/components/WhatsAppSendModal";
 
 const COR_PADRAO = "#3b82f6";
 
@@ -62,6 +63,7 @@ export default function AlunoPerfilPage() {
   const { data: me } = useGetMe({ query: { retry: false } } as any);
   const isMaster = me?.perfil === "Master";
   const [imprimindo, setImprimindo] = useState(false);
+  const [showWhatsAppModal, setShowWhatsAppModal] = useState(false);
 
   const { data: aluno, isLoading, isError } = useGetAluno(id, {
     query: { enabled: !!id && !isNaN(id) },
@@ -153,6 +155,65 @@ export default function AlunoPerfilPage() {
     }
   }
 
+  async function handleSendWhatsApp(numero: string, mensagem: string) {
+    if (!aluno) return;
+    
+    try {
+      const container = document.createElement("div");
+      container.innerHTML = `
+        <div style="font-family: Arial, sans-serif; padding: 20px; color: #333;">
+          <div style="text-align: center; margin-bottom: 20px;">
+             <p style="font-size: 10px; margin: 0;">E. M. JOSÉ GIRÓ FAÍSCA</p>
+             <h1 style="margin: 5px 0; color: #000; border-bottom: 2px solid #333; padding-bottom: 10px;">PERFIL DO ALUNO</h1>
+          </div>
+          <div style="margin-top: 20px;">
+            <h2 style="font-size: 14px; text-transform: uppercase; border-bottom: 1px solid #ccc;">DADOS ESCOLARES</h2>
+            <p><strong>Nome:</strong> ${aluno.nomeCompleto}</p>
+            <p><strong>Turma:</strong> ${aluno.turmaAtual}</p>
+            <p><strong>Turno:</strong> ${aluno.turno}</p>
+            <p><strong>Matrícula:</strong> ${aluno.matricula}</p>
+            <p><strong>Data de Nascimento:</strong> ${aluno.dataNascimento ? new Date(aluno.dataNascimento).toLocaleDateString("pt-BR") : "—"}</p>
+          </div>
+          <div style="margin-top: 20px;">
+            <h2 style="font-size: 14px; text-transform: uppercase; border-bottom: 1px solid #ccc;">CONTATOS E SAÚDE</h2>
+            <p><strong>Mãe:</strong> ${aluno.nomeMae || "—"}</p>
+            <p><strong>Pai:</strong> ${aluno.nomePai || "—"}</p>
+            <p><strong>Responsável:</strong> ${aluno.nomeResponsavel || "—"}</p>
+            <p><strong>Telefones:</strong> ${aluno.telefones || "—"}</p>
+            <p><strong>Restrição Alimentar:</strong> ${aluno.restricaoAlimentar || "Nenhuma"}</p>
+            <p><strong>Medicamentos:</strong> ${aluno.medicamentos || "Nenhum"}</p>
+            <p><strong>Necessidades Especiais:</strong> ${aluno.necessidadesEspeciais || "Nenhuma"}</p>
+          </div>
+        </div>
+      `;
+
+      const filename = `Perfil_${aluno.nomeCompleto.replace(/\s+/g, "_")}.pdf`;
+      const opt = {
+        margin:       10,
+        filename:     filename,
+        image:        { type: 'jpeg', quality: 0.98 },
+        html2canvas:  { scale: 2 },
+        jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+      };
+
+      const pdfBlob = await html2pdf().set(opt).from(container).outputPdf('blob');
+      const file = new File([pdfBlob], filename, { type: "application/pdf" });
+
+      const form = new FormData();
+      form.append("numero", numero);
+      form.append("mensagem", mensagem);
+      form.append("arquivo", file);
+
+      const BASE = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "") + "/";
+      const sendResp = await fetch(`${BASE}api/whatsapp/send-document`, { method: "POST", body: form });
+      const data = await sendResp.json();
+      if (!sendResp.ok) throw new Error(data.error || "Erro ao enviar via WhatsApp");
+    } catch (err: any) {
+      console.error(err);
+      throw err;
+    }
+  }
+
   return (
     <AppLayout>
       <div className="max-w-5xl mx-auto space-y-6 pb-8">
@@ -191,14 +252,23 @@ export default function AlunoPerfilPage() {
             </button>
 
             {isMaster && (
-              <button
-                onClick={imprimirPerfilNaRicoh}
-                disabled={imprimindo}
-                className="flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold bg-slate-700 hover:bg-slate-600 text-white border border-white/10 transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed shrink-0 ml-2"
-              >
-                {imprimindo ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
-                IMPRIMIR PERFIL (RICOH)
-              </button>
+              <>
+                <button
+                  onClick={() => setShowWhatsAppModal(true)}
+                  className="flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold bg-emerald-600 hover:bg-emerald-500 text-white border border-emerald-500 transition-all active:scale-95 ml-2"
+                >
+                  <Send className="h-4 w-4" />
+                  WHATSAPP
+                </button>
+                <button
+                  onClick={imprimirPerfilNaRicoh}
+                  disabled={imprimindo}
+                  className="flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold bg-slate-700 hover:bg-slate-600 text-white border border-white/10 transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+                >
+                  {imprimindo ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
+                  RICOH
+                </button>
+              </>
             )}
           </div>
         </div>
@@ -406,6 +476,13 @@ export default function AlunoPerfilPage() {
           </motion.div>
         )}
       </div>
+
+      <WhatsAppSendModal 
+        open={showWhatsAppModal} 
+        onOpenChange={setShowWhatsAppModal} 
+        onSend={handleSendWhatsApp} 
+        title="Enviar Ficha via WhatsApp"
+      />
     </AppLayout>
   );
 }
