@@ -47,7 +47,7 @@ export function WhatsAppSendModal({ open, onOpenChange, onSend, title = "Enviar 
     }
     if (destinoTipo === "funcionario" && funcionarioId) {
       const func = funcionarios?.find(f => f.id.toString() === funcionarioId);
-      return func?.telefone || "";
+      return func?.telefoneContato || "";
     }
     return numeroOutro;
   };
@@ -154,9 +154,9 @@ export function WhatsAppSendModal({ open, onOpenChange, onSend, title = "Enviar 
                   className="w-full bg-[#1e293b] border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-emerald-500"
                 >
                   <option value="">Selecione...</option>
-                  {funcionarios?.map((f) => (
-                    <option key={f.id} value={f.id}>
-                      {f.nome} {f.telefone ? `(${f.telefone})` : "(Sem telefone)"}
+                  {funcionarios?.map(func => (
+                    <option key={func.id} value={func.id}>
+                      {func.nomeCompleto} {func.telefoneContato ? `(${func.telefoneContato})` : ""}
                     </option>
                   ))}
                 </select>
