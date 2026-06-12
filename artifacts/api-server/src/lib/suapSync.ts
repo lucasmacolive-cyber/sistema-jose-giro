@@ -311,7 +311,7 @@ export async function sincronizarSUAP(
 
   /* ── 4. Loop de Monitoramento da Tarefa (O "Humano" esperando a barra) ── */
   let attempts = 0;
-  const MAX_ATTEMPTS = 60; // Até 5 minutos de espera (5s por poll)
+  const MAX_ATTEMPTS = 240; // Até 20 minutos de espera (5s por poll)
   
   while (attempts < MAX_ATTEMPTS) {
     const ct = currentResp.headers["content-type"] ?? "";
@@ -365,7 +365,7 @@ export async function sincronizarSUAP(
     attempts++;
   }
 
-  throw new Error("O SUAP demorou muito para gerar o arquivo (timeout de 5 minutos). Tente novamente.");
+  throw new Error("O SUAP demorou muito para gerar o arquivo (timeout de 20 minutos). Tente novamente.");
 }
 
 function sleep(ms: number) {
