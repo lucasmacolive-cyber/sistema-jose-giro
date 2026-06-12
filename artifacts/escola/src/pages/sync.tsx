@@ -3491,8 +3491,9 @@ function SecaoConfigDiario() {
    SEÇÃO: WhatsApp
 ══════════════════════════════════════════ */
 function SecaoWhatsApp() {
-  const [status, setStatus] = useState<{ ready: boolean; qr: string | null } | null>(null);
+  const [status, setStatus] = useState<{ ready: boolean; qr: string | null; number: string | null } | null>(null);
   const [carregando, setCarregando] = useState(true);
+  const { toast } = useToast();
 
   useEffect(() => {
     let timeout: ReturnType<typeof setTimeout>;
@@ -3512,31 +3513,59 @@ function SecaoWhatsApp() {
     return () => clearTimeout(timeout);
   }, []);
 
+  const handleDisconnect = async () => {
+    try {
+      await fetch(API("/whatsapp/disconnect"), { method: "POST" });
+      toast({ title: "Comando enviado!", description: "O robô local será desconectado e um novo QR Code será gerado em instantes." });
+    } catch (e) {
+      toast({ title: "Erro", variant: "destructive" });
+    }
+  };
+
   if (carregando) return <div className="flex justify-center p-10"><Loader2 className="w-8 h-8 animate-spin" /></div>;
 
   return (
     <div className="max-w-md space-y-6">
-      <div className="bg-[#1a2332] rounded-3xl p-6 border border-white/5 text-center">
-        <MessageCircle className="w-12 h-12 text-[#22c55e] mx-auto mb-4" />
+      <div className="bg-[#1a2332] rounded-3xl p-6 border border-white/5 text-center relative overflow-hidden">
+        {/* Adiciona um gradiente verde no fundo se estiver conectado */}
+        {status?.ready && (
+          <div className="absolute inset-0 bg-gradient-to-b from-[#22c55e]/10 to-transparent pointer-events-none" />
+        )}
+        
+        <MessageCircle className={`w-12 h-12 mx-auto mb-4 ${status?.ready ? 'text-[#22c55e]' : 'text-slate-500'}`} />
         <h3 className="text-xl font-bold text-white mb-2">Bot do WhatsApp</h3>
-        <p className="text-sm text-white/50 mb-6">
-          Sincronize o número da escola escaneando o QR Code abaixo para habilitar mensagens automáticas.
+        <p className="text-sm text-white/50 mb-6 relative z-10">
+          Sincronize o número da escola para habilitar mensagens automáticas.
         </p>
 
         {status?.ready ? (
-          <div className="bg-[#22c55e]/10 border border-[#22c55e]/30 rounded-2xl p-4">
-            <CheckCircle2 className="w-8 h-8 text-[#22c55e] mx-auto mb-2" />
-            <p className="text-white font-bold">Autenticado com sucesso!</p>
-            <p className="text-xs text-[#22c55e] mt-1">O bot já pode enviar mensagens.</p>
+          <div className="bg-[#22c55e]/10 border border-[#22c55e]/30 rounded-2xl p-6 relative z-10 shadow-lg shadow-[#22c55e]/5">
+            <ShieldCheck className="w-10 h-10 text-[#22c55e] mx-auto mb-3 drop-shadow-md" />
+            <p className="text-white font-black text-lg tracking-wide">Conectado!</p>
+            <p className="text-sm text-[#22c55e] font-semibold mt-1 bg-[#22c55e]/10 py-1.5 px-3 rounded-full inline-block">
+              +{status.number || "Número Sincronizado"}
+            </p>
+            
+            <div className="mt-6 pt-4 border-t border-[#22c55e]/20">
+              <button 
+                onClick={handleDisconnect}
+                className="w-full flex items-center justify-center gap-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 py-2.5 rounded-xl text-sm font-bold transition-all border border-red-500/20 hover:border-red-500/40"
+              >
+                <WifiOff className="w-4 h-4" /> Desconectar / Trocar Número
+              </button>
+            </div>
           </div>
         ) : status?.qr ? (
-          <div className="bg-white p-4 rounded-xl inline-block mx-auto">
+          <div className="bg-white p-4 rounded-xl inline-block mx-auto relative z-10 shadow-xl shadow-black/40 border-4 border-slate-700">
             <img src={status.qr} alt="QR Code WhatsApp" className="w-48 h-48" />
-            <p className="text-xs text-black/50 mt-2">Abra o WhatsApp no celular,<br/>toque em Aparelhos Conectados<br/>e escaneie o código.</p>
+            <p className="text-xs text-black/70 font-semibold mt-3 bg-slate-100 p-2 rounded-lg">
+              Abra o WhatsApp, toque em<br/>Aparelhos Conectados e escaneie.
+            </p>
           </div>
         ) : (
-          <div className="flex items-center justify-center gap-2 text-white/50 bg-white/5 py-4 rounded-xl">
-            <Loader2 className="w-4 h-4 animate-spin" /> Aguardando QR Code...
+          <div className="flex items-center justify-center gap-3 text-white/60 bg-white/5 py-6 rounded-2xl border border-white/5 relative z-10">
+            <Loader2 className="w-5 h-5 animate-spin text-violet-400" /> 
+            <span className="font-medium">Aguardando Robô Local...</span>
           </div>
         )}
       </div>

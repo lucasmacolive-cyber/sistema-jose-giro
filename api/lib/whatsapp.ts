@@ -11,14 +11,28 @@ export function initWhatsApp() {
 export async function getWhatsAppStatus() {
   const qrRow = await db.select().from(configuracoesTable).where(eq(configuracoesTable.chave, "whatsapp_qr"));
   const readyRow = await db.select().from(configuracoesTable).where(eq(configuracoesTable.chave, "whatsapp_ready"));
+  const numberRow = await db.select().from(configuracoesTable).where(eq(configuracoesTable.chave, "whatsapp_number"));
   
   const qr = qrRow[0]?.valor || null;
   const ready = readyRow[0]?.valor === "true";
+  const number = numberRow[0]?.valor || null;
 
   return {
     ready: ready,
     qr: qr,
+    number: number,
   };
+}
+
+export async function disconnectWhatsApp() {
+  await db.insert(configuracoesTable).values({
+    chave: "whatsapp_command",
+    valor: "logout",
+    atualizadoEm: new Date(),
+  }).onConflictDoUpdate({
+    target: configuracoesTable.chave,
+    set: { valor: "logout", atualizadoEm: new Date() },
+  });
 }
 
 export async function sendWhatsAppMessage(to: string, message: string) {

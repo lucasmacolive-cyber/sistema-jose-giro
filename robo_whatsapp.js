@@ -54,6 +54,9 @@ client.on("ready", async () => {
   isReady = true;
   await updateConfig("whatsapp_qr", "");
   await updateConfig("whatsapp_ready", "true");
+  if (client.info && client.info.wid) {
+    await updateConfig("whatsapp_number", client.info.wid.user);
+  }
 });
 
 client.on("authenticated", () => {
@@ -75,8 +78,29 @@ client.on("disconnected", async (reason) => {
 
 client.initialize();
 
-// Loop de processamento da Fila
+// Loop de processamento da Fila e Comandos
 setInterval(async () => {
+  // 1. Verificar comandos pendentes
+  try {
+    const cmdRes = await pool.query("SELECT valor FROM configuracoes WHERE chave = 'whatsapp_command'");
+    if (cmdRes.rows.length > 0 && cmdRes.rows[0].valor === "logout") {
+      console.log("[WhatsApp] Comando de LOGOUT recebido da nuvem!");
+      await updateConfig("whatsapp_command", "");
+      if (isReady) {
+        await client.logout();
+        isReady = false;
+        await updateConfig("whatsapp_ready", "false");
+        await updateConfig("whatsapp_number", "");
+      } else {
+        // Se não estava ready mas mandou limpar, destrói e inicia
+        await client.destroy();
+        client.initialize();
+      }
+    }
+  } catch (e) {
+    console.error("Erro ao ler comando:", e);
+  }
+
   if (!isReady) return;
 
   try {
