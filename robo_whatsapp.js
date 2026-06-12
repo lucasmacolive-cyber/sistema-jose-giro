@@ -82,18 +82,24 @@ setInterval(async () => {
   // 1. Verificar comandos pendentes
   try {
     const cmdRes = await pool.query("SELECT valor FROM configuracoes WHERE chave = 'whatsapp_command'");
-    if (cmdRes.rows.length > 0 && cmdRes.rows[0].valor === "logout") {
-      console.log("[WhatsApp] Comando de LOGOUT recebido da nuvem!");
-      await updateConfig("whatsapp_command", "");
-      if (isReady) {
-        await client.logout();
+    if (cmdRes.rows.length > 0) {
+      const cmd = cmdRes.rows[0].valor;
+      if (cmd === "logout" || cmd === "generate") {
+        console.log(`[WhatsApp] Comando recebido da nuvem: ${cmd}`);
+        await updateConfig("whatsapp_command", ""); // limpa o comando
+        
+        if (cmd === "logout" && isReady) {
+          await client.logout();
+        } else {
+          // Destrói e reinicia a sessão para forçar um novo QR code ou limpar tudo
+          await client.destroy();
+          client.initialize();
+        }
+        
         isReady = false;
         await updateConfig("whatsapp_ready", "false");
         await updateConfig("whatsapp_number", "");
-      } else {
-        // Se não estava ready mas mandou limpar, destrói e inicia
-        await client.destroy();
-        client.initialize();
+        await updateConfig("whatsapp_qr", ""); // limpa qr antigo
       }
     }
   } catch (e) {

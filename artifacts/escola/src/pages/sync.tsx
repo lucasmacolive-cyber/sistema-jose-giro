@@ -7,7 +7,7 @@ import {
   ChevronLeft, ChevronRight, ChevronDown, AlertTriangle, Palette,
   RefreshCcw, Check, Settings2, Eye, EyeOff,
   Globe, Copy, ExternalLink, Upload, FileSpreadsheet,
-  Zap, ServerCrash, Camera, ImagePlus, Bookmark, ShieldCheck, WifiOff, MessageCircle
+  Zap, ServerCrash, Camera, ImagePlus, Bookmark, ShieldCheck, WifiOff, MessageCircle, PlayCircle
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
@@ -3522,6 +3522,16 @@ function SecaoWhatsApp() {
     }
   };
 
+  const handleGenerate = async () => {
+    try {
+      await fetch(API("/whatsapp/generate"), { method: "POST" });
+      toast({ title: "Comando enviado!", description: "Gerando um novo QR Code na nuvem..." });
+      setStatus({ ...status, qr: null, ready: false, number: null });
+    } catch (e) {
+      toast({ title: "Erro", variant: "destructive" });
+    }
+  };
+
   if (carregando) return <div className="flex justify-center p-10"><Loader2 className="w-8 h-8 animate-spin" /></div>;
 
   return (
@@ -3556,16 +3566,32 @@ function SecaoWhatsApp() {
             </div>
           </div>
         ) : status?.qr ? (
-          <div className="bg-white p-4 rounded-xl inline-block mx-auto relative z-10 shadow-xl shadow-black/40 border-4 border-slate-700">
-            <img src={status.qr} alt="QR Code WhatsApp" className="w-48 h-48" />
-            <p className="text-xs text-black/70 font-semibold mt-3 bg-slate-100 p-2 rounded-lg">
-              Abra o WhatsApp, toque em<br/>Aparelhos Conectados e escaneie.
-            </p>
+          <div className="flex flex-col gap-4 relative z-10">
+            <div className="bg-white p-4 rounded-xl inline-block mx-auto shadow-xl shadow-black/40 border-4 border-slate-700">
+              <img src={status.qr} alt="QR Code WhatsApp" className="w-48 h-48" />
+              <p className="text-xs text-black/70 font-semibold mt-3 bg-slate-100 p-2 rounded-lg">
+                Abra o WhatsApp, toque em<br/>Aparelhos Conectados e escaneie.
+              </p>
+            </div>
+            <button 
+              onClick={handleGenerate}
+              className="mx-auto flex items-center justify-center gap-2 bg-slate-700 hover:bg-slate-600 text-white py-2 px-4 rounded-xl text-sm font-bold transition-all border border-slate-500"
+            >
+              <RefreshCcw className="w-4 h-4" /> Gerar Novo QR Code
+            </button>
           </div>
         ) : (
-          <div className="flex items-center justify-center gap-3 text-white/60 bg-white/5 py-6 rounded-2xl border border-white/5 relative z-10">
-            <Loader2 className="w-5 h-5 animate-spin text-violet-400" /> 
-            <span className="font-medium">Aguardando Robô Local...</span>
+          <div className="flex flex-col gap-4 relative z-10">
+            <div className="flex items-center justify-center gap-3 text-white/60 bg-white/5 py-6 rounded-2xl border border-white/5">
+              <Loader2 className="w-5 h-5 animate-spin text-violet-400" /> 
+              <span className="font-medium">Aguardando Serviço na Nuvem...</span>
+            </div>
+            <button 
+              onClick={handleGenerate}
+              className="mx-auto flex items-center justify-center gap-2 bg-[#22c55e]/20 hover:bg-[#22c55e]/30 text-[#22c55e] py-2 px-6 rounded-xl text-sm font-bold transition-all border border-[#22c55e]/30"
+            >
+              <RefreshCcw className="w-4 h-4" /> Gerar QR Code
+            </button>
           </div>
         )}
       </div>

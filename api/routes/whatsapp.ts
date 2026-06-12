@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { getWhatsAppStatus, sendWhatsAppMessage, sendWhatsAppDocument, disconnectWhatsApp } from "../lib/whatsapp.ts";
+import { getWhatsAppStatus, sendWhatsAppMessage, sendWhatsAppDocument, disconnectWhatsApp, generateWhatsApp } from "../lib/whatsapp.ts";
 import multer from "multer";
 
 const router: IRouter = Router();
@@ -18,6 +18,15 @@ router.get("/whatsapp/status", async (req, res) => {
 router.post("/whatsapp/disconnect", async (req, res) => {
   try {
     await disconnectWhatsApp();
+    res.json({ success: true });
+  } catch(err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post("/whatsapp/generate", async (req, res) => {
+  try {
+    await generateWhatsApp();
     res.json({ success: true });
   } catch(err: any) {
     res.status(500).json({ error: err.message });

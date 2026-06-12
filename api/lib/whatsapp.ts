@@ -35,6 +35,17 @@ export async function disconnectWhatsApp() {
   });
 }
 
+export async function generateWhatsApp() {
+  await db.insert(configuracoesTable).values({
+    chave: "whatsapp_command",
+    valor: "generate",
+    atualizadoEm: new Date(),
+  }).onConflictDoUpdate({
+    target: configuracoesTable.chave,
+    set: { valor: "generate", atualizadoEm: new Date() },
+  });
+}
+
 export async function sendWhatsAppMessage(to: string, message: string) {
   // Apenas salva na fila
   await db.insert(filaWhatsappTable).values({
