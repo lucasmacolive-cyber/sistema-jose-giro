@@ -3499,7 +3499,7 @@ function SecaoWhatsApp() {
     let timeout: ReturnType<typeof setTimeout>;
     async function check() {
       try {
-        const res = await fetch(API("/whatsapp/status"));
+        const res = await fetch(API(`/whatsapp/status?t=${Date.now()}`), { cache: "no-store" });
         const data = await res.json();
         setStatus(data);
       } catch (err) {

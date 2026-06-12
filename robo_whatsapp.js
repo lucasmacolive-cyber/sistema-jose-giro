@@ -34,8 +34,7 @@ const client = new Client({
 client.on("qr", async (qr) => {
   console.log("-----------------------------------------");
   console.log("[WhatsApp] QR Code recebido!");
-  console.log("Escaneie o QR Code abaixo com seu celular:");
-  qrcode.generate(qr, { small: true });
+  console.log("Acesse o painel do site (Ajustes -> Sincronização) para escanear o QR Code lá!");
   
   // Salvar no BD para exibir no site
   try {
