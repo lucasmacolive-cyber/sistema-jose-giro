@@ -61,7 +61,7 @@ function darkenColor(hex: string, amount = 55): string {
 function formatarDataHora(iso: string): string {
   const d = new Date(iso);
   return d.toLocaleDateString("pt-BR") + " " + d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
-import { useSyncGlobal } from "@/contexts/SyncContext";
+}
 
 export default function DiariosPage() {
   const { data: turmas, isLoading } = useQuery<TurmaInfo[]>({

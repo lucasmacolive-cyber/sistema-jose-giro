@@ -4,7 +4,6 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { useGetAluno, useListarAlunos, useListarTurmas, useGetMe } from "@workspace/api-client-react";
 import { useParams, useLocation } from "wouter";
 import {
-import {
   ArrowLeft, ArrowRight, Camera, GraduationCap,
   User, Phone, MapPin, Loader2, ChevronLeft, ChevronRight,
   Hash, Calendar, FileText, Users, Activity, BookOpen, ChevronRight as Chevron,

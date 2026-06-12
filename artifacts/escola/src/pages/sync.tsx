@@ -754,6 +754,21 @@ function BlocoDiariosSinc({ extensaoInstalada, apiBase }: { extensaoInstalada: b
               <><RefreshCcw className="h-3.5 w-3.5" /> Atualizar Todos (Servidor)</>
             )}
           </button>
+          
+          <button
+            onClick={iniciarSyncDiarios}
+            disabled={ativo || naoInstalada}
+            className={`flex-shrink-0 flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-xs transition-all ${
+              naoInstalada
+                ? "bg-white/5 text-slate-500 cursor-not-allowed"
+                : ativo
+                ? "bg-violet-500/20 text-violet-300 cursor-wait"
+                : "bg-violet-600 hover:bg-violet-500 text-white"
+            }`}
+          >
+            {ativo ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCcw className="h-3.5 w-3.5" />}
+            {ativo ? "Importando..." : "Importar (Extensão)"}
+          </button>
         </div>
       </div>
 
@@ -776,21 +791,6 @@ function BlocoDiariosSinc({ extensaoInstalada, apiBase }: { extensaoInstalada: b
           </div>
         </div>
       )}
-        <button
-          onClick={iniciarSyncDiarios}
-          disabled={ativo || naoInstalada}
-          className={`flex-shrink-0 flex items-center gap-2 px-4 py-2.5 rounded-xl font-bold text-sm transition-all ${
-            naoInstalada
-              ? "bg-white/5 text-slate-500 cursor-not-allowed"
-              : ativo
-              ? "bg-violet-500/20 text-violet-300 cursor-wait"
-              : "bg-violet-600 hover:bg-violet-500 text-white"
-          }`}
-        >
-          {ativo ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCcw className="h-4 w-4" />}
-          {ativo ? "Importando..." : "Importar Diários"}
-        </button>
-      </div>
 
       {/* Toggle modo */}
       {!ativo && (
