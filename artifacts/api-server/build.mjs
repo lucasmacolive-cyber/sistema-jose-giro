@@ -15,7 +15,7 @@ async function buildAll() {
   await rm(distDir, { recursive: true, force: true });
 
   await esbuild({
-    entryPoints: [path.resolve(artifactDir, "src/index.ts")],
+    entryPoints: [path.resolve(artifactDir, "api/index.ts")],
     platform: "node",
     bundle: true,
     format: "esm",
@@ -130,7 +130,7 @@ buildAll()
     await copyFile(tableSqlSrc, path.join(distDir, "table.sql"));
 
     // Copiar seed-data.json para dist/
-    const seedSrc = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "src/seed-data.json");
+    const seedSrc = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "api/seed-data.json");
     await copyFile(seedSrc, path.join(distDir, "seed-data.json"));
   })
   .catch((err) => {
