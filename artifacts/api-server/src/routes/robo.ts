@@ -1,10 +1,10 @@
 // @ts-nocheck
-import { Router, type IRouter } from "express";
+import { Router } from "express";
 import { db } from "../lib/db/index.js";
 import { configuracoesTable } from "../lib/db/index.js";
 import { eq } from "drizzle-orm";
 
-const router: IRouter = Router();
+const router = Router();
 
 // Helper to read setting
 async function getChave(chave: string, defaultVal: string = ""): Promise<string> {

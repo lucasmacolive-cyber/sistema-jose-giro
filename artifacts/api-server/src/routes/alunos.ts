@@ -1,10 +1,10 @@
 // @ts-nocheck
-import { Router, type IRouter } from "express";
+import { Router } from "express";
 import { db } from "../lib/db/index.js";
 import { alunosTable } from "../lib/db/index.js";
 import { eq, ilike, or, and, isNotNull, ne } from "drizzle-orm";
 
-const router: IRouter = Router();
+const router = Router();
 
 router.get("/alunos", async (req, res) => {
   const { turma, busca, status, transferidos } = req.query;

@@ -1,8 +1,8 @@
-import { Router, type IRouter } from "express";
+import { Router } from "express";
 import { getWhatsAppStatus, sendWhatsAppMessage, sendWhatsAppDocument, disconnectWhatsApp, generateWhatsApp } from "../lib/whatsapp.js";
 import multer from "multer";
 
-const router: IRouter = Router();
+const router = Router();
 
 const upload = multer({ storage: multer.memoryStorage() });
 

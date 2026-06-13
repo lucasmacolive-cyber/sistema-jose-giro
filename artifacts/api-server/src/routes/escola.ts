@@ -1,11 +1,11 @@
 // @ts-nocheck
-import { Router, type IRouter } from "express";
+import { Router } from "express";
 import { db } from "../lib/db/index.js";
 import { alunosTable, turmasTable, professoresTable, funcionariosTable, impressoesTable, alertasTable } from "../lib/db/index.js";
 import { eq, and, not, ilike } from "drizzle-orm";
 import { sql } from "drizzle-orm";
 
-const router: IRouter = Router();
+const router = Router();
 
 router.get("/escola", (_req, res) => {
   res.json({

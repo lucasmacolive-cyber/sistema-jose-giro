@@ -1,11 +1,11 @@
 // @ts-nocheck
-import { Router, type IRouter } from "express";
+import { Router } from "express";
 import { db } from "../lib/db/index.js";
 import { alunosTable, turmasTable, funcionariosTable, diarioAulasTable } from "../lib/db/index.js";
 import { eq, and, asc, not, ilike } from "drizzle-orm";
 import { isDiaLetivo } from "../lib/calendario2026.js";
 
-const router: IRouter = Router();
+const router = Router();
 
 const TIPOS_DOCUMENTO = [
   { id: "matricula", titulo: "Declaração de Matrícula", descricao: "Declara que o aluno está matriculado na escola" },

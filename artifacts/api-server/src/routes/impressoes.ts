@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { Router, type IRouter } from "express";
+import { Router } from "express";
 import { db } from "../lib/db/index.js";
 import { impressoesTable, alertasTable, configuracoesTable } from "../lib/db/index.js";
 import { eq, desc, not, ne, inArray, like } from "drizzle-orm";
@@ -8,7 +8,7 @@ import path from "path";
 import { randomUUID } from "crypto";
 import fs from "fs";
 
-const router: IRouter = Router();
+const router = Router();
 const UPLOADS_DIR = process.env.VERCEL 
   ? path.join("/tmp", "uploads", "impressoes")
   : path.join(process.cwd(), "uploads", "impressoes");

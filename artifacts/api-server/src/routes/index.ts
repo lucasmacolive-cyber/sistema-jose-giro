@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { Router, type IRouter } from "express";
+import { Router } from "express";
 import healthRouter from "./health.js";
 import authRouter from "./auth.js";
 import alunosRouter from "./alunos.js";
@@ -22,7 +22,7 @@ import calendarioRouter from "./calendario.js";
 import roboRouter from "./robo.js";
 import whatsappRouter from "./whatsapp.js";
 
-const router: IRouter = Router();
+const router = Router();
 
 router.use(healthRouter);
 router.use(authRouter);

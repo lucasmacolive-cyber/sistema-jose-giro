@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { Router, type IRouter, type Request, type Response } from "express";
+import { Router, type Request, type Response } from "express";
 import { Readable } from "stream";
 import {
   RequestUploadUrlBody,
@@ -8,7 +8,7 @@ import {
 import { ObjectStorageService, ObjectNotFoundError } from "../lib/objectStorage.js";
 import { ObjectPermission } from "../lib/objectAcl.js";
 
-const router: IRouter = Router();
+const router = Router();
 const objectStorageService = new ObjectStorageService();
 
 /**

@@ -1,10 +1,10 @@
 // @ts-nocheck
-import { Router, type IRouter } from "express";
+import { Router } from "express";
 import { db } from "../lib/db/index.js";
 import { usuariosTable, alertasTable } from "../lib/db/index.js";
 import { eq } from "drizzle-orm";
 
-const router: IRouter = Router();
+const router = Router();
 
 router.post("/auth/login", async (req, res) => {
   const { login, senha } = req.body;

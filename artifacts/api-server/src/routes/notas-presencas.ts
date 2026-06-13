@@ -1,10 +1,10 @@
 // @ts-nocheck
-import { Router, type IRouter } from "express";
+import { Router } from "express";
 import { db } from "../lib/db/index.js";
 import { notasTable, presencasTable, alunosTable } from "../lib/db/index.js";
 import { eq, and, sql } from "drizzle-orm";
 
-const router: IRouter = Router();
+const router = Router();
 
 /* GET /api/notas/:alunoId — notas de um aluno agrupadas por bimestre */
 router.get("/notas/:alunoId", async (req, res) => {

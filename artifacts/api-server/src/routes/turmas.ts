@@ -1,11 +1,11 @@
 // @ts-nocheck
-import { Router, type IRouter } from "express";
+import { Router } from "express";
 import { db } from "../lib/db/index.js";
 import { turmasTable, alunosTable } from "../lib/db/index.js";
 import { eq, and, or } from "drizzle-orm";
 import { sql } from "drizzle-orm";
 
-const router: IRouter = Router();
+const router = Router();
 
 router.get("/turmas", async (req, res) => {
   const turmas = await db.select().from(turmasTable).orderBy(turmasTable.nomeTurma);

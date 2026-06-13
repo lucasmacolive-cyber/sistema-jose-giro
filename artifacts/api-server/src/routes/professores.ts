@@ -1,10 +1,10 @@
 // @ts-nocheck
-import { Router, type IRouter } from "express";
+import { Router } from "express";
 import { db } from "../lib/db/index.js";
 import { professoresTable } from "../lib/db/index.js";
 import { eq } from "drizzle-orm";
 
-const router: IRouter = Router();
+const router = Router();
 
 router.get("/professores", async (_req, res) => {
   const professores = await db.select().from(professoresTable).orderBy(professoresTable.nome);

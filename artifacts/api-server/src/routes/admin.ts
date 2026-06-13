@@ -1,8 +1,8 @@
 // @ts-nocheck
-import { Router, type IRouter } from "express";
+import { Router } from "express";
 import { pool } from "../lib/db/index.js";
 
-const router: IRouter = Router();
+const router = Router();
 
 const TABELAS_PERMITIDAS = ["alunos", "turmas", "professores", "funcionarios", "usuarios"];
 

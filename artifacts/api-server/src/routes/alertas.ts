@@ -1,10 +1,10 @@
 // @ts-nocheck
-import { Router, type IRouter } from "express";
+import { Router } from "express";
 import { db } from "../lib/db/index.js";
 import { alertasTable } from "../lib/db/index.js";
 import { eq, desc } from "drizzle-orm";
 
-const router: IRouter = Router();
+const router = Router();
 
 router.get("/alertas", async (_req, res) => {
   const alertas = await db.select().from(alertasTable).orderBy(desc(alertasTable.criadoEm));

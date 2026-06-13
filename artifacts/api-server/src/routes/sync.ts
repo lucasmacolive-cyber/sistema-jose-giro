@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { Router, type IRouter } from "express";
+import { Router } from "express";
 import { db } from "../lib/db/index.js";
 import { syncStatusTable, alunosTable, configuracoesTable, diarioAulasTable, diarioPresencasTable, turmasTable, professoresTable, notasTable } from "../lib/db/index.js";
 import { desc, eq, isNotNull, and, inArray, sql } from "drizzle-orm";
@@ -34,7 +34,7 @@ let batchSyncState: {
   turmasSemLink: string[];
 } = { rodando: false, total: 0, atual: 0, msg: "", turmaAtual: "", erro: null, concluido: false, ultimaSync: null, resultados: [], turmasSemLink: [] };
 
-const router: IRouter = Router();
+const router = Router();
 
 /* ─── Status atual ─── */
 router.get("/sync/status", async (_req, res) => {

@@ -1,10 +1,10 @@
 // @ts-nocheck
-import { Router, type IRouter, type Request, type Response } from "express";
+import { Router, type Request, type Response } from "express";
 import { db } from "../lib/db/index.js";
 import { arquivoMorto, arquivoMortoDocumentos } from "../lib/db/index.js";
 import { eq, sql } from "drizzle-orm";
 
-const router: IRouter = Router();
+const router = Router();
 
 // GET /arquivo-morto — listar todos com contagem de documentos
 router.get("/arquivo-morto", async (req: Request, res: Response) => {
