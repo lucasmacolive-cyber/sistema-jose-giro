@@ -162,6 +162,13 @@ export default function DiarioTurmaPage() {
     queryFn: () =>
       fetch(`${BASE}/api/sync/diario-links-meta`, { credentials: "include" }).then((r) => r.json()),
   });
+
+  const { data: calendarioMes } = useQuery<Record<number, any>>({
+    queryKey: ["calendario-mes", mes, ano],
+    queryFn: () =>
+      fetch(`${BASE}/api/calendario/mes?mes=${mes}&ano=${ano}`, { credentials: "include" }).then((r) => r.json()),
+  });
+
   const ultimaSyncTurma = linksMeta?.links?.find(
     l => l.turma?.toUpperCase() === turmaNome.toUpperCase()
   )?.ultimaSync ?? null;
@@ -826,6 +833,7 @@ export default function DiarioTurmaPage() {
             ano={ano}
             turmaNome={turmaNome}
             onAbrirAbono={() => setShowAbonoAlunos(true)}
+            calendarioMes={calendarioMes}
           />
         )}
       </div>
@@ -1407,12 +1415,13 @@ interface GridProps {
   ano: number;
   turmaNome: string;
   onAbrirAbono: () => void;
+  calendarioMes?: Record<number, any>;
 }
 
 function DiarioGrid({
   alunos, aulas, presencas, aulasMap, diasUteis, cor, hojeStr,
   pendentes, onToggleDia, onTogglePresenca, calcFreq, totalPresencas, ficaiIds, onTransferir, onVerPerfil,
-  mes, ano, turmaNome, onAbrirAbono,
+  mes, ano, turmaNome, onAbrirAbono, calendarioMes
 }: GridProps) {
   if (alunos.length === 0) {
     return (
@@ -1623,27 +1632,20 @@ function DiarioGrid({
                 {diasUteis.map((d) => {
                   const aula = aulasMap[d.dataStr];
                   const isHoje = d.dataStr === hojeStr;
-                  if (!aula) {
-                    return (
-                      <td
-                        key={d.dataStr}
-                        className="text-center py-1.5 select-none border-l border-white/5"
-                        style={isHoje ? { background: `${cor}15` } : undefined}
-                      >
-                        <span className="text-gray-800">—</span>
-                      </td>
-                    );
-                  }
                   
-                  const isFeriado = aula.tipo === "feriado";
-                  const isRecesso = aula.tipo === "recesso";
+                  const diaNum = parseInt(d.dataStr.split("/")[0], 10);
+                  const eventoGlobal = calendarioMes?.[diaNum]?.evento;
+                  
+                  let isFeriado = aula?.tipo === "feriado";
+                  let isRecesso = aula?.tipo === "recesso";
+                  
+                  if (eventoGlobal) {
+                    if (eventoGlobal.tipo === "feriado") isFeriado = true;
+                    if (eventoGlobal.tipo === "recesso") isRecesso = true;
+                  }
+
                   const brandColor = isFeriado ? "#ef4444" : isRecesso ? "#eab308" : cor;
                   const cellBg = isHoje ? `${brandColor}18` : isFeriado ? "rgba(239,68,68,0.05)" : isRecesso ? "rgba(234,179,8,0.05)" : undefined;
-
-                  const key = `${aula.id}-${aluno.id}`;
-                  const isPendente = pendentes[key];
-                  const status = presencas[aula.id]?.[aluno.id] ?? "P";
-                  const isP = status === "P";
 
                   if (isFeriado || isRecesso) {
                     return (
@@ -1656,6 +1658,23 @@ function DiarioGrid({
                       </td>
                     );
                   }
+
+                  if (!aula) {
+                    return (
+                      <td
+                        key={d.dataStr}
+                        className="text-center py-1.5 select-none border-l border-white/5"
+                        style={isHoje ? { background: `${cor}15` } : undefined}
+                      >
+                        <span className="text-gray-800">—</span>
+                      </td>
+                    );
+                  }
+
+                  const key = `${aula.id}-${aluno.id}`;
+                  const isPendente = pendentes[key];
+                  const status = presencas[aula.id]?.[aluno.id] ?? "P";
+                  const isP = status === "P";
 
                   return (
                     <td

@@ -2219,9 +2219,12 @@ async function modoBrowser(){
 ══════════════════════════════════════════ */
 interface TurmaComCor {
   id: number;
-  nome_turma: string;
+  nome_turma?: string;
+  nomeTurma?: string;
   turno: string | null;
   cor: string;
+  professor_responsavel?: string | null;
+  professorResponsavel?: string | null;
 }
 
 function SecaoCores() {
@@ -2285,11 +2288,16 @@ function SecaoCores() {
               className="flex flex-col items-center p-3 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 transition-all group overflow-hidden"
             >
               <div
-                className="w-full h-16 rounded-2xl border-2 border-white/20 shadow-lg transition-transform group-hover:scale-[1.02] flex flex-col items-center justify-center p-2"
+                className="w-full h-20 rounded-2xl border-2 border-white/20 shadow-lg transition-transform group-hover:scale-[1.02] flex flex-col items-center justify-center p-2"
                 style={{ background: cor, boxShadow: `0 6px 16px ${cor}55` }}
               >
-                <span className="text-xs font-black text-white text-center drop-shadow-md">{turma.nome_turma}</span>
+                <span className="text-xs font-black text-white text-center drop-shadow-md">{turma.nome_turma || turma.nomeTurma || "SEM NOME"}</span>
                 <span className="text-[0.6rem] text-white/80 font-bold drop-shadow-md">{turma.turno ?? ""}</span>
+                {(turma.professor_responsavel || turma.professorResponsavel) && (
+                  <span className="text-[0.55rem] text-white/70 text-center drop-shadow-md truncate w-full mt-0.5" title={(turma.professor_responsavel || turma.professorResponsavel)!}>
+                    {(turma.professor_responsavel || turma.professorResponsavel)!.split(" ")[0]}
+                  </span>
+                )}
               </div>
             </button>
           );
@@ -3491,8 +3499,9 @@ function SecaoConfigDiario() {
    SEÇÃO: WhatsApp
 ══════════════════════════════════════════ */
 function SecaoWhatsApp() {
-  const [status, setStatus] = useState<{ ready: boolean; qr: string | null; number: string | null } | null>(null);
+  const [status, setStatus] = useState<{ ready: boolean; code: string | null; number: string | null } | null>(null);
   const [carregando, setCarregando] = useState(true);
+  const [inputNumber, setInputNumber] = useState("");
   const { toast } = useToast();
 
   useEffect(() => {
@@ -3523,10 +3532,18 @@ function SecaoWhatsApp() {
   };
 
   const handleGenerate = async () => {
+    if (!inputNumber || inputNumber.length < 10) {
+      toast({ title: "Número Inválido", description: "Digite um número de WhatsApp válido com DDD.", variant: "destructive" });
+      return;
+    }
     try {
-      await fetch(API("/whatsapp/generate"), { method: "POST" });
-      toast({ title: "Comando enviado!", description: "Gerando um novo QR Code na nuvem..." });
-      setStatus({ ...status, qr: null, ready: false, number: null });
+      await fetch(API("/whatsapp/generate"), { 
+        method: "POST", 
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ number: inputNumber }) 
+      });
+      toast({ title: "Comando enviado!", description: "Gerando código de pareamento na nuvem..." });
+      setStatus({ ...status, code: null, ready: false, number: inputNumber });
     } catch (e) {
       toast({ title: "Erro", variant: "destructive" });
     }
@@ -3565,32 +3582,43 @@ function SecaoWhatsApp() {
               </button>
             </div>
           </div>
-        ) : status?.qr ? (
+        ) : status?.code ? (
           <div className="flex flex-col gap-4 relative z-10">
-            <div className="bg-white p-4 rounded-xl inline-block mx-auto shadow-xl shadow-black/40 border-4 border-slate-700">
-              <img src={status.qr} alt="QR Code WhatsApp" className="w-48 h-48" />
-              <p className="text-xs text-black/70 font-semibold mt-3 bg-slate-100 p-2 rounded-lg">
-                Abra o WhatsApp, toque em<br/>Aparelhos Conectados e escaneie.
+            <div className="bg-slate-800 p-6 rounded-2xl inline-block mx-auto shadow-xl shadow-black/40 border border-slate-600">
+              <p className="text-sm text-white/70 mb-3">Seu Código de Pareamento:</p>
+              <div className="bg-slate-900 text-white text-3xl font-mono tracking-[0.25em] py-4 px-6 rounded-xl border-2 border-slate-700 select-all">
+                {status.code}
+              </div>
+              <p className="text-xs text-white/50 font-medium mt-4 max-w-[240px] mx-auto leading-relaxed">
+                Abra o WhatsApp no celular, vá em <strong className="text-white">Aparelhos Conectados</strong> {'>'} <strong className="text-white">Conectar com Número de Telefone</strong> e digite o código acima.
               </p>
             </div>
             <button 
-              onClick={handleGenerate}
+              onClick={() => setStatus({ ...status, code: null })}
               className="mx-auto flex items-center justify-center gap-2 bg-slate-700 hover:bg-slate-600 text-white py-2 px-4 rounded-xl text-sm font-bold transition-all border border-slate-500"
             >
-              <RefreshCcw className="w-4 h-4" /> Gerar Novo QR Code
+              <RefreshCcw className="w-4 h-4" /> Cancelar / Trocar Número
             </button>
           </div>
         ) : (
           <div className="flex flex-col gap-4 relative z-10">
-            <div className="flex items-center justify-center gap-3 text-white/60 bg-white/5 py-6 rounded-2xl border border-white/5">
-              <Loader2 className="w-5 h-5 animate-spin text-violet-400" /> 
-              <span className="font-medium">Aguardando Serviço na Nuvem...</span>
+            <div className="bg-white/5 p-4 rounded-xl border border-white/10">
+              <label className="block text-left text-sm font-medium text-white/80 mb-2">
+                Número do WhatsApp (com DDD)
+              </label>
+              <input 
+                type="text" 
+                placeholder="Ex: 22981310965"
+                value={inputNumber}
+                onChange={(e) => setInputNumber(e.target.value.replace(/\D/g, ""))}
+                className="w-full bg-black/40 text-white placeholder-white/30 border border-white/10 rounded-lg px-4 py-3 focus:outline-none focus:border-[#22c55e] focus:ring-1 focus:ring-[#22c55e] transition-all font-mono text-lg"
+              />
             </div>
             <button 
               onClick={handleGenerate}
-              className="mx-auto flex items-center justify-center gap-2 bg-[#22c55e]/20 hover:bg-[#22c55e]/30 text-[#22c55e] py-2 px-6 rounded-xl text-sm font-bold transition-all border border-[#22c55e]/30"
+              className="w-full flex items-center justify-center gap-2 bg-[#22c55e] hover:bg-[#16a34a] text-white py-3 px-6 rounded-xl font-bold transition-all shadow-lg shadow-[#22c55e]/20"
             >
-              <RefreshCcw className="w-4 h-4" /> Gerar QR Code
+              Gerar Código de Conexão
             </button>
           </div>
         )}
