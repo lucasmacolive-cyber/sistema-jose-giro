@@ -88,18 +88,19 @@ setInterval(async () => {
         console.log(`[WhatsApp] Comando recebido da nuvem: ${cmd}`);
         await updateConfig("whatsapp_command", ""); // limpa o comando
         
-        if (cmd === "logout" && isReady) {
-          await client.logout();
-        } else {
-          // Destrói e reinicia a sessão para forçar um novo QR code ou limpar tudo
-          await client.destroy();
-          client.initialize();
-        }
+        // Sempre destrói o cliente para liberar a pasta
+        try { await client.destroy(); } catch(err){}
+        
+        // Força a remoção da pasta de sessão para garantir que um novo QR Code seja gerado
+        try { fs.rmSync(".wwebjs_auth", { recursive: true, force: true }); } catch(err){}
         
         isReady = false;
         await updateConfig("whatsapp_ready", "false");
         await updateConfig("whatsapp_number", "");
         await updateConfig("whatsapp_qr", ""); // limpa qr antigo
+        
+        // Inicializa do zero, o que forçará a emissão do evento 'qr'
+        client.initialize();
       }
     }
   } catch (e) {

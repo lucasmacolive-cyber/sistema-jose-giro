@@ -1,3 +1,4 @@
-2026/06/12-16:03:55.163 3f8c Reusing MANIFEST C:\Users\kjvtr\OneDrive\Área de Trabalho\pen drive lucas carro\Sistema-Jose-Giro-Faisca\.wwebjs_auth\session-escola-bot\Default\Sync Data\LevelDB/MANIFEST-000001
-2026/06/12-16:03:55.165 3f8c Recovering log #3
-2026/06/12-16:03:55.166 3f8c Reusing old log C:\Users\kjvtr\OneDrive\Área de Trabalho\pen drive lucas carro\Sistema-Jose-Giro-Faisca\.wwebjs_auth\session-escola-bot\Default\Sync Data\LevelDB/000003.log 
+2026/06/12-17:03:53.964 1ce0 Creating DB C:\Users\kjvtr\OneDrive\Área de Trabalho\pen drive lucas carro\Sistema-Jose-Giro-Faisca\.wwebjs_auth\session-escola-bot\Default\Sync Data\LevelDB since it was missing.
+2026/06/12-17:03:54.055 1ce0 Reusing MANIFEST C:\Users\kjvtr\OneDrive\Área de Trabalho\pen drive lucas carro\Sistema-Jose-Giro-Faisca\.wwebjs_auth\session-escola-bot\Default\Sync Data\LevelDB/MANIFEST-000001
+2026/06/12-17:03:54.056 1ce0 Recovering log #3
+2026/06/12-17:03:54.056 1ce0 Reusing old log C:\Users\kjvtr\OneDrive\Área de Trabalho\pen drive lucas carro\Sistema-Jose-Giro-Faisca\.wwebjs_auth\session-escola-bot\Default\Sync Data\LevelDB/000003.log 
