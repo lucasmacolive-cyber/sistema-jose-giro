@@ -13,3 +13,4 @@ export * from "./arquivo-morto.js";
 export * from "./logins-externos.js";
 export * from "./diario.js";
 export * from "./configuracoes.js";
+export * from "./fila-whatsapp.js";
