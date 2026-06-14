@@ -73,7 +73,7 @@ export async function connectToWhatsApp(pairingNumber?: string, waitForOpen: boo
     auth: state,
     printQRInTerminal: false,
     logger,
-    browser: Browsers.macOS("Desktop"),
+    browser: Browsers.ubuntu("Chrome"),
     syncFullHistory: false,
   });
 

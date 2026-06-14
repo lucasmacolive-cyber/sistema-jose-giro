@@ -277,8 +277,12 @@ except:
 
 def check_printer_online():
     try:
-        out = subprocess.check_output(["powershell", "-Command", "Get-Printer | Where-Object { $_.Name -match 'RICOH' -or $_.Name -match 'EPSON' } | Select-Object PrinterStatus | ConvertTo-Json"], text=True)
-        return "Normal" in out or "Ready" in out or "Idle" in out
+        out = subprocess.check_output([
+            "powershell", 
+            "-Command", 
+            "Get-CimInstance Win32_Printer | Where-Object { ($_.Name -match 'RICOH' -or $_.Name -match 'EPSON') -and $_.PrinterStatus -eq 3 } | Select-Object Name | Measure-Object | Select-Object -ExpandProperty Count"
+        ], text=True).strip()
+        return int(out) > 0
     except:
         return False
 
