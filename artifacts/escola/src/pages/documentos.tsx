@@ -1506,8 +1506,19 @@ function SecaoPreDiario() {
           .map((a, i) => ({ n: i + 1, nome: a.nome })),
       }));
       const html = gerarHtmlPreDiario(dadosParaGerar);
-      const blob = new Blob([html], { type: "text/html" });
-      const file = new File([blob], `Pre-Diario.html`, { type: "text/html" });
+      const container = document.createElement("div");
+      container.innerHTML = html;
+
+      const opt = {
+        margin:       10,
+        filename:     `Pre-Diario.pdf`,
+        image:        { type: 'jpeg', quality: 0.98 },
+        html2canvas:  { scale: 2 },
+        jsPDF:        { unit: 'mm', format: 'a4', orientation: 'landscape' }
+      };
+
+      const pdfBlob = await html2pdf().set(opt).from(container).outputPdf('blob');
+      const file = new File([pdfBlob], `Pre-Diario.pdf`, { type: "application/pdf" });
 
       const form = new FormData();
       form.append("professorSolicitante", me?.nomeCompleto || "Master");
