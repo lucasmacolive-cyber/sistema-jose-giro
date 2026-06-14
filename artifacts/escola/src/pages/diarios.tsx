@@ -209,9 +209,9 @@ export default function DiariosPage() {
   const iniciarSincronizacao = iniciarSincronizacaoGlobal;
 
   const lista = Array.isArray(turmas) ? turmas : [];
-  const manha = lista.filter((t) => t.turno?.toLowerCase().includes("man"));
-  const tarde = lista.filter((t) => t.turno?.toLowerCase().includes("tar"));
-  const outros = lista.filter((t) => !t.turno?.toLowerCase().includes("man") && !t.turno?.toLowerCase().includes("tar"));
+  const manha = lista.filter((t) => t.nomeTurma?.includes("M"));
+  const tarde = lista.filter((t) => t.nomeTurma?.includes("T"));
+  const outros = lista.filter((t) => !t.nomeTurma?.includes("M") && !t.nomeTurma?.includes("T"));
 
   if (isLoading) {
     return (

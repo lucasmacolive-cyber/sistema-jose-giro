@@ -80,6 +80,9 @@ importers:
       '@types/qrcode':
         specifier: ^1.5.6
         version: 1.5.6
+      '@whiskeysockets/baileys':
+        specifier: 7.0.0-rc13
+        version: 7.0.0-rc13
       archiver:
         specifier: ^7.0.1
         version: 7.0.1
