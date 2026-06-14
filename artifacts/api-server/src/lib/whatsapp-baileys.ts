@@ -67,7 +67,7 @@ export async function connectToWhatsApp(pairingNumber?: string, waitForOpen: boo
   if (sock) return sock;
 
   const { state, saveCreds } = await usePostgresAuthState();
-  const logger = pino({ level: "silent" });
+  const logger = pino({ level: "trace" });
 
   sock = makeWASocket({
     auth: state,
@@ -90,7 +90,23 @@ export async function connectToWhatsApp(pairingNumber?: string, waitForOpen: boo
     }, 50000);
 
     sock.ev.on("connection.update", async (update: any) => {
-      const { connection, lastDisconnect } = update;
+      const { connection, lastDisconnect, qr } = update;
+
+      if (qr && pairingNumber && !sock.authState.creds.registered) {
+        try {
+          const code = await sock.requestPairingCode(pairingNumber);
+          await db.insert(configuracoesTable).values({ chave: "whatsapp_pairing_code", valor: code, atualizadoEm: new Date() })
+            .onConflictDoUpdate({ target: configuracoesTable.chave, set: { valor: code, atualizadoEm: new Date() } });
+          
+          if (!waitForOpen && !isResolved) {
+            clearTimeout(timeout);
+            isResolved = true;
+            resolve(sock);
+          }
+        } catch (err) {
+          console.error("Error requesting pairing code:", err);
+        }
+      }
 
       if (connection === "close") {
         const shouldReconnect = (lastDisconnect?.error as Boom)?.output?.statusCode !== DisconnectReason.loggedOut;
@@ -115,27 +131,7 @@ export async function connectToWhatsApp(pairingNumber?: string, waitForOpen: boo
       }
     });
 
-    if (pairingNumber && !sock.authState.creds.registered) {
-      setTimeout(async () => {
-        try {
-          const code = await sock.requestPairingCode(pairingNumber);
-          await db.insert(configuracoesTable).values({ chave: "whatsapp_pairing_code", valor: code, atualizadoEm: new Date() })
-            .onConflictDoUpdate({ target: configuracoesTable.chave, set: { valor: code, atualizadoEm: new Date() } });
-          
-          if (!waitForOpen && !isResolved) {
-            clearTimeout(timeout);
-            isResolved = true;
-            resolve(sock);
-          }
-        } catch (err) {
-          if (!isResolved) {
-            clearTimeout(timeout);
-            isResolved = true;
-            reject(err);
-          }
-        }
-      }, 2500);
-    } else if (sock.authState.creds.registered && !waitForOpen) {
+    if (sock.authState.creds.registered && !waitForOpen) {
       if (!isResolved) {
         clearTimeout(timeout);
         isResolved = true;

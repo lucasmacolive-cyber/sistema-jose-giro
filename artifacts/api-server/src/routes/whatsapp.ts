@@ -1,5 +1,6 @@
 import { Router } from "express";
-import { getWhatsAppStatus, sendWhatsAppMessage, disconnectWhatsApp, generateWhatsAppPairing } from "../lib/whatsapp-baileys.js";
+import { db, filaWhatsappTable, configuracoesTable } from "../lib/db/index.js";
+import { eq } from "drizzle-orm";
 import multer from "multer";
 
 const router = Router();
@@ -7,8 +8,17 @@ const upload = multer({ storage: multer.memoryStorage() });
 
 router.get("/whatsapp/status", async (req, res) => {
   try {
-    const status = await getWhatsAppStatus();
-    res.json(status);
+    // O robô local atualiza as configurações
+    const readyRow = await db.select().from(configuracoesTable).where(eq(configuracoesTable.chave, "whatsapp_ready"));
+    const ready = readyRow.length > 0 && readyRow[0].valor === "true";
+    
+    const codeRow = await db.select().from(configuracoesTable).where(eq(configuracoesTable.chave, "whatsapp_pairing_code"));
+    const code = codeRow.length > 0 ? codeRow[0].valor : null;
+    
+    const numberRow = await db.select().from(configuracoesTable).where(eq(configuracoesTable.chave, "whatsapp_number"));
+    const number = numberRow.length > 0 ? numberRow[0].valor : null;
+
+    res.json({ ready, code, number });
   } catch(err) {
     res.json({ ready: false, code: null, number: null });
   }
@@ -16,7 +26,12 @@ router.get("/whatsapp/status", async (req, res) => {
 
 router.post("/whatsapp/disconnect", async (req, res) => {
   try {
-    await disconnectWhatsApp();
+    await db.insert(configuracoesTable).values({ chave: "whatsapp_command_disconnect", valor: "true", atualizadoEm: new Date() })
+      .onConflictDoUpdate({ target: configuracoesTable.chave, set: { valor: "true", atualizadoEm: new Date() } });
+    // Remove local state on UI
+    await db.delete(configuracoesTable).where(eq(configuracoesTable.chave, "whatsapp_ready"));
+    await db.delete(configuracoesTable).where(eq(configuracoesTable.chave, "whatsapp_pairing_code"));
+    await db.delete(configuracoesTable).where(eq(configuracoesTable.chave, "whatsapp_number"));
     res.json({ success: true });
   } catch(err: any) {
     res.status(500).json({ error: err.message });
@@ -26,10 +41,13 @@ router.post("/whatsapp/disconnect", async (req, res) => {
 router.post("/whatsapp/generate", async (req, res) => {
   const { number } = req.body;
   if (!number) {
-    return res.status(400).json({ error: "Número de telefone é obrigatório para gerar o código de pareamento" });
+    return res.status(400).json({ error: "Número de telefone é obrigatório" });
   }
   try {
-    await generateWhatsAppPairing(number);
+    await db.insert(configuracoesTable).values({ chave: "whatsapp_command_generate", valor: number, atualizadoEm: new Date() })
+      .onConflictDoUpdate({ target: configuracoesTable.chave, set: { valor: number, atualizadoEm: new Date() } });
+    await db.insert(configuracoesTable).values({ chave: "whatsapp_number", valor: number, atualizadoEm: new Date() })
+      .onConflictDoUpdate({ target: configuracoesTable.chave, set: { valor: number, atualizadoEm: new Date() } });
     res.json({ success: true });
   } catch(err: any) {
     res.status(500).json({ error: err.message });
@@ -43,7 +61,7 @@ router.post("/whatsapp/send", async (req, res) => {
   }
 
   try {
-    await sendWhatsAppMessage(to, message);
+    await db.insert(filaWhatsappTable).values({ numero: to, mensagem: message, status: "Pendente" });
     res.json({ success: true });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
