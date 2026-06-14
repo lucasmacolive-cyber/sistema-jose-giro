@@ -64,6 +64,17 @@ const usePostgresAuthState = async () => {
 let sock: any = null;
 let hasRequestedPairingCode = false;
 
+function formatToWhatsAppJidNumber(num: string): string {
+  let clean = num.replace(/\D/g, "");
+  if (clean.startsWith("55") && clean.length === 13) {
+    const ddd = parseInt(clean.substring(2, 4));
+    if (ddd >= 11 && ddd <= 28) {
+      clean = clean.substring(0, 4) + clean.substring(5);
+    }
+  }
+  return clean;
+}
+
 export async function connectToWhatsApp(pairingNumber?: string, waitForOpen: boolean = false): Promise<any> {
   if (sock) return sock;
 
@@ -80,6 +91,8 @@ export async function connectToWhatsApp(pairingNumber?: string, waitForOpen: boo
 
   sock.ev.on("creds.update", saveCreds);
 
+  const formattedPairingNumber = pairingNumber ? formatToWhatsAppJidNumber(pairingNumber) : undefined;
+
   return new Promise((resolve, reject) => {
     let isResolved = false;
 
@@ -93,10 +106,10 @@ export async function connectToWhatsApp(pairingNumber?: string, waitForOpen: boo
     sock.ev.on("connection.update", async (update: any) => {
       const { connection, lastDisconnect, qr } = update;
 
-      if (qr && pairingNumber && sock && !sock.authState.creds.registered && !hasRequestedPairingCode) {
+      if (qr && formattedPairingNumber && sock && !sock.authState.creds.registered && !hasRequestedPairingCode) {
         hasRequestedPairingCode = true;
         try {
-          const code = await sock.requestPairingCode(pairingNumber);
+          const code = await sock.requestPairingCode(formattedPairingNumber);
           await db.insert(configuracoesTable).values({ chave: "whatsapp_pairing_code", valor: code, atualizadoEm: new Date() })
             .onConflictDoUpdate({ target: configuracoesTable.chave, set: { valor: code, atualizadoEm: new Date() } });
           
@@ -126,6 +139,18 @@ export async function connectToWhatsApp(pairingNumber?: string, waitForOpen: boo
         await db.insert(configuracoesTable).values({ chave: "whatsapp_ready", valor: "true", atualizadoEm: new Date() })
           .onConflictDoUpdate({ target: configuracoesTable.chave, set: { valor: "true", atualizadoEm: new Date() } });
         
+        try {
+          const groups = await sock.groupFetchAllParticipating();
+          for (const jid in groups) {
+            const name = groups[jid].subject;
+            const key = `wa_group_${jid}`;
+            await db.insert(configuracoesTable).values({ chave: key, valor: name, atualizadoEm: new Date() })
+              .onConflictDoUpdate({ target: configuracoesTable.chave, set: { valor: name, atualizadoEm: new Date() } });
+          }
+        } catch (err) {
+          console.error("Error fetching groups:", err);
+        }
+
         if (!isResolved) {
           clearTimeout(timeout);
           isResolved = true;
@@ -157,7 +182,7 @@ export async function getWhatsAppStatus() {
 }
 
 export async function generateWhatsAppPairing(number: string) {
-  const cleanNumber = number.replace(/\D/g, "");
+  const cleanNumber = formatToWhatsAppJidNumber(number);
   
   await db.insert(configuracoesTable).values({ chave: "whatsapp_number", valor: cleanNumber, atualizadoEm: new Date() })
     .onConflictDoUpdate({ target: configuracoesTable.chave, set: { valor: cleanNumber, atualizadoEm: new Date() } });
@@ -178,11 +203,11 @@ export async function generateWhatsAppPairing(number: string) {
 
 export async function sendWhatsAppMessage(to: string, message: string) {
   const socket = await connectToWhatsApp();
-  const cleanTo = to.replace(/\D/g, "") + "@s.whatsapp.net";
+  let cleanTo = to;
+  if (!cleanTo.includes("@g.us")) {
+    cleanTo = formatToWhatsAppJidNumber(cleanTo) + "@s.whatsapp.net";
+  }
   await socket.sendMessage(cleanTo, { text: message });
-  
-  try { socket.end(undefined); } catch(e){}
-  sock = null;
 }
 
 export async function disconnectWhatsApp() {
@@ -195,4 +220,5 @@ export async function disconnectWhatsApp() {
   await db.delete(configuracoesTable).where(eq(configuracoesTable.chave, "whatsapp_pairing_code"));
   await db.delete(configuracoesTable).where(eq(configuracoesTable.chave, "baileys_creds"));
 }
+
 
