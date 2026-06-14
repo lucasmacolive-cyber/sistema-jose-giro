@@ -269,7 +269,7 @@ log(f"Conectando em: {API}")
 
 try:
     log("Listando impressoras disponiveis no Windows:")
-    printers = subprocess.check_output(["powershell", "-Command", "Get-Printer | Select-Object -ExpandProperty Name"], text=True).splitlines()
+    printers = subprocess.check_output(["powershell", "-Command", "Get-Printer | Select-Object -ExpandProperty Name"], text=True, creationflags=0x08000000).splitlines()
     for p in printers:
         log(f" - {p.strip()}")
 except:
@@ -280,7 +280,7 @@ def check_printer_online():
         out = subprocess.check_output([
             "powershell", "-Command", 
             "Get-Printer | Where-Object { $_.Name -match 'RICOH' -or $_.Name -match 'EPSON' } | Select-Object -ExpandProperty PortName | ConvertTo-Json"
-        ], text=True).strip()
+        ], text=True, creationflags=0x08000000).strip()
         if not out: return False
         
         import json
@@ -289,13 +289,13 @@ def check_printer_online():
         
         for port in ports:
             if re.match(r"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$", port):
-                res = subprocess.call(["ping", "-n", "1", "-w", "1000", port], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                res = subprocess.call(["ping", "-n", "1", "-w", "1000", port], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=0x08000000)
                 if res == 0: return True
             else:
                 status = subprocess.check_output([
                     "powershell", "-Command",
                     f"Get-CimInstance Win32_Printer | Where-Object PortName -eq '{port}' | Select-Object -ExpandProperty PrinterStatus"
-                ], text=True).strip()
+                ], text=True, creationflags=0x08000000).strip()
                 if "3" in status or "4" in status: return True
         return False
     except Exception as e:
@@ -351,7 +351,7 @@ def proc(job):
             if os.path.exists(edge_path):
                 try:
                     cmd = [edge_path, "--headless", "--disable-gpu", f"--print-to-pdf={pdf_path}", print_file]
-                    subprocess.run(cmd, check=True, timeout=30)
+                    subprocess.run(cmd, check=True, timeout=30, creationflags=0x08000000)
                     os.unlink(print_file)
                     print_file = pdf_path
                     is_pdf = True
@@ -394,7 +394,7 @@ def proc(job):
         # Escolha da impressora
         target_printer = None
         try:
-            printers = [p.strip() for p in subprocess.check_output(["powershell", "-Command", "Get-Printer | Select-Object -ExpandProperty Name"], text=True).splitlines() if p.strip()]
+            printers = [p.strip() for p in subprocess.check_output(["powershell", "-Command", "Get-Printer | Select-Object -ExpandProperty Name"], text=True, creationflags=0x08000000).splitlines() if p.strip()]
             
             # 1. Prioridade para impressora especifica no job
             pref = job.get("impressoraNome")
@@ -441,7 +441,7 @@ def proc(job):
                 else:
                     cmd = [sumatra, "-print-default", "-print-settings", "silent", print_file]
                 
-                res = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+                res = subprocess.run(cmd, capture_output=True, text=True, timeout=30, creationflags=0x08000000)
                 if res.returncode == 0:
                     success = True
                     log("SumatraPDF enviou com sucesso.")
@@ -458,7 +458,7 @@ def proc(job):
                 else:
                     cmd = f"Start-Process -FilePath '{print_file}' -Verb Print -WindowStyle Hidden -Wait"
                 
-                subprocess.run(["powershell", "-Command", cmd], timeout=60, check=True)
+                subprocess.run(["powershell", "-Command", cmd], timeout=60, check=True, creationflags=0x08000000)
                 success = True
                 log("PowerShell enviou com sucesso.")
             except Exception as e:
