@@ -458,18 +458,18 @@ def proc(job):
 
 while True:
     heart()
-    try:
-        r = requests.get(f"{API}/api/impressoes/pendentes", timeout=10)
-        if r.status_code == 200:
-            for j in r.json():
-                proc(j)
-    except:
-        pass
+    if check_printer_online():
+        try:
+            r = requests.get(f"{API}/api/impressoes/pendentes", timeout=10)
+            if r.status_code == 200:
+                for j in r.json():
+                    proc(j)
+        except:
+            pass
+    else:
+        log("Impressora offline. Impressoes pausadas ate que ela seja ligada...")
     
     for _ in range(10):
         heart()
-        time.sleep(1)
-`;
-}
 
 export default router;
