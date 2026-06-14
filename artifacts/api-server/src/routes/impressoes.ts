@@ -490,5 +490,8 @@ while True:
     
     for _ in range(10):
         heart()
+        time.sleep(4)
+`;
+}
 
 export default router;
