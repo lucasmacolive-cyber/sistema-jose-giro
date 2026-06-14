@@ -62,6 +62,7 @@ const usePostgresAuthState = async () => {
 };
 
 let sock: any = null;
+let hasRequestedPairingCode = false;
 
 export async function connectToWhatsApp(pairingNumber?: string, waitForOpen: boolean = false): Promise<any> {
   if (sock) return sock;
@@ -92,7 +93,8 @@ export async function connectToWhatsApp(pairingNumber?: string, waitForOpen: boo
     sock.ev.on("connection.update", async (update: any) => {
       const { connection, lastDisconnect, qr } = update;
 
-      if (qr && pairingNumber && !sock.authState.creds.registered) {
+      if (qr && pairingNumber && sock && !sock.authState.creds.registered && !hasRequestedPairingCode) {
+        hasRequestedPairingCode = true;
         try {
           const code = await sock.requestPairingCode(pairingNumber);
           await db.insert(configuracoesTable).values({ chave: "whatsapp_pairing_code", valor: code, atualizadoEm: new Date() })
@@ -109,6 +111,7 @@ export async function connectToWhatsApp(pairingNumber?: string, waitForOpen: boo
       }
 
       if (connection === "close") {
+        hasRequestedPairingCode = false;
         const shouldReconnect = (lastDisconnect?.error as Boom)?.output?.statusCode !== DisconnectReason.loggedOut;
         if (!shouldReconnect) {
           await db.delete(configuracoesTable).where(eq(configuracoesTable.chave, "baileys_creds"));
@@ -159,7 +162,7 @@ export async function generateWhatsAppPairing(number: string) {
   await db.insert(configuracoesTable).values({ chave: "whatsapp_number", valor: cleanNumber, atualizadoEm: new Date() })
     .onConflictDoUpdate({ target: configuracoesTable.chave, set: { valor: cleanNumber, atualizadoEm: new Date() } });
   await db.insert(configuracoesTable).values({ chave: "whatsapp_ready", valor: "false", atualizadoEm: new Date() })
-    .onConflictDoUpdate({ target: configuracoesTable.chave, set: { valor: "false", atualizadoEm: new Date() } });
+    .onConflictDoUpdate({ target: configuracoesTable.chave, set: { valor: cleanNumber, atualizadoEm: new Date() } });
   await db.insert(configuracoesTable).values({ chave: "whatsapp_pairing_code", valor: "", atualizadoEm: new Date() })
     .onConflictDoUpdate({ target: configuracoesTable.chave, set: { valor: "", atualizadoEm: new Date() } });
 
@@ -167,6 +170,7 @@ export async function generateWhatsAppPairing(number: string) {
     try { sock.logout(); } catch(e){}
   }
   sock = null; 
+  hasRequestedPairingCode = false;
   await db.delete(configuracoesTable).where(eq(configuracoesTable.chave, "baileys_creds"));
   
   await connectToWhatsApp(cleanNumber, true);
@@ -186,7 +190,9 @@ export async function disconnectWhatsApp() {
     try { sock.logout(); } catch(e){}
     sock = null;
   }
+  hasRequestedPairingCode = false;
   await db.delete(configuracoesTable).where(eq(configuracoesTable.chave, "whatsapp_ready"));
   await db.delete(configuracoesTable).where(eq(configuracoesTable.chave, "whatsapp_pairing_code"));
   await db.delete(configuracoesTable).where(eq(configuracoesTable.chave, "baileys_creds"));
 }
+
