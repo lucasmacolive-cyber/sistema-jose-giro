@@ -3594,7 +3594,7 @@ function SecaoWhatsApp() {
               </p>
             </div>
             <button 
-              onClick={() => setStatus({ ...status, code: null })}
+              onClick={handleDisconnect}
               className="mx-auto flex items-center justify-center gap-2 bg-slate-700 hover:bg-slate-600 text-white py-2 px-4 rounded-xl text-sm font-bold transition-all border border-slate-500"
             >
               <RefreshCcw className="w-4 h-4" /> Cancelar / Trocar Número
