@@ -118,9 +118,12 @@ router.patch("/impressoes/:id/status", async (req, res) => {
 
 router.post("/impressoes/heartbeat", async (req, res) => {
   try {
-    const agora = new Date().toISOString();
-    await db.insert(configuracoesTable).values({ chave: "last_heartbeat_impressora", valor: agora })
-      .onConflictDoUpdate({ target: configuracoesTable.chave, set: { valor: agora, atualizadoEm: new Date() } });
+    const isOnline = req.body.printerOnline !== false;
+    if (isOnline) {
+      const agora = new Date().toISOString();
+      await db.insert(configuracoesTable).values({ chave: "last_heartbeat_impressora", valor: agora })
+        .onConflictDoUpdate({ target: configuracoesTable.chave, set: { valor: agora, atualizadoEm: new Date() } });
+    }
     res.json({ ok: true });
   } catch (err) {
     console.error("Erro no heartbeat:", err);
@@ -198,26 +201,24 @@ if not defined PYTHON_EXE (
 
 set "PYTHONW_EXE=%PYTHON_EXE:python.exe=pythonw.exe%"
 
-echo Criando robo-impressao-escola.vbs em Startup...
-echo Dim WshShell, pyScript > "%STARTUP_DIR%\\robo-impressao-escola.vbs"
+echo pyScript = "%SYS_DIR%\\impressora_escola.py" > "%STARTUP_DIR%\\robo-impressao-escola.vbs"
 echo Set WshShell = CreateObject("WScript.Shell") >> "%STARTUP_DIR%\\robo-impressao-escola.vbs"
-echo pyScript = "%SYS_DIR%\\impressora_escola.py" >> "%STARTUP_DIR%\\robo-impressao-escola.vbs"
 echo Do >> "%STARTUP_DIR%\\robo-impressao-escola.vbs"
 echo     WshShell.Run Chr(34) ^& "%PYTHONW_EXE%" ^& Chr(34) ^& " " ^& Chr(34) ^& pyScript ^& Chr(34), 0, True >> "%STARTUP_DIR%\\robo-impressao-escola.vbs"
 echo     WScript.Sleep 5000 >> "%STARTUP_DIR%\\robo-impressao-escola.vbs"
 echo Loop >> "%STARTUP_DIR%\\robo-impressao-escola.vbs"
 
 echo.
-echo ==================================================
-echo TUDO PRONTO! O robo foi atualizado e configurado!
-echo Ele agora vai INICIAR AUTOMATICAMENTE toda vez que 
-echo voce ligar o computador!
+echo 7. Iniciando robo em segundo plano...
+start "" wscript.exe "%STARTUP_DIR%\\robo-impressao-escola.vbs"
+
 echo.
-echo Pressione QUALQUER TECLA para INICIAR AGORA EM MODO OCULTO.
 echo ==================================================
-pause
-start wscript.exe "%STARTUP_DIR%\\robo-impressao-escola.vbs"
-exit`);
+echo   INSTALACAO CONCLUIDA COM SUCESSO!
+echo   O robo ja esta rodando oculto no sistema.
+echo   Ele vai iniciar automaticamente com o Windows.
+echo ==================================================
+pause`);
 });
 
 router.post("/impressoes/acao/limpar-historico", async (_req, res) => {
@@ -239,13 +240,15 @@ router.delete("/impressoes/:id", async (req, res) => {
 });
 
 function getApiBase(req: any) {
-  if (process.env.VERCEL) return "https://sistema-jose-giro-api-server.vercel.app";
-  const host = req.get("x-forwarded-host") || req.get("host") || "localhost";
-  return (host.includes("localhost") ? "http" : "https") + "://" + host;
+  let host = req.get("host");
+  let proto = req.protocol;
+  if (host?.includes("localhost")) proto = "http";
+  else proto = "https";
+  return `${proto}://${host}`;
 }
 
 function gerarPython(apiBase: string) {
-  return `import os, sys, time, tempfile, subprocess, requests, img2pdf
+  return `import os, sys, time, tempfile, subprocess, requests, img2pdf, re
 
 API = "${apiBase}"
 LOG_FILE = os.path.join(os.path.expanduser("~"), "SistemaImpressao", "robo_log.txt")
@@ -272,9 +275,17 @@ try:
 except:
     log("Erro ao listar impressoras.")
 
+def check_printer_online():
+    try:
+        out = subprocess.check_output(["powershell", "-Command", "Get-Printer | Select-Object PrinterStatus | ConvertTo-Json"], text=True)
+        return "Normal" in out or "Ready" in out or "Idle" in out
+    except:
+        return False
+
 def heart():
     try:
-        r = requests.post(f"{API}/api/impressoes/heartbeat", timeout=5)
+        is_on = check_printer_online()
+        r = requests.post(f"{API}/api/impressoes/heartbeat", json={"printerOnline": is_on}, timeout=5)
         if r.status_code != 200:
             log(f"Erro no heartbeat: Status {r.status_code}")
     except Exception as e:
@@ -286,12 +297,27 @@ def proc(job):
     try:
         log(f"Processando: {name}")
         requests.patch(f"{API}/api/impressoes/{jid}/status", json={"status":"Imprimindo","progresso":30,"mensagemStatus":"Baixando..."})
-        r = requests.get(f"{API}{job['linkArquivo']}", stream=True)
         
+        url = job.get("linkArquivo", "")
         is_pdf = "pdf" in job.get("tipoArquivo","").lower() or name.lower().endswith(".pdf")
         is_html = "html" in job.get("tipoArquivo","").lower() or name.lower().endswith(".html") or name.lower().endswith(".htm")
-        ext = ".pdf" if is_pdf else (".html" if is_html else ".png")
+
+        if not url.startswith("http"):
+            url = f"{API}{url}"
+            
+        # Converter Link do Google Drive para Download Direto PDF
+        if "drive.google.com" in url:
+            match = re.search(r"/d/([a-zA-Z0-9_-]+)", url)
+            if match:
+                file_id = match.group(1)
+                log(f"Link do Google Drive detectado. Baixando PDF direto (ID: {file_id})...")
+                url = f"https://drive.google.com/uc?export=download&id={file_id}"
+                is_pdf = True
+                is_html = False
+
+        r = requests.get(url, stream=True)
         
+        ext = ".pdf" if is_pdf else (".html" if is_html else ".png")
         tf = tempfile.NamedTemporaryFile(delete=False, suffix=ext)
         for c in r.iter_content(8192):
             tf.write(c)
