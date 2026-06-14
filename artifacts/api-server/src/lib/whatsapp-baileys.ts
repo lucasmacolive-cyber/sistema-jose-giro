@@ -1,5 +1,5 @@
 // @ts-nocheck
-import makeWASocket, { DisconnectReason, useMultiFileAuthState, Browsers } from "@whiskeysockets/baileys";
+import makeWASocket, { DisconnectReason, initAuthCreds, Browsers } from "@whiskeysockets/baileys";
 import { Boom } from "@hapi/boom";
 import pino from "pino";
 import { db, configuracoesTable } from "./db/index.js";
@@ -31,7 +31,7 @@ const usePostgresAuthState = async () => {
     await db.delete(configuracoesTable).where(eq(configuracoesTable.chave, key));
   };
 
-  const creds = await readData("creds") || (makeWASocket as any).initAuthCreds();
+  const creds = await readData("creds") || initAuthCreds();
 
   return {
     state: {
@@ -69,7 +69,7 @@ export async function connectToWhatsApp(pairingNumber?: string, waitForOpen: boo
   const { state, saveCreds } = await usePostgresAuthState();
   const logger = pino({ level: "silent" });
 
-  sock = makeWASocket.default({
+  sock = makeWASocket({
     auth: state,
     printQRInTerminal: false,
     logger,
