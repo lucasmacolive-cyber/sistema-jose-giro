@@ -12,6 +12,7 @@ import {
 import { motion } from "framer-motion";
 import html2pdf from "html2pdf.js";
 import { WhatsAppSendModal } from "@/components/WhatsAppSendModal";
+import { EmailSendModal } from "@/components/EmailSendModal";
 
 const COR_PADRAO = "#3b82f6";
 
@@ -64,6 +65,7 @@ export default function AlunoPerfilPage() {
   const isMaster = me?.perfil === "Master";
   const [imprimindo, setImprimindo] = useState(false);
   const [showWhatsAppModal, setShowWhatsAppModal] = useState(false);
+  const [showEmailModal, setShowEmailModal] = useState(false);
 
   const { data: aluno, isLoading, isError } = useGetAluno(id, {
     query: { enabled: !!id && !isNaN(id) },
@@ -214,6 +216,57 @@ export default function AlunoPerfilPage() {
     }
   }
 
+  async function handleSendEmail(destinatario: string, assunto: string, corpo: string) {
+    if (!aluno) return;
+    try {
+      const container = document.createElement("div");
+      container.style.padding = "20px";
+      container.style.fontFamily = "Arial, sans-serif";
+      container.style.color = "#000";
+      container.innerHTML = `
+        <h2 style="text-align: center; margin-bottom: 20px;">Ficha Individual do Aluno</h2>
+        <div style="border: 1px solid #ccc; padding: 15px; border-radius: 8px; line-height: 1.6;">
+          <p><strong>Nome Completo:</strong> ${aluno.nomeCompleto}</p>
+          <p><strong>Matrícula:</strong> ${aluno.matricula || "N/A"}</p>
+          <p><strong>Turma Atual:</strong> ${aluno.turmaAtual || "N/A"}</p>
+          <p><strong>Situação:</strong> ${aluno.situacao || "N/A"}</p>
+          <p><strong>Data de Nascimento:</strong> ${aluno.dataNascimento ? new Date(aluno.dataNascimento).toLocaleDateString("pt-BR") : "N/A"}</p>
+          <p><strong>Nome da Mãe:</strong> ${aluno.mae || "N/A"}</p>
+          <p><strong>Nome do Pai:</strong> ${aluno.pai || "N/A"}</p>
+          <p><strong>Telefone Responsável:</strong> ${aluno.telefoneResponsavel || "N/A"}</p>
+          <p><strong>Endereço:</strong> ${aluno.endereco || "N/A"}</p>
+          <p><strong>Necessidades Especiais:</strong> ${aluno.necessidadesEspeciais || "Nenhuma"}</p>
+        </div>
+      `;
+
+      const filename = `Perfil_${aluno.nomeCompleto.replace(/\s+/g, "_")}.pdf`;
+      const opt = {
+        margin:       10,
+        filename:     filename,
+        image:        { type: 'jpeg', quality: 0.98 },
+        html2canvas:  { scale: 2 },
+        jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+      };
+
+      const pdfBlob = await html2pdf().set(opt).from(container).outputPdf('blob');
+      const file = new File([pdfBlob], filename, { type: "application/pdf" });
+
+      const form = new FormData();
+      form.append("destinatario", destinatario);
+      form.append("assunto", assunto);
+      form.append("corpo", corpo);
+      form.append("arquivo", file);
+
+      const BASE = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "") + "/";
+      const sendResp = await fetch(`${BASE}api/escola/send-email-document`, { method: "POST", body: form });
+      const data = await sendResp.json();
+      if (!sendResp.ok) throw new Error(data.erro || "Erro ao enviar e-mail");
+    } catch (err: any) {
+      console.error(err);
+      throw err;
+    }
+  }
+
   return (
     <AppLayout>
       <div className="max-w-5xl mx-auto space-y-6 pb-8">
@@ -259,6 +312,13 @@ export default function AlunoPerfilPage() {
                 >
                   <Send className="h-4 w-4" />
                   WHATSAPP
+                </button>
+                <button
+                  onClick={() => setShowEmailModal(true)}
+                  className="flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold bg-orange-600 hover:bg-orange-500 text-white border border-orange-500 transition-all active:scale-95"
+                >
+                  <FileText className="h-4 w-4" />
+                  E-MAIL
                 </button>
                 <button
                   onClick={imprimirPerfilNaRicoh}
@@ -482,6 +542,13 @@ export default function AlunoPerfilPage() {
         onOpenChange={setShowWhatsAppModal} 
         onSend={handleSendWhatsApp} 
         title="Enviar Ficha via WhatsApp"
+      />
+      <EmailSendModal
+        open={showEmailModal}
+        onOpenChange={setShowEmailModal}
+        onSend={handleSendEmail}
+        title="Enviar Ficha por E-mail"
+        defaultSubject={`Ficha do Aluno - ${aluno?.nomeCompleto}`}
       />
     </AppLayout>
   );
