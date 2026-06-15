@@ -35,7 +35,23 @@ export async function disconnectWhatsApp() {
   });
 }
 
-export async function generateWhatsApp() {
+export async function generateWhatsApp(number: string) {
+  let cleanNumber = number.replace(/\D/g, "");
+  if (cleanNumber.length === 10 || cleanNumber.length === 11) {
+    cleanNumber = "55" + cleanNumber;
+  }
+
+  // Salva o número alvo formatado nas configurações
+  await db.insert(configuracoesTable).values({
+    chave: "whatsapp_target_number",
+    valor: cleanNumber,
+    atualizadoEm: new Date(),
+  }).onConflictDoUpdate({
+    target: configuracoesTable.chave,
+    set: { valor: cleanNumber, atualizadoEm: new Date() },
+  });
+
+  // Envia o comando de geração
   await db.insert(configuracoesTable).values({
     chave: "whatsapp_command",
     valor: "generate",

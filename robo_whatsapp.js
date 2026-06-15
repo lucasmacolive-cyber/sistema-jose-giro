@@ -25,6 +25,12 @@ async function updateConfig(chave, valor) {
 }
 
 async function startWhatsApp(pairingNumber = null) {
+  if (pairingNumber) {
+    pairingNumber = pairingNumber.replace(/\D/g, "");
+    if (pairingNumber.length === 10 || pairingNumber.length === 11) {
+      pairingNumber = "55" + pairingNumber;
+    }
+  }
   const { state, saveCreds } = await useMultiFileAuthState("baileys_auth");
 
   sock = makeWASocket({

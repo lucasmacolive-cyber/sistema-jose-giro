@@ -28,7 +28,11 @@ router.post("/whatsapp/disconnect", async (req, res) => {
 
 router.post("/whatsapp/generate", async (req, res) => {
   try {
-    await generateWhatsApp();
+    const { number } = req.body;
+    if (!number) {
+      return res.status(400).json({ error: "Número é obrigatório" });
+    }
+    await generateWhatsApp(number);
     res.json({ success: true });
   } catch(err: any) {
     res.status(500).json({ error: err.message });
