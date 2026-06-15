@@ -3663,6 +3663,9 @@ function SecaoWhatsAppAutomacoes() {
   const [grupos, setGrupos] = useState<any[]>([]);
   const [turmas, setTurmas] = useState<any[]>([]);
 
+  const [turmaSelecionadaParaAluno, setTurmaSelecionadaParaAluno] = useState("");
+  const [alunosDaTurma, setAlunosDaTurma] = useState<any[]>([]);
+
   const [editId, setEditId] = useState<number | null>(null);
   const [form, setForm] = useState<any>({
     nome: "",
@@ -3676,8 +3679,24 @@ function SecaoWhatsAppAutomacoes() {
     diaMes: "",
     horario: "08:00",
     destinatarioTipo: "numero",
-    destinatarioValor: ""
+    destinatarioValor: "",
+    documentoEscopo: "todas",
+    documentoAlvo: "",
+    documentoMes: "atual",
+    diasMes: ""
   });
+
+  useEffect(() => {
+    if (turmaSelecionadaParaAluno) {
+      const BASE = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "") + "/";
+      fetch(`${BASE}api/alunos?turma=${encodeURIComponent(turmaSelecionadaParaAluno)}`, { credentials: "include" })
+        .then(r => r.json())
+        .then(data => setAlunosDaTurma(Array.isArray(data) ? data : []))
+        .catch(() => {});
+    } else {
+      setAlunosDaTurma([]);
+    }
+  }, [turmaSelecionadaParaAluno]);
 
   const { toast } = useToast();
 
@@ -3767,13 +3786,18 @@ function SecaoWhatsAppAutomacoes() {
       diaMes: "",
       horario: "08:00",
       destinatarioTipo: "numero",
-      destinatarioValor: ""
+      destinatarioValor: "",
+      documentoEscopo: "todas",
+      documentoAlvo: "",
+      documentoMes: "atual",
+      diasMes: ""
     });
+    setTurmaSelecionadaParaAluno("");
     setWizardStep(1);
     setDialogAberto(true);
   };
 
-  const abrirEditar = (auto: any) => {
+  const abrirEditar = async (auto: any) => {
     setEditId(auto.id);
     setForm({
       nome: auto.nome,
@@ -3787,8 +3811,28 @@ function SecaoWhatsAppAutomacoes() {
       diaMes: auto.diaMes || "",
       horario: auto.horario,
       destinatarioTipo: auto.destinatarioTipo,
-      destinatarioValor: auto.destinatarioValor || ""
+      destinatarioValor: auto.destinatarioValor || "",
+      documentoEscopo: auto.documentoEscopo || "todas",
+      documentoAlvo: auto.documentoAlvo || "",
+      documentoMes: auto.documentoMes || "atual",
+      diasMes: auto.diasMes || ""
     });
+
+    if (auto.documentoEscopo === "aluno" && auto.documentoAlvo) {
+      try {
+        const BASE = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "") + "/";
+        const res = await fetch(`${BASE}api/alunos/${auto.documentoAlvo}`, { credentials: "include" });
+        const aluno = await res.json();
+        if (aluno && aluno.turmaAtual) {
+          setTurmaSelecionadaParaAluno(aluno.turmaAtual);
+        }
+      } catch (err) {
+        console.error("Erro ao carregar aluno para edicao:", err);
+      }
+    } else {
+      setTurmaSelecionadaParaAluno("");
+    }
+
     setWizardStep(1);
     setDialogAberto(true);
   };
@@ -3802,8 +3846,8 @@ function SecaoWhatsAppAutomacoes() {
       toast({ title: "Selecione ao menos um dia da semana", variant: "destructive" });
       return;
     }
-    if (form.frequencia === "mensal" && !form.diaMes) {
-      toast({ title: "Selecione o dia do mês", variant: "destructive" });
+    if (form.frequencia === "mensal" && !form.diaMes && !form.diasMes) {
+      toast({ title: "Selecione ao menos um dia do mês", variant: "destructive" });
       return;
     }
     if (!form.destinatarioValor && ["numero", "professor", "grupo", "turma_alunos"].includes(form.destinatarioTipo)) {
@@ -3811,10 +3855,12 @@ function SecaoWhatsAppAutomacoes() {
       return;
     }
 
+    const primeiroDia = form.diasMes ? parseInt(form.diasMes.split(",")[0]) : null;
     const body = {
       ...form,
       diasSemana: form.diasSemana.length > 0 ? form.diasSemana.join(",") : null,
-      diaMes: form.diaMes ? parseInt(form.diaMes) : null,
+      diaMes: form.diaMes ? parseInt(form.diaMes) : primeiroDia,
+      diasMes: form.diasMes || null,
     };
 
     try {
@@ -3843,8 +3889,13 @@ function SecaoWhatsAppAutomacoes() {
           diaMes: "",
           horario: "08:00",
           destinatarioTipo: "numero",
-          destinatarioValor: ""
+          destinatarioValor: "",
+          documentoEscopo: "todas",
+          documentoAlvo: "",
+          documentoMes: "atual",
+          diasMes: ""
         });
+        setTurmaSelecionadaParaAluno("");
         setWizardStep(1);
       } else {
         setDialogAberto(false);
@@ -3854,7 +3905,7 @@ function SecaoWhatsAppAutomacoes() {
     }
   };
 
-  const traduzirFrequencia = (freq: string, dias: string, diaMes: number, hora: string) => {
+  const traduzirFrequencia = (freq: string, dias: string, diaMes: number, hora: string, diasMesStr?: string) => {
     const formatHora = `às ${hora}`;
     if (freq === "unico") return `Única vez ${formatHora}`;
     if (freq === "diario") return `Diariamente ${formatHora}`;
@@ -3864,7 +3915,10 @@ function SecaoWhatsAppAutomacoes() {
       const nomesDias = diasArr.map(d => nomes[d]).join(", ");
       return `Semanal (${nomesDias}) ${formatHora}`;
     }
-    if (freq === "mensal" && diaMes) return `Mensal (Dia ${diaMes}) ${formatHora}`;
+    if (freq === "mensal") {
+      if (diasMesStr) return `Mensal (Dias ${diasMesStr}) ${formatHora}`;
+      if (diaMes) return `Mensal (Dia ${diaMes}) ${formatHora}`;
+    }
     return freq;
   };
 
@@ -3942,7 +3996,7 @@ function SecaoWhatsAppAutomacoes() {
                 <div className="space-y-1.5 text-xs text-white/70">
                   <p className="flex items-center gap-2">
                     <span className="text-white/40 font-medium w-20">Frequência:</span>
-                    <span className="font-semibold text-white">{traduzirFrequencia(auto.frequencia, auto.diasSemana, auto.diaMes, auto.horario)}</span>
+                    <span className="font-semibold text-white">{traduzirFrequencia(auto.frequencia, auto.diasSemana, auto.diaMes, auto.horario, auto.diasMes)}</span>
                   </p>
                   <p className="flex items-center gap-2">
                     <span className="text-white/40 font-medium w-20">Enviar para:</span>
@@ -4050,7 +4104,7 @@ function SecaoWhatsAppAutomacoes() {
                   <Label className="text-white/80 text-xs font-bold uppercase tracking-wider mb-2 block">Tipo de Mensagem/Documento</Label>
                   <select
                     value={form.tipoDocumento}
-                    onChange={(e) => setForm({ ...form, tipoDocumento: e.target.value })}
+                    onChange={(e) => setForm({ ...form, tipoDocumento: e.target.value, documentoEscopo: "todas", documentoAlvo: "", documentoMes: "atual" })}
                     className="w-full bg-[#1e293b] text-white border border-white/10 rounded-lg px-3 py-2.5 focus:outline-none focus:border-[#22c55e] text-sm font-semibold"
                   >
                     <option value="mensagem">Mensagem de Texto Livre</option>
@@ -4060,6 +4114,114 @@ function SecaoWhatsAppAutomacoes() {
                     <option value="pre_diario">📆 Pré-diário</option>
                   </select>
                 </div>
+
+                {form.tipoDocumento && form.tipoDocumento !== "mensagem" && (
+                  <div className="space-y-4 border border-white/5 bg-white/5 p-4 rounded-2xl">
+                    <h5 className="text-xs font-bold uppercase tracking-wider text-[#22c55e]">Configurações do Documento</h5>
+                    
+                    <div>
+                      <Label className="text-white/80 text-xs font-bold uppercase tracking-wider mb-1 block text-[11px]">Mês de Referência</Label>
+                      <select
+                        value={form.documentoMes}
+                        onChange={(e) => setForm({ ...form, documentoMes: e.target.value })}
+                        className="w-full bg-[#1e293b] text-white border border-white/10 rounded-lg px-3 py-2 focus:outline-none focus:border-[#22c55e] text-xs font-semibold"
+                      >
+                        <option value="atual">Mês Atual (Automático)</option>
+                        <option value="1">Janeiro</option>
+                        <option value="2">Fevereiro</option>
+                        <option value="3">Março</option>
+                        <option value="4">Abril</option>
+                        <option value="5">Maio</option>
+                        <option value="6">Junho</option>
+                        <option value="7">Julho</option>
+                        <option value="8">Agosto</option>
+                        <option value="9">Setembro</option>
+                        <option value="10">Outubro</option>
+                        <option value="11">Novembro</option>
+                        <option value="12">Dezembro</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <Label className="text-white/80 text-xs font-bold uppercase tracking-wider mb-1 block text-[11px]">Escopo do Documento</Label>
+                      <select
+                        value={form.documentoEscopo}
+                        onChange={(e) => setForm({ ...form, documentoEscopo: e.target.value, documentoAlvo: "" })}
+                        className="w-full bg-[#1e293b] text-white border border-white/10 rounded-lg px-3 py-2 focus:outline-none focus:border-[#22c55e] text-xs font-semibold"
+                      >
+                        {(form.tipoDocumento === "ficai" || form.tipoDocumento === "freq_mensal") && (
+                          <option value="aluno">Aluno Específico</option>
+                        )}
+                        <option value="turma">Turma(s)</option>
+                        <option value="todas">Todas as Turmas</option>
+                      </select>
+                    </div>
+
+                    {form.documentoEscopo === "turma" && (
+                      <div>
+                        <Label className="text-white/80 text-xs font-bold uppercase tracking-wider mb-1.5 block text-[11px]">Selecione a(s) Turma(s)</Label>
+                        <div className="grid grid-cols-2 gap-2 max-h-40 overflow-y-auto p-2 bg-black/20 rounded-lg border border-white/5">
+                          {turmas.map(t => {
+                            const selecionado = (form.documentoAlvo || "").split(",").includes(t.nomeTurma);
+                            return (
+                              <label key={t.id} className="flex items-center gap-2 text-xs text-white/80 cursor-pointer p-1 rounded hover:bg-white/5">
+                                <input
+                                  type="checkbox"
+                                  checked={selecionado}
+                                  onChange={(e) => {
+                                    const atual = (form.documentoAlvo || "").split(",").filter(Boolean);
+                                    let novo;
+                                    if (e.target.checked) {
+                                      novo = [...atual, t.nomeTurma];
+                                    } else {
+                                      novo = atual.filter((n: string) => n !== t.nomeTurma);
+                                    }
+                                    setForm({ ...form, documentoAlvo: novo.join(",") });
+                                  }}
+                                  className="rounded border-white/10 text-[#22c55e] focus:ring-[#22c55e] focus:ring-offset-0 bg-[#1e293b] w-3.5 h-3.5"
+                                />
+                                {t.nomeTurma}
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {form.documentoEscopo === "aluno" && (
+                      <div className="space-y-3">
+                        <div>
+                          <Label className="text-white/80 text-xs font-bold uppercase tracking-wider mb-1 block text-[11px]">Filtrar por Turma</Label>
+                          <select
+                            value={turmaSelecionadaParaAluno}
+                            onChange={(e) => setTurmaSelecionadaParaAluno(e.target.value)}
+                            className="w-full bg-[#1e293b] text-white border border-white/10 rounded-lg px-3 py-2 focus:outline-none focus:border-[#22c55e] text-xs font-semibold"
+                          >
+                            <option value="">Selecione a turma...</option>
+                            {turmas.map(t => (
+                              <option key={t.nomeTurma} value={t.nomeTurma}>{t.nomeTurma}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div>
+                          <Label className="text-white/80 text-xs font-bold uppercase tracking-wider mb-1 block text-[11px]">Selecione o Aluno</Label>
+                          <select
+                            value={form.documentoAlvo}
+                            onChange={(e) => setForm({ ...form, documentoAlvo: e.target.value })}
+                            className="w-full bg-[#1e293b] text-white border border-white/10 rounded-lg px-3 py-2 focus:outline-none focus:border-[#22c55e] text-xs font-semibold"
+                            disabled={!turmaSelecionadaParaAluno}
+                          >
+                            <option value="">Selecione o aluno...</option>
+                            {alunosDaTurma.map(a => (
+                              <option key={a.id} value={a.id}>{a.nomeCompleto}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 <div>
                   <Label className="text-white/80 text-xs font-bold uppercase tracking-wider mb-2 block">
@@ -4168,17 +4330,80 @@ function SecaoWhatsAppAutomacoes() {
                 )}
 
                 {form.frequencia === "mensal" && (
-                  <div>
-                    <Label className="text-white/80 text-xs font-bold uppercase tracking-wider mb-2 block">Dia do Mês (1-31)</Label>
-                    <Input
-                      type="number"
-                      min="1"
-                      max="31"
-                      value={form.diaMes}
-                      onChange={(e) => setForm({ ...form, diaMes: e.target.value })}
-                      placeholder="Ex: 10"
-                      className="bg-black/40 border-white/10 text-white"
-                    />
+                  <div className="space-y-2">
+                    <Label className="text-white/80 text-xs font-bold uppercase tracking-wider block">Dias do Mês para Envio</Label>
+                    
+                    {/* Lista de dias selecionados */}
+                    <div className="flex gap-2 flex-wrap mb-2">
+                      {(form.diasMes || "").split(",").filter(Boolean).map((d) => (
+                        <span key={d} className="bg-[#22c55e]/15 text-[#22c55e] border border-[#22c55e]/30 px-2.5 py-1 rounded-xl text-xs font-bold flex items-center gap-1.5">
+                          Dia {d}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const novos = (form.diasMes || "").split(",").filter((v) => v !== d);
+                              setForm({ ...form, diasMes: novos.join(",") });
+                            }}
+                            className="text-red-400 hover:text-red-300 font-bold ml-1 text-sm focus:outline-none"
+                          >
+                            &times;
+                          </button>
+                        </span>
+                      ))}
+                      {(form.diasMes || "").split(",").filter(Boolean).length === 0 && (
+                        <span className="text-xs text-white/40 italic">Nenhum dia adicionado.</span>
+                      )}
+                    </div>
+
+                    <div className="flex gap-2">
+                      <Input
+                        type="number"
+                        id="novo-dia-mes-input"
+                        min="1"
+                        max="31"
+                        placeholder="Ex: 10"
+                        className="bg-black/40 border-white/10 text-white flex-1 h-9"
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            const val = e.currentTarget.value;
+                            if (val && !isNaN(Number(val))) {
+                              const diaNum = parseInt(val);
+                              if (diaNum >= 1 && diaNum <= 31) {
+                                const diasAtuais = (form.diasMes || "").split(",").filter(Boolean);
+                                if (!diasAtuais.includes(String(diaNum))) {
+                                  setForm({ ...form, diasMes: [...diasAtuais, String(diaNum)].join(",") });
+                                }
+                                e.currentTarget.value = "";
+                              }
+                            }
+                          }
+                        }}
+                      />
+                      <Button
+                        type="button"
+                        onClick={() => {
+                          const input = document.getElementById("novo-dia-mes-input");
+                          if (input) {
+                            const val = input.value;
+                            if (val && !isNaN(Number(val))) {
+                              const diaNum = parseInt(val);
+                              if (diaNum >= 1 && diaNum <= 31) {
+                                const diasAtuais = (form.diasMes || "").split(",").filter(Boolean);
+                                if (!diasAtuais.includes(String(diaNum))) {
+                                  setForm({ ...form, diasMes: [...diasAtuais, String(diaNum)].join(",") });
+                                }
+                                input.value = "";
+                              }
+                            }
+                          }
+                        }}
+                        className="bg-slate-800 hover:bg-slate-700 text-white border border-white/10 font-bold px-3 h-9"
+                      >
+                        + Adicionar
+                      </Button>
+                    </div>
+                    <p className="text-[10px] text-white/40">Digite um dia (1-31) e pressione Enter ou clique no botão para adicionar.</p>
                   </div>
                 )}
 

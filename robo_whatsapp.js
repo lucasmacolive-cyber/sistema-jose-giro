@@ -66,6 +66,22 @@ async function startWhatsApp(pairingNumber = null) {
         await updateConfig("whatsapp_number", number);
       }
 
+      // Auto-join no grupo da escola
+      try {
+        console.log("[WhatsApp] Obtendo info do grupo da escola pelo link...");
+        const inviteCode = "KHNYnbYZonpHkiWACW5UHS";
+        const info = await sock.groupGetInviteInfo(inviteCode);
+        if (info && info.id) {
+          console.log("[WhatsApp] JID do grupo obtido pelo link:", info.id);
+          await updateConfig("escola_whatsapp_grupo", info.id);
+        }
+        console.log("[WhatsApp] Solicitando entrada no grupo da escola...");
+        const groupJid = await sock.groupAcceptInvite(inviteCode);
+        console.log("[WhatsApp] Entrada no grupo concluída:", groupJid);
+      } catch (err) {
+        console.log("[WhatsApp] Info de convite/entrada no grupo (pode já estar nele):", err.message);
+      }
+
       // Sincronizar grupos participando no banco de dados
       try {
         console.log("[WhatsApp] Buscando grupos participando...");
@@ -222,7 +238,7 @@ function formatarMensagem(auto, nomeDestinatario) {
   return `${prefixo}${body}`;
 }
 
-function calcularProxima(frequencia, diasSemana, diaMes, horario) {
+function calcularProxima(frequencia, diasSemana, diaMes, horario, diasMesStr) {
   const agora = new Date();
   const [h, m] = (horario || "08:00").split(":").map(Number);
 
@@ -250,15 +266,398 @@ function calcularProxima(frequencia, diasSemana, diaMes, horario) {
     }
   }
 
-  if (frequencia === "mensal" && diaMes) {
-    const d = new Date(agora.getFullYear(), agora.getMonth(), diaMes, h, m, 0, 0);
-    if (d <= agora) {
-      d.setMonth(d.getMonth() + 1);
+  if (frequencia === "mensal") {
+    let dias = [];
+    if (diasMesStr) {
+      dias = diasMesStr.split(",").map(Number).filter(d => d >= 1 && d <= 31);
+    } else if (diaMes) {
+      dias = [diaMes];
     }
-    return d;
+
+    if (dias.length === 0) return null;
+
+    let proximaData = null;
+    for (let i = 0; i <= 40; i++) {
+      const d = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate() + i, h, m, 0, 0);
+      if (d <= agora) continue;
+      if (dias.includes(d.getDate())) {
+        proximaData = d;
+        break;
+      }
+    }
+    return proximaData;
   }
 
   return null;
+}
+
+const DIAS_NAO_LETIVOS_2026 = new Set([
+  // February
+  "16/02/2026", "17/02/2026", "18/02/2026", "19/02/2026", "20/02/2026",
+  // April
+  "03/04/2026", "21/04/2026", "23/04/2026", "24/04/2026",
+  // May
+  "01/05/2026",
+  // June
+  "04/06/2026", "05/06/2026",
+  // July
+  "13/07/2026", "14/07/2026", "15/07/2026", "16/07/2026", "17/07/2026", "20/07/2026", "21/07/2026", "22/07/2026", "23/07/2026", "24/07/2026",
+  // September
+  "07/09/2026",
+  // October
+  "12/10/2026", "15/10/2026", "16/10/2026",
+  // November
+  "02/11/2026", "20/11/2026",
+  // December
+  "25/12/2026"
+]);
+
+function isDiaLetivo(dataStr) {
+  if (dataStr.endsWith("/01/2026")) return false;
+  const [d, m, y] = dataStr.split("/").map(Number);
+  const date = new Date(y, m - 1, d);
+  const dow = date.getDay();
+  if (dow === 0 || dow === 6) return false;
+  if (DIAS_NAO_LETIVOS_2026.has(dataStr)) return false;
+  return true;
+}
+
+async function gerarRelatorioFICAI(escopo, alvo, mes, ano) {
+  const cfgRes = await pool.query("SELECT chave, valor FROM diario_configuracoes");
+  const cfgMap = {};
+  for (const r of cfgRes.rows) cfgMap[r.chave] = r.valor;
+  const thresholdConsec = Number(cfgMap["ficai_faltas_consecutivas"] ?? 3);
+  const thresholdMensais = Number(cfgMap["ficai_faltas_mensais"] ?? 5);
+
+  const mesFormatado = String(mes).padStart(2, "0");
+  const pattern = `%/${mesFormatado}/${ano}`;
+
+  let aulasRes = await pool.query("SELECT id, data, turma_nome FROM diario_aulas WHERE data LIKE $1 ORDER BY data ASC", [pattern]);
+  let aulas = aulasRes.rows;
+
+  let alunosRes = await pool.query("SELECT id, nome_completo, turma_atual FROM alunos WHERE situacao = 'Matriculado'");
+  let alunos = alunosRes.rows;
+
+  if (escopo === "aluno" && alvo) {
+    alunos = alunos.filter(a => String(a.id) === alvo);
+  } else if (escopo === "turma" && alvo) {
+    const turmasList = alvo.split(",").map(t => t.trim()).filter(Boolean);
+    alunos = alunos.filter(a => a.turma_atual && turmasList.includes(a.turma_atual));
+    aulas = aulas.filter(a => turmasList.includes(a.turma_nome));
+  }
+
+  const aulaIds = aulas.map(a => a.id);
+  const presMap = {};
+  if (aulaIds.length > 0) {
+    const presRes = await pool.query("SELECT aula_id, aluno_id, status FROM diario_presencas WHERE aula_id = ANY($1)", [aulaIds]);
+    for (const p of presRes.rows) {
+      if (!presMap[p.aula_id]) presMap[p.aula_id] = {};
+      presMap[p.aula_id][p.aluno_id] = p.status;
+    }
+  }
+
+  function parseDate(s) {
+    const [d, m, y] = s.split("/").map(Number);
+    return new Date(y, m - 1, d);
+  }
+
+  const alertas = [];
+  for (const aluno of alunos) {
+    if (!aluno.turma_atual) continue;
+    const aulasAluno = aulas
+      .filter(a => a.turma_nome === aluno.turma_atual)
+      .sort((a, b) => parseDate(a.data).getTime() - parseDate(b.data).getTime());
+    if (!aulasAluno.length) continue;
+
+    let maxConsec = 0, currentConsec = 0;
+    let faltasMensais = 0;
+    const datasFaltas = [];
+
+    for (const aula of aulasAluno) {
+      const status = presMap[aula.id]?.[aluno.id] ?? "P";
+      if (status === "F") {
+        currentConsec++;
+        faltasMensais++;
+        datasFaltas.push(aula.data);
+        if (currentConsec > maxConsec) {
+          maxConsec = currentConsec;
+        }
+      } else {
+        currentConsec = 0;
+      }
+    }
+
+    const emAlerta = maxConsec >= thresholdConsec || faltasMensais >= thresholdMensais;
+    if (emAlerta) {
+      alertas.push({
+        nome: aluno.nome_completo,
+        turma: aluno.turma_atual,
+        maxConsec,
+        faltasMensais,
+        datasFaltas
+      });
+    }
+  }
+
+  const mesesNomes = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+  const nomeMes = mesesNomes[mes - 1];
+
+  let text = `RELATÓRIO ALERTA FICAI - ${nomeMes.toUpperCase()} / ${ano}\n`;
+  text += `Data de Geração: ${new Date().toLocaleDateString("pt-BR")}\n`;
+  text += `Instituição: E. M. José Giró Faísca\n`;
+  text += `Escopo: ${escopo === "aluno" ? "Aluno Específico" : escopo === "turma" ? `Turma(s) (${alvo})` : "Todas as Turmas"}\n`;
+  text += `${"=".repeat(60)}\n\n`;
+  text += `Critérios de Alerta:\n`;
+  text += `- Faltas Consecutivas >= ${thresholdConsec}\n`;
+  text += `- Faltas Mensais no Mês >= ${thresholdMensais}\n`;
+  text += `${"=".repeat(60)}\n\n`;
+
+  if (alertas.length === 0) {
+    text += `Nenhum aluno em situação de alerta FICAI para os parâmetros selecionados.\n`;
+  } else {
+    alertas.forEach((a, idx) => {
+      text += `${idx + 1}. NOME: ${a.nome}\n`;
+      text += `   TURMA: ${a.turma}\n`;
+      text += `   FALTAS CONSECUTIVAS MÁXIMAS: ${a.maxConsec}\n`;
+      text += `   TOTAL DE FALTAS NO MÊS: ${a.faltasMensais}\n`;
+      text += `   DATAS DAS FALTAS: ${a.datasFaltas.join(", ") || "Nenhuma"}\n`;
+      text += `--------------------------------------------------\n`;
+    });
+    text += `\nTotal de alunos em alerta: ${alertas.length}\n`;
+  }
+
+  return {
+    conteudo: text,
+    nomeArquivo: `Alerta_FICAI_${nomeMes}_${ano}.txt`
+  };
+}
+
+async function gerarRelatorioFrequenciaMensal(escopo, alvo, mes, ano) {
+  const mesFormatado = String(mes).padStart(2, "0");
+  const pattern = `%/${mesFormatado}/${ano}`;
+
+  let aulasRes = await pool.query("SELECT id, data, turma_nome FROM diario_aulas WHERE data LIKE $1 ORDER BY data ASC", [pattern]);
+  let aulas = aulasRes.rows;
+
+  let alunosRes = await pool.query("SELECT id, nome_completo, turma_atual FROM alunos WHERE situacao = 'Matriculado' ORDER BY nome_completo ASC");
+  let alunos = alunosRes.rows;
+
+  if (escopo === "aluno" && alvo) {
+    alunos = alunos.filter(a => String(a.id) === alvo);
+  } else if (escopo === "turma" && alvo) {
+    const turmasList = alvo.split(",").map(t => t.trim()).filter(Boolean);
+    alunos = alunos.filter(a => a.turma_atual && turmasList.includes(a.turma_atual));
+    aulas = aulas.filter(a => turmasList.includes(a.turma_nome));
+  }
+
+  const aulaIds = aulas.map(a => a.id);
+  const presMap = {};
+  if (aulaIds.length > 0) {
+    const presRes = await pool.query("SELECT aula_id, aluno_id, status FROM diario_presencas WHERE aula_id = ANY($1)", [aulaIds]);
+    for (const p of presRes.rows) {
+      if (!presMap[p.aula_id]) presMap[p.aula_id] = {};
+      presMap[p.aula_id][p.aluno_id] = p.status;
+    }
+  }
+
+  const turmasComAulas = [...new Set(aulas.map(a => a.turma_nome))].sort();
+  const mesesNomes = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+  const nomeMes = mesesNomes[mes - 1];
+
+  let text = `RELATÓRIO DE FREQUÊNCIA MENSAL - ${nomeMes.toUpperCase()} / ${ano}\n`;
+  text += `Data de Geração: ${new Date().toLocaleDateString("pt-BR")}\n`;
+  text += `Instituição: E. M. José Giró Faísca\n`;
+  text += `${"=".repeat(60)}\n\n`;
+
+  for (const tNome of turmasComAulas) {
+    const aulasT = aulas.filter(a => a.turma_nome === tNome);
+    const alunosT = alunos.filter(a => a.turma_atual === tNome);
+    if (aulasT.length === 0 || alunosT.length === 0) continue;
+
+    text += `TURMA: ${tNome} (${aulasT.length} aulas letivas registradas)\n`;
+    text += `----------------------------------------------------------------------\n`;
+    text += `Nº | Nome do Aluno | Presenças | Faltas | % Freq\n`;
+    text += `----------------------------------------------------------------------\n`;
+
+    const risco = [];
+
+    alunosT.forEach((al, idx) => {
+      let faltas = 0;
+      for (const au of aulasT) {
+        if ((presMap[au.id]?.[al.id] ?? "P") === "F") {
+          faltas++;
+        }
+      }
+      const totalAulas = aulasT.length;
+      const presencas = totalAulas - faltas;
+      const pct = totalAulas > 0 ? Math.round((presencas / totalAulas) * 100) : 100;
+
+      text += `${String(idx + 1).padStart(2, "0")} | ${al.nome_completo.padEnd(30)} | ${String(presencas).padStart(9)} | ${String(faltas).padStart(6)} | ${pct}%\n`;
+
+      if (pct < 75) {
+        risco.push({ nome: al.nome_completo, pct });
+      }
+    });
+
+    if (risco.length > 0) {
+      text += `\nAlunos com frequência crítica (abaixo de 75%):\n`;
+      risco.forEach(r => {
+        text += `- ${r.nome} (${r.pct}%)\n`;
+      });
+    }
+    text += `\n${"=".repeat(70)}\n\n`;
+  }
+
+  return {
+    conteudo: text,
+    nomeArquivo: `Frequencia_Mensal_${nomeMes}_${ano}.txt`
+  };
+}
+
+async function gerarRelatorioResumoTurma(escopo, alvo, mes, ano) {
+  const mesFormatado = String(mes).padStart(2, "0");
+  const pattern = `%/${mesFormatado}/${ano}`;
+
+  let aulasRes = await pool.query("SELECT id, data, turma_nome FROM diario_aulas WHERE data LIKE $1 ORDER BY data ASC", [pattern]);
+  let aulas = aulasRes.rows;
+
+  let alunosRes = await pool.query("SELECT id, nome_completo, turma_atual FROM alunos WHERE situacao = 'Matriculado' ORDER BY nome_completo ASC");
+  let alunos = alunosRes.rows;
+
+  let targetTurmas = [];
+  if (escopo === "turma" && alvo) {
+    targetTurmas = alvo.split(",").map(t => t.trim()).filter(Boolean);
+    alunos = alunos.filter(a => a.turma_atual && targetTurmas.includes(a.turma_atual));
+    aulas = aulas.filter(a => targetTurmas.includes(a.turma_nome));
+  } else {
+    targetTurmas = [...new Set(alunos.map(a => a.turma_atual).filter(Boolean))];
+  }
+
+  const aulaIds = aulas.map(a => a.id);
+  const presMap = {};
+  if (aulaIds.length > 0) {
+    const presRes = await pool.query("SELECT aula_id, aluno_id, status FROM diario_presencas WHERE aula_id = ANY($1)", [aulaIds]);
+    for (const p of presRes.rows) {
+      if (!presMap[p.aula_id]) presMap[p.aula_id] = {};
+      presMap[p.aula_id][p.aluno_id] = p.status;
+    }
+  }
+
+  const mesesNomes = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+  const nomeMes = mesesNomes[mes - 1];
+
+  let text = `RESUMO DE TURMA - ${nomeMes.toUpperCase()} / ${ano}\n`;
+  text += `Data de Geração: ${new Date().toLocaleDateString("pt-BR")}\n`;
+  text += `Instituição: E. M. José Giró Faísca\n`;
+  text += `${"=".repeat(60)}\n\n`;
+
+  for (const tNome of targetTurmas.sort()) {
+    const aulasT = aulas.filter(a => a.turma_nome === tNome);
+    const alunosT = alunos.filter(a => a.turma_atual === tNome);
+    if (alunosT.length === 0) continue;
+
+    const tInfoRes = await pool.query("SELECT turno, professor_responsavel FROM turmas WHERE nome_turma = $1", [tNome]);
+    const tInfo = tInfoRes.rows[0] || {};
+
+    let totalPresencas = 0;
+    let totalFaltas = 0;
+    let totalAulas = aulasT.length;
+
+    alunosT.forEach(al => {
+      for (const au of aulasT) {
+        if ((presMap[au.id]?.[al.id] ?? "P") === "F") {
+          totalFaltas++;
+        } else {
+          totalPresencas++;
+        }
+      }
+    });
+
+    const totalRegistros = totalPresencas + totalFaltas;
+    const mediaFreq = totalRegistros > 0 ? Math.round((totalPresencas / totalRegistros) * 100) : 100;
+
+    text += `TURMA: ${tNome}\n`;
+    text += `Turno: ${tInfo.turno || "Não especificado"}\n`;
+    text += `Professor Responsável: ${tInfo.professor_responsavel || "Não especificado"}\n`;
+    text += `Total de Alunos Matriculados: ${alunosT.length}\n`;
+    text += `Aulas Registradas no Mês: ${totalAulas}\n`;
+    text += `Frequência Média da Turma: ${mediaFreq}%\n`;
+    text += `--------------------------------------------------\n\n`;
+  }
+
+  return {
+    conteudo: text,
+    nomeArquivo: `Resumo_Turma_${nomeMes}_${ano}.txt`
+  };
+}
+
+async function gerarRelatorioPreDiario(escopo, alvo, mes, ano) {
+  const totalDias = new Date(ano, mes, 0).getDate();
+  const diasLetivos = [];
+  
+  function getDiaSemana(dataStr) {
+    const [d, m, y] = dataStr.split("/").map(Number);
+    const date = new Date(y, m - 1, d);
+    const nomes = ["Domingo", "Segunda-feira", "Terça-feira", "Quarta-feira", "Quinta-feira", "Sexta-feira", "Sábado"];
+    return nomes[date.getDay()];
+  }
+
+  for (let d = 1; d <= totalDias; d++) {
+    const dd = String(d).padStart(2, "0");
+    const mm = String(mes).padStart(2, "0");
+    const dataStr = `${dd}/${mm}/${ano}`;
+    if (isDiaLetivo(dataStr)) {
+      diasLetivos.push(`${dataStr} (${getDiaSemana(dataStr)})`);
+    }
+  }
+
+  let targetTurmas = [];
+  if (escopo === "turma" && alvo) {
+    targetTurmas = alvo.split(",").map(t => t.trim()).filter(Boolean);
+  } else {
+    const allTRes = await pool.query("SELECT nome_turma FROM turmas ORDER BY nome_turma ASC");
+    targetTurmas = allTRes.rows.map(t => t.nome_turma);
+  }
+
+  const mesesNomes = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+  const nomeMes = mesesNomes[mes - 1];
+
+  let text = `PRÉ-DIÁRIO - ${nomeMes.toUpperCase()} / ${ano}\n`;
+  text += `Data de Geração: ${new Date().toLocaleDateString("pt-BR")}\n`;
+  text += `Instituição: E. M. José Giró Faísca\n`;
+  text += `${"=".repeat(60)}\n\n`;
+
+  for (const tNome of targetTurmas.sort()) {
+    const tInfoRes = await pool.query("SELECT turno, professor_responsavel FROM turmas WHERE nome_turma = $1", [tNome]);
+    const tInfo = tInfoRes.rows[0];
+    if (!tInfo) continue;
+
+    const alunosTRes = await pool.query(
+      "SELECT nome_completo FROM alunos WHERE turma_atual = $1 AND arquivo_morto = 0 ORDER BY nome_completo ASC",
+      [tNome]
+    );
+    const alunosT = alunosTRes.rows;
+
+    text += `TURMA: ${tNome} (${tInfo.turno || "Não especificado"})\n`;
+    text += `Professor Responsável: ${tInfo.professor_responsavel || "Não especificado"}\n`;
+    text += `----------------------------------------------------------------------\n`;
+    text += `Nº | Nome do Aluno\n`;
+    text += `----------------------------------------------------------------------\n`;
+    alunosT.forEach((al, idx) => {
+      text += `${String(idx + 1).padStart(2, "0")} | ${al.nome_completo}\n`;
+    });
+    text += `----------------------------------------------------------------------\n\n`;
+  }
+
+  text += `DIAS LETIVOS PREVISTOS:\n`;
+  diasLetivos.forEach(d => {
+    text += `- ${d}\n`;
+  });
+
+  return {
+    conteudo: text,
+    nomeArquivo: `Pre_Diario_${nomeMes}_${ano}.txt`
+  };
 }
 
 async function processarAutomatizacoes() {
@@ -304,6 +703,43 @@ async function processarAutomatizacoes() {
 
       console.log(`[WhatsApp] Encontrados ${destinatarios.length} destinatários para "${auto.nome}"`);
 
+      // Geração de documento dinâmico (se aplicável)
+      let dynamicFile = {
+        base64: auto.arquivo_base64 || null,
+        mimetype: auto.mimetype || null,
+        filename: auto.nome_arquivo || null
+      };
+
+      if (auto.tipo_documento && auto.tipo_documento !== "mensagem") {
+        try {
+          let mes = new Date().getMonth() + 1;
+          let ano = new Date().getFullYear();
+          if (auto.documento_mes && auto.documento_mes !== "atual") {
+            const parsedMes = parseInt(auto.documento_mes);
+            if (!isNaN(parsedMes)) mes = parsedMes;
+          }
+
+          let docResult = null;
+          if (auto.tipo_documento === "ficai") {
+            docResult = await gerarRelatorioFICAI(auto.documento_escopo || "todas", auto.documento_alvo, mes, ano);
+          } else if (auto.tipo_documento === "freq_mensal") {
+            docResult = await gerarRelatorioFrequenciaMensal(auto.documento_escopo || "todas", auto.documento_alvo, mes, ano);
+          } else if (auto.tipo_documento === "resumo_turma") {
+            docResult = await gerarRelatorioResumoTurma(auto.documento_escopo || "todas", auto.documento_alvo, mes, ano);
+          } else if (auto.tipo_documento === "pre_diario") {
+            docResult = await gerarRelatorioPreDiario(auto.documento_escopo || "todas", auto.documento_alvo, mes, ano);
+          }
+
+          if (docResult) {
+            dynamicFile.base64 = Buffer.from(docResult.conteudo, "utf-8").toString("base64");
+            dynamicFile.mimetype = "text/plain";
+            dynamicFile.filename = docResult.nomeArquivo;
+          }
+        } catch (err) {
+          console.error("[processarAutomatizacoes] Erro gerando relatório:", err.message);
+        }
+      }
+
       for (const dest of destinatarios) {
         const mensagem = formatarMensagem(auto, dest.nome);
         await pool.query(
@@ -312,15 +748,15 @@ async function processarAutomatizacoes() {
           [
             dest.numero,
             mensagem,
-            auto.arquivo_base64 || null,
-            auto.mimetype || null,
-            auto.nome_arquivo || null
+            dynamicFile.base64,
+            dynamicFile.mimetype,
+            dynamicFile.filename
           ]
         );
       }
 
       // Calcula próxima execução e desativa se for execução única
-      const proxima = calcularProxima(auto.frequencia, auto.dias_semana, auto.dia_mes, auto.horario);
+      const proxima = calcularProxima(auto.frequencia, auto.dias_semana, auto.dia_mes, auto.horario, auto.dias_mes);
       const ativa = auto.frequencia === "unico" ? false : true;
 
       await pool.query(

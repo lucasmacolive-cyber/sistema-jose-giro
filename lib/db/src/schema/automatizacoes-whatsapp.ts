@@ -18,6 +18,10 @@ export const automatizacoesWhatsappTable = pgTable("automatizacoes_whatsapp", {
   // destinatario_tipo: 'numero' | 'professor' | 'todos_professores' | 'grupo' | 'turma_alunos' | 'todos_alunos' | 'funcionarios'
   destinatarioTipo: text("destinatario_tipo").notNull().default("numero"),
   destinatarioValor: text("destinatario_valor"), // numero, id professor, nome turma, jid grupo
+  documentoEscopo:  text("documento_escopo").default("todas"),
+  documentoAlvo:    text("documento_alvo"),
+  documentoMes:     text("documento_mes").default("atual"),
+  diasMes:          text("dias_mes"),
   ativa:            boolean("ativa").default(true).notNull(),
   ultimaExecucao:   timestamp("ultima_execucao"),
   proximaExecucao:  timestamp("proxima_execucao"),
