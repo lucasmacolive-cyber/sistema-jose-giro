@@ -3939,6 +3939,7 @@ function SecaoWhatsAppAutomacoes() {
     }
     if (tipo === "todos_professores") return "Todos os Professores";
     if (tipo === "grupo") {
+      if (valor === "grupo_da_escola" || valor === escolaGrupoJid) return "Grupo da Escola (Oficial)";
       const g = grupos.find(gp => gp.jid === valor);
       return `Grupo: ${g ? g.nome : "Selecionado"}`;
     }
@@ -4484,10 +4485,8 @@ function SecaoWhatsAppAutomacoes() {
                       className="w-full bg-[#1e293b] text-white border border-white/10 rounded-lg px-3 py-2.5 focus:outline-none focus:border-[#22c55e] text-sm font-semibold"
                     >
                       <option value="">Selecione o grupo...</option>
-                      {escolaGrupoJid && !grupos.some(g => g.jid === escolaGrupoJid) && (
-                        <option value={escolaGrupoJid}>Grupo da Escola (Oficial)</option>
-                      )}
-                      {grupos.map(g => (
+                      <option value="grupo_da_escola">Grupo da Escola (Oficial)</option>
+                      {grupos.filter(g => g.jid !== escolaGrupoJid && g.jid !== "grupo_da_escola").map(g => (
                         <option key={g.jid} value={g.jid}>{g.nome}</option>
                       ))}
                     </select>

@@ -597,6 +597,13 @@ async function resolverDestinatarios(tipo: string, valor: string | null): Promis
 
     case "grupo": {
       // valor = JID do grupo (ex: "120363xxxxx@g.us")
+      if (valor === "grupo_da_escola") {
+        const cfg = await db.select().from(configuracoesTable).where(eq(configuracoesTable.chave, "escola_whatsapp_grupo"));
+        if (cfg && cfg[0]?.valor) {
+          return [{ numero: cfg[0].valor, nome: "Grupo" }];
+        }
+        return [{ numero: "grupo_da_escola", nome: "Grupo" }];
+      }
       return valor ? [{ numero: valor, nome: "Grupo" }] : [];
     }
 

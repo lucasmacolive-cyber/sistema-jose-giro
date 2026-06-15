@@ -180,7 +180,16 @@ setInterval(async () => {
         
         // Formatar numero (adicionar 55 se nao tiver) e @s.whatsapp.net
         let jid = msg.numero;
-        if (!jid.includes("@g.us")) {
+        if (jid === "grupo_da_escola") {
+          const res = await pool.query("SELECT valor FROM configuracoes WHERE chave = 'escola_whatsapp_grupo'");
+          const resolvedJid = res.rows[0]?.valor;
+          if (resolvedJid) {
+            jid = resolvedJid;
+          } else {
+            console.error("[WhatsApp] JID do grupo da escola não encontrado nas configurações!");
+            throw new Error("Grupo da escola não está resolvido nas configurações.");
+          }
+        } else if (!jid.includes("@g.us")) {
           if (!jid.startsWith("55")) jid = "55" + jid;
           if (!jid.includes("@s.whatsapp.net")) jid = jid + "@s.whatsapp.net";
         }
@@ -687,7 +696,17 @@ async function processarAutomatizacoes() {
         const res = await pool.query("SELECT nome, telefone FROM professores");
         destinatarios = res.rows.filter(r => r.telefone).map(r => ({ numero: limparNumero(r.telefone), nome: r.nome }));
       } else if (tipo === "grupo") {
-        if (valor) destinatarios.push({ numero: valor, nome: "Grupo" });
+        if (valor === "grupo_da_escola") {
+          const res = await pool.query("SELECT valor FROM configuracoes WHERE chave = 'escola_whatsapp_grupo'");
+          const resolvedJid = res.rows[0]?.valor;
+          if (resolvedJid) {
+            destinatarios.push({ numero: resolvedJid, nome: "Grupo" });
+          } else {
+            destinatarios.push({ numero: "grupo_da_escola", nome: "Grupo" });
+          }
+        } else if (valor) {
+          destinatarios.push({ numero: valor, nome: "Grupo" });
+        }
       } else if (tipo === "turma_alunos") {
         if (valor) {
           const res = await pool.query("SELECT nome_completo as nome, telefone as tel FROM alunos WHERE turma_atual = $1", [valor]);

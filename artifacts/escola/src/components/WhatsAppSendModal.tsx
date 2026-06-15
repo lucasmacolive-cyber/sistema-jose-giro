@@ -55,7 +55,7 @@ export function WhatsAppSendModal({ open, onOpenChange, onSend, title = "Enviar 
 
   const getNumeroFinal = () => {
     if (destinoTipo === "grupo") {
-      return escolaGrupoJid;
+      return escolaGrupoJid || "grupo_da_escola";
     }
     if (destinoTipo === "professor" && professorId) {
       const prof = professores?.find(p => p.id.toString() === professorId);
@@ -79,8 +79,8 @@ export function WhatsAppSendModal({ open, onOpenChange, onSend, title = "Enviar 
       return;
     }
 
-    const limpo = rawNumber.includes("@g.us") ? rawNumber : rawNumber.replace(/\D/g, "");
-    if (!rawNumber.includes("@g.us") && limpo.length < 10) {
+    const limpo = (rawNumber.includes("@g.us") || rawNumber === "grupo_da_escola") ? rawNumber : rawNumber.replace(/\D/g, "");
+    if (!(rawNumber.includes("@g.us") || rawNumber === "grupo_da_escola") && limpo.length < 10) {
       toast({ title: "Número Inválido", description: "O contato selecionado não possui um número de celular válido cadastrado.", variant: "destructive" });
       return;
     }
