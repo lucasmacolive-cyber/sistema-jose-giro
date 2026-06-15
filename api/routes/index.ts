@@ -21,6 +21,7 @@ import diarioRouter from "./diario.js";
 import calendarioRouter from "./calendario.js";
 import roboRouter from "./robo.js";
 import whatsappRouter from "./whatsapp.ts";
+import automatizacoesRouter from "./automatizacoes.ts";
 
 const router: IRouter = Router();
 
@@ -45,5 +46,6 @@ router.use(diarioRouter);
 router.use(calendarioRouter);
 router.use(roboRouter);
 router.use(whatsappRouter);
+router.use(automatizacoesRouter);
 
 export default router;

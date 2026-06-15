@@ -576,7 +576,7 @@ export default function ListagensPage() {
 
     autoTable(doc, {
       head: [["Nº", "Nome do Professor", ...cols.map(c => c.label)]],
-      body: profesores.map((p: any, i) => [
+      body: professores.map((p: any, i) => [
         String(i + 1),
         p.nome || "",
         ...cols.map(c => c.ref === "_assinatura" ? "_________________________" : (p[c.ref] || "")),
@@ -1626,13 +1626,13 @@ export default function ListagensPage() {
         <WhatsAppSendModal 
           open={showWhatsAppModal} 
           onOpenChange={setShowWhatsAppModal} 
-          onSend={handleSendWhatsApp} 
+          onSend={handleSendWhatsAppListagem} 
           title={`Enviar Listagem de ${modalType === "alunos" ? "Alunos" : modalType === "professores" ? "Professores" : "Funcionários"} via WhatsApp`}
         />
         <EmailSendModal
           open={showEmailModal}
           onOpenChange={setShowEmailModal}
-          onSend={handleSendEmail}
+          onSend={handleSendEmailListagem}
           title={`Enviar Listagem de ${modalType === "alunos" ? "Alunos" : modalType === "professores" ? "Professores" : "Funcionários"} por E-mail`}
           defaultSubject={`Listagem de ${modalType === "alunos" ? "Alunos" : modalType === "professores" ? "Professores" : "Funcionários"}`}
         />

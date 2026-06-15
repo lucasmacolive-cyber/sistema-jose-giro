@@ -224,173 +224,138 @@ function getApiBase(req: any) {
   const host = req.get("x-forwarded-host") || req.get("host") || "localhost";
   return (host.includes("localhost") ? "http" : "https") + "://" + host;
 }
+
 function gerarPython(apiBase: string) {
-  return `import os, sys, time, tempfile, subprocess, requests, img2pdf, re
+  return `import os, time, tempfile, subprocess, requests, re, socket, json as _json
 
 API = "${apiBase}"
 LOG_FILE = os.path.join(os.path.expanduser("~"), "SistemaImpressao", "robo_log.txt")
 
 def log(msg):
     try:
-        print(f"[{time.strftime('%H:%M:%S')}] {msg}")
-    except:
-        pass
+        print(f"[{time.strftime('%H:%M:%S')}] {msg}", flush=True)
+    except: pass
     try:
-        with open(LOG_FILE, "a") as f:
+        with open(LOG_FILE, "a", encoding="utf-8") as f:
             f.write(f"[{time.strftime('%H:%M:%S')}] {msg}\\n")
-    except:
-        pass
+    except: pass
 
 log("=== ROBO INICIADO ===")
 log(f"Conectando em: {API}")
 
 try:
-    log("Listando impressoras disponiveis no Windows:")
-    printers = subprocess.check_output(["powershell", "-Command", "Get-Printer | Select-Object -ExpandProperty Name"], text=True, creationflags=0x08000000).splitlines()
-    for p in printers:
-        log(f" - {p.strip()}")
-except:
-    log("Erro ao listar impressoras.")
+    log("Impressoras no Windows:")
+    _ps = subprocess.check_output(["powershell", "-Command",
+        "Get-Printer | Select-Object Name, PrinterStatus | ConvertTo-Json"],
+        text=True, creationflags=0x08000000, timeout=8)
+    _pdata = _json.loads(_ps.strip())
+    if isinstance(_pdata, dict): _pdata = [_pdata]
+    for _p in _pdata:
+        log(f"  {_p.get('Name','')} -> Status={_p.get('PrinterStatus','?')}")
+except Exception as _e:
+    log(f"Aviso ao listar impressoras: {_e}")
 
-def check_printer_online():
-    ricoh_ip = None
-    epson_ip = None
+# ── Helpers de detecção ────────────────────────────────────────────
+def _ping(ip, timeout_ms=800):
     try:
-        r_cfg = requests.get(f"{API}/api/escola/contatos", timeout=3)
-        if r_cfg.status_code == 200:
-            cfg = r_cfg.json()
-            ricoh_ip = cfg.get("impressora_ricoh_ip")
-            epson_ip = cfg.get("impressora_epson_ip")
-    except Exception as e:
-        log(f"Erro ao buscar IPs configurados: {e}")
+        r = subprocess.call(["ping", "-n", "1", "-w", str(timeout_ms), ip],
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                            creationflags=0x08000000)
+        return r == 0
+    except: return False
 
-    ricoh_online = False
-    epson_online = False
-
-    # Ping Ricoh
-    if ricoh_ip and re.match(r"^\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}$", ricoh_ip.strip()):
-        ip = ricoh_ip.strip()
-        res = subprocess.call(["ping", "-n", "1", "-w", "1000", ip], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=0x08000000)
-        ricoh_online = (res == 0)
-        log(f"Ping Ricoh ({ip}): {'ONLINE' if ricoh_online else 'OFFLINE'}")
-    else:
-        try:
-            out = subprocess.check_output([
-                "powershell", "-Command", 
-                "Get-Printer | Where-Object { $_.Name -match 'RICOH' } | Select-Object -ExpandProperty PortName | ConvertTo-Json"
-            ], text=True, creationflags=0x08000000).strip()
-            if out:
-                import json
-                ports = json.loads(out)
-                if isinstance(ports, str): ports = [ports]
-                for port in ports:
-                    if re.match(r"^\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}$", port):
-                        res = subprocess.call(["ping", "-n", "1", "-w", "1000", port], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=0x08000000)
-                        if res == 0: ricoh_online = True
-                    else:
-                        status = subprocess.check_output(["powershell", "-Command", f"Get-CimInstance Win32_Printer | Where-Object PortName -eq '{port}' | Select-Object -ExpandProperty PrinterStatus"], text=True, creationflags=0x08000000).strip()
-                        if "3" in status or "4" in status: ricoh_online = True
-        except:
-            pass
-
-    # Ping Epson
-    if epson_ip and re.match(r"^\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}$", epson_ip.strip()):
-        ip = epson_ip.strip()
-        res = subprocess.call(["ping", "-n", "1", "-w", "1000", ip], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=0x08000000)
-        epson_online = (res == 0)
-        log(f"Ping Epson ({ip}): {'ONLINE' if epson_online else 'OFFLINE'}")
-    else:
-        try:
-            out = subprocess.check_output([
-                "powershell", "-Command", 
-                "Get-Printer | Where-Object { $_.Name -match 'EPSON' } | Select-Object -ExpandProperty PortName | ConvertTo-Json"
-            ], text=True, creationflags=0x08000000).strip()
-            if out:
-                import json
-                ports = json.loads(out)
-                if isinstance(ports, str): ports = [ports]
-                for port in ports:
-                    if re.match(r"^\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}$", port):
-                        res = subprocess.call(["ping", "-n", "1", "-w", "1000", port], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=0x08000000)
-                        if res == 0: epson_online = True
-                    else:
-def _ping(ip):
-    """Retorna True se o IP responde ao ping."""
-    try:
-        res = subprocess.call(["ping", "-n", "1", "-w", "800", ip],
-                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                              creationflags=0x08000000)
-        return res == 0
-    except:
-        return False
-
-def _tcp_open(ip, port=9100, timeout=1.5):
-    """Retorna True se a porta TCP do IP estiver aberta (impressora acordada)."""
+def _tcp(ip, port=9100, timeout=1.5):
     try:
         s = socket.create_connection((ip, port), timeout=timeout)
-        s.close()
-        return True
-    except:
-        return False
+        s.close(); return True
+    except: return False
 
-def _win32_status(name_match):
+def _win32_by_name(name_match):
     """
-    Consulta o Win32_Printer via PowerShell para ver o estado real da impressora.
-    Retorna 'online', 'descanso' ou None.
-    PrinterStatus: 3=Idle, 4=Printing -> online
-                   7=Power Save         -> descanso
+    Consulta Win32_Printer pelo nome (funciona mesmo sem rede, detecta USB e rede local).
+    PrinterStatus:
+      0 = Other, 1 = Unknown, 2 = Idle (DISPONIVEL)
+      3 = Printing, 4 = Warmup (IMPRIMINDO/AQUECENDO)
+      5 = Stop Printing, 6 = Offline
+      7 = Power Save (MODO ESPERA)
+    Retorna: 'online', 'descanso', 'offline', ou None se nao encontrar
     """
     try:
-        cmd = f"Get-CimInstance Win32_Printer | Where-Object {{ $_.Name -match '{name_match}' }} | Select-Object Name, PrinterStatus | ConvertTo-Json"
+        cmd = f"Get-CimInstance Win32_Printer | Where-Object {{ $_.Name -match '{name_match}' }} | Select-Object Name,PrinterStatus,WorkOffline | ConvertTo-Json"
         out = subprocess.check_output(["powershell", "-Command", cmd],
-                                      text=True, creationflags=0x08000000, timeout=5).strip()
-        if not out:
-            return None
+                                      text=True, creationflags=0x08000000, timeout=6).strip()
+        if not out: return None
         data = _json.loads(out)
-        if isinstance(data, dict):
-            data = [data]
+        if isinstance(data, dict): data = [data]
         for d in data:
+            if d.get("WorkOffline"): continue  # marcado como offline no Windows
             st = d.get("PrinterStatus", 0)
-            if st in (3, 4):
-                return "online"
-            if st == 7:
-                return "descanso"
-        return "offline"
-    except:
-        return None
-
-def check_printer_status(ip, name_match):
-    """
-    Verifica o status de uma impressora:
-    - 'offline'  : sem resposta de ping
-    - 'descanso' : responde ping mas porta 9100 fechada (modo sleep)
-    - 'online'   : responde ping E porta 9100 aberta OU Win32 diz Idle/Printing
-    """
-    if not ip or not re.match(r"^\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}$", ip.strip()):
-        return "offline"
-    ip = ip.strip()
-    if not _ping(ip):
-        return "offline"
-    # Ping respondeu; verifica se esta Idle ou em PowerSave
-    tcp = _tcp_open(ip, 9100) or _tcp_open(ip, 80)
-    win32 = _win32_status(name_match)
-    if tcp or win32 == "online":
-        return "online"
-    if win32 == "descanso":
+            if st in (2, 3, 4): return "online"   # Idle, Printing, Warmup
+            if st == 7:         return "descanso"  # Power Save
+            if st == 6:         continue           # Offline marcado
+        # Se achou impressoras mas nenhuma boa, retorna descanso (pode ser estado transitório)
         return "descanso"
-    # Ping responde mas porta fechada -> provavelmente modo sleep
-    return "descanso"
+    except: return None
 
+def _win32_by_ip(ip):
+    """Busca Win32_Printer pela porta IP (PortName contendo o IP)."""
+    try:
+        cmd = f"Get-CimInstance Win32_Printer | Where-Object {{ $_.PortName -like '*{ip}*' }} | Select-Object Name,PrinterStatus,WorkOffline | ConvertTo-Json"
+        out = subprocess.check_output(["powershell", "-Command", cmd],
+                                      text=True, creationflags=0x08000000, timeout=6).strip()
+        if not out: return None
+        data = _json.loads(out)
+        if isinstance(data, dict): data = [data]
+        for d in data:
+            if d.get("WorkOffline"): continue
+            st = d.get("PrinterStatus", 0)
+            if st in (2, 3, 4): return "online"
+            if st == 7:         return "descanso"
+        return "descanso"
+    except: return None
+
+def check_printer(ip, name_match):
+    """
+    Estratégia em 3 camadas (da mais confiável para a menos):
+    1. Win32_Printer por nome -> detecta USB e rede local sem depender de ping
+    2. Win32_Printer por IP de porta -> confirma pelo IP configurado no Windows
+    3. Ping + TCP -> para impressoras de rede não registradas no Windows
+    Retorna: 'online', 'descanso', ou 'offline'
+    """
+    # Camada 1: Win32 por nome (mais confiável, independente de rede)
+    w_name = _win32_by_name(name_match)
+    if w_name == "online":   return "online"
+    if w_name == "descanso": return "descanso"
+
+    # Camada 2: Win32 por IP (caso o nome seja diferente do esperado)
+    has_ip = ip and re.match(r"^\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}$", ip.strip())
+    if has_ip:
+        w_ip = _win32_by_ip(ip.strip())
+        if w_ip == "online":   return "online"
+        if w_ip == "descanso": return "descanso"
+
+    # Camada 3: Ping + TCP (rede)
+    if has_ip:
+        ip = ip.strip()
+        if not _ping(ip): return "offline"
+        # Ping respondeu -> está na rede, verifica se acordada
+        if _tcp(ip, 9100) or _tcp(ip, 80): return "online"
+        return "descanso"  # Ping ok mas porta fechada = modo sleep
+
+    return "offline"
+
+# ── IPs configurados no sistema ───────────────────────────────────
 def get_ips():
     try:
-        r = requests.get(f"{API}/api/escola/contatos", timeout=4)
+        r = requests.get(f"{API}/api/escola/contatos", timeout=5)
         if r.status_code == 200:
             cfg = r.json()
-            return cfg.get("impressora_ricoh_ip", ""), cfg.get("impressora_epson_ip", "")
+            return cfg.get("impressora_ricoh_ip",""), cfg.get("impressora_epson_ip","")
     except Exception as e:
         log(f"Erro ao buscar IPs: {e}")
     return "", ""
 
+# ── Heartbeat ─────────────────────────────────────────────────────
 def heart(ricoh_st, epson_st):
     try:
         requests.post(f"{API}/api/impressoes/heartbeat", json={
@@ -402,97 +367,99 @@ def heart(ricoh_st, epson_st):
     except Exception as e:
         log(f"Falha heartbeat: {e}")
 
+# ── Processar job de impressão ────────────────────────────────────
 def proc(job):
     jid = job["id"]
     name = job.get("nomeArquivo") or "arquivo"
     try:
-        log(f"Processando: {name}")
-        requests.patch(f"{API}/api/impressoes/{jid}/status", json={"status":"Imprimindo","progresso":30,"mensagemStatus":"Baixando..."})
-        
+        log(f"Processando job #{jid}: {name}")
+        requests.patch(f"{API}/api/impressoes/{jid}/status",
+                       json={"status":"Imprimindo","progresso":30,"mensagemStatus":"Baixando..."},
+                       timeout=5)
         url = job.get("linkArquivo", "")
-        if not url.startswith("http"):
-            url = f"{API}{url}"
-
+        is_pdf = "pdf" in (job.get("tipoArquivo") or "").lower() or name.lower().endswith(".pdf")
+        if not url.startswith("http"): url = f"{API}{url}"
         # Google Drive -> download direto
         if "drive.google.com" in url:
             m = re.search(r"/d/([a-zA-Z0-9_-]+)", url)
-            if m:
-                url = f"https://drive.google.com/uc?export=download&id={m.group(1)}"
-
+            if m: url = f"https://drive.google.com/uc?export=download&id={m.group(1)}"; is_pdf=True
         r = requests.get(url, stream=True, timeout=30)
-        is_pdf = "pdf" in (job.get("tipoArquivo") or "").lower() or name.lower().endswith(".pdf")
-        ext = ".pdf" if is_pdf else ".png"
-        
-        tf = tempfile.NamedTemporaryFile(delete=False, suffix=ext)
-        for c in r.iter_content(8192):
-            tf.write(c)
+        tf = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf" if is_pdf else ".png")
+        for chunk in r.iter_content(8192): tf.write(chunk)
         tf.close()
         print_file = tf.name
-        
-        requests.patch(f"{API}/api/impressoes/{jid}/status", json={"status":"Imprimindo","progresso":70,"mensagemStatus":"Enviando para a impressora..."})
-        
-        # Escolha da impressora
-        target_printer = None
+        # Converter imagem para PDF se necessário
+        if not is_pdf:
+            try:
+                import img2pdf
+                pdf_path = print_file + ".pdf"
+                with open(print_file,"rb") as fi, open(pdf_path,"wb") as fo: fo.write(img2pdf.convert(fi))
+                os.unlink(print_file); print_file = pdf_path
+            except Exception as ce: log(f"Conversao imagem: {ce}")
+        requests.patch(f"{API}/api/impressoes/{jid}/status",
+                       json={"status":"Imprimindo","progresso":70,"mensagemStatus":"Enviando para impressora..."},
+                       timeout=5)
+        # Selecionar impressora
+        target = None
         try:
-            printers = [p.strip() for p in subprocess.check_output(["powershell", "-Command", "Get-Printer | Select-Object -ExpandProperty Name"], text=True, creationflags=0x08000000).splitlines() if p.strip()]
-            pref = job.get("impressoraNome")
+            ps_list = [p.strip() for p in subprocess.check_output(
+                ["powershell","-Command","Get-Printer | Select-Object -ExpandProperty Name"],
+                text=True, creationflags=0x08000000).splitlines() if p.strip()]
+            pref = job.get("impressoraNome","")
             if pref:
-                for p in printers:
-                    if pref.upper() in p.upper():
-                        target_printer = p; break
-            if not target_printer:
-                is_color = job.get("colorida")
-                if isinstance(is_color, str): is_color = is_color.lower() == "true"
-                for term in (["EPSON"] if is_color else ["3710", "RICOH"]):
-                    for p in printers:
-                        if term.upper() in p.upper():
-                            target_printer = p; break
-                    if target_printer: break
-            if not target_printer and printers:
-                target_printer = printers[0]
-        except Exception as e:
-            log(f"Erro ao selecionar impressora: {e}")
-
-        success = False
+                for p in ps_list:
+                    if pref.upper() in p.upper(): target=p; break
+            if not target:
+                is_color = job.get("colorida", False)
+                if isinstance(is_color,str): is_color = is_color.lower()=="true"
+                for term in (["EPSON"] if is_color else ["3710","RICOH","SP 3"]):
+                    for p in ps_list:
+                        if term.upper() in p.upper(): target=p; break
+                    if target: break
+            if not target and ps_list: target = ps_list[0]
+        except Exception as se: log(f"Selecao impressora: {se}")
+        log(f"Impressora: {target or 'Padrao'}")
+        # Imprimir via SumatraPDF ou PowerShell
+        ok = False
         sumatra = os.path.join(os.path.expanduser("~"), "SistemaImpressao", "SumatraPDF.exe")
         if os.path.exists(sumatra):
             try:
-                cmd = [sumatra, "-print-to", target_printer, "-print-settings", "silent", print_file] if target_printer else [sumatra, "-print-default", "-print-settings", "silent", print_file]
-                res = subprocess.run(cmd, capture_output=True, text=True, timeout=30, creationflags=0x08000000)
-                if res.returncode == 0: success = True
+                cmd = [sumatra,"-print-to",target,"-print-settings","silent",print_file] if target \
+                      else [sumatra,"-print-default","-print-settings","silent",print_file]
+                if subprocess.run(cmd, timeout=30, creationflags=0x08000000).returncode==0: ok=True
             except: pass
-
-        if not success:
+        if not ok:
             try:
-                ps_cmd = f"Start-Process -FilePath '{print_file}' -Verb PrintTo -ArgumentList '\\"{target_printer}\\"' -WindowStyle Hidden -Wait" if target_printer else f"Start-Process -FilePath '{print_file}' -Verb Print -WindowStyle Hidden -Wait"
-                subprocess.run(["powershell", "-Command", ps_cmd], timeout=60, check=True, creationflags=0x08000000)
-                success = True
-            except: pass
-
-        requests.patch(f"{API}/api/impressoes/{jid}/status", json={"status":"Impresso", "progresso":100, "mensagemStatus":"Concluido"})
+                ps = f"Start-Process -FilePath '{print_file}' -Verb PrintTo -ArgumentList '\\\"{target}\\\"' -WindowStyle Hidden -Wait" if target \
+                     else f"Start-Process -FilePath '{print_file}' -Verb Print -WindowStyle Hidden -Wait"
+                subprocess.run(["powershell","-Command",ps], timeout=60, check=True, creationflags=0x08000000)
+                ok = True
+            except Exception as pe: log(f"Erro PowerShell: {pe}")
+        requests.patch(f"{API}/api/impressoes/{jid}/status",
+                       json={"status":"Impresso","progresso":100,"mensagemStatus":"Concluido"},
+                       timeout=5)
         try:
             if os.path.exists(print_file): os.unlink(print_file)
         except: pass
+        log(f"Job #{jid} concluido!")
     except Exception as e:
-        log(f"Falha no job {jid}: {e}")
-        try:
-            requests.patch(f"{API}/api/impressoes/{jid}/status", json={"status":"Pendente","progresso":0,"mensagemStatus":"Erro, aguardando..."})
+        log(f"Falha job #{jid}: {e}")
+        try: requests.patch(f"{API}/api/impressoes/{jid}/status",
+                            json={"status":"Pendente","progresso":0,"mensagemStatus":"Erro, aguardando..."},
+                            timeout=5)
         except: pass
 
-# ──────────────────────────────────────
-# Loop principal
-# ──────────────────────────────────────
+# ── Loop principal ────────────────────────────────────────────────
 ricoh_st = "offline"
 epson_st = "offline"
-status_counter = 0   # checa impressoras a cada 5 iteracoes (~20s)
+counter = 0  # checa rede/Win32 a cada 5 ciclos = ~20s
 
 while True:
-    # A cada 5 ciclos (20s), revalida o estado das impressoras
-    if status_counter == 0:
+    if counter == 0:
         ricoh_ip, epson_ip = get_ips()
-        ricoh_st = check_printer_status(ricoh_ip, "RICOH")
-        epson_st = check_printer_status(epson_ip, "EPSON")
-        log(f"Status: RICOH={ricoh_st} EPSON={epson_st}")
+        ricoh_st = check_printer("RICOH", ricoh_ip)
+        epson_st = check_printer("EPSON", epson_ip)
+        log(f"Status: RICOH={ricoh_st}  EPSON={epson_st}")
 
     heart(ricoh_st, epson_st)
 
@@ -501,16 +468,14 @@ while True:
             r = requests.get(f"{API}/api/impressoes/pendentes", timeout=10)
             if r.status_code == 200:
                 jobs = r.json()
-                if jobs:
-                    log(f"Processando {len(jobs)} job(s) pendente(s)...")
-                for j in jobs:
-                    proc(j)
+                if jobs: log(f"{len(jobs)} job(s) na fila...")
+                for j in jobs: proc(j)
         except Exception as e:
-            log(f"Erro ao buscar pendentes: {e}")
+            log(f"Erro jobs: {e}")
     else:
-        log("Ambas offline. Impressoes pausadas.")
+        log("Ambas offline. Aguardando...")
 
-    status_counter = (status_counter + 1) % 5
+    counter = (counter + 1) % 5
     time.sleep(4)
 `;
 }

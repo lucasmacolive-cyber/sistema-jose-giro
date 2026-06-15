@@ -14,3 +14,5 @@ export * from "./logins-externos";
 export * from "./diario";
 export * from "./configuracoes";
 export * from "./fila-whatsapp";
+export * from "./automatizacoes-whatsapp";
+

@@ -188,6 +188,153 @@ setInterval(async () => {
       console.error("[WhatsApp] Erro ao enviar da fila:", err.message);
     }
   }
+
+  // Processa automações agendadas a cada 30 segundos
+  const nowMs = Date.now();
+  if (nowMs - lastAutomationCheck >= 30000) {
+    lastAutomationCheck = nowMs;
+    await processarAutomatizacoes();
+  }
 }, 3000);
+
+let lastAutomationCheck = 0;
+
+function limparNumero(tel) {
+  if (!tel) return "";
+  return tel.replace(/\D/g, "");
+}
+
+function formatarMensagem(auto, nomeDestinatario) {
+  const base = auto.mensagem || "";
+  const tipo = auto.tipo_documento;
+  const agora = new Date().toLocaleDateString("pt-BR");
+
+  if (tipo === "mensagem") return base.replace(/{nome}/g, nomeDestinatario);
+
+  const prefixos = {
+    ficai:       `📋 *FICAI - ${agora}*\n`,
+    freq_mensal: `📊 *Frequência Mensal - ${agora}*\n`,
+    resumo_turma:`📝 *Resumo de Turma - ${agora}*\n`,
+    pre_diario:  `📆 *Pré-diário - ${agora}*\n`,
+  };
+  const prefixo = prefixos[tipo] || "";
+  const body = base ? base.replace(/{nome}/g, nomeDestinatario) : `Olá ${nomeDestinatario}, segue o documento solicitado.`;
+  return `${prefixo}${body}`;
+}
+
+function calcularProxima(frequencia, diasSemana, diaMes, horario) {
+  const agora = new Date();
+  const [h, m] = (horario || "08:00").split(":").map(Number);
+
+  if (frequencia === "unico") {
+    const d = new Date(agora);
+    d.setHours(h, m, 0, 0);
+    if (d <= agora) d.setDate(d.getDate() + 1);
+    return d;
+  }
+
+  if (frequencia === "diario") {
+    const d = new Date(agora);
+    d.setHours(h, m, 0, 0);
+    if (d <= agora) d.setDate(d.getDate() + 1);
+    return d;
+  }
+
+  if (frequencia === "semanal" && diasSemana) {
+    const dias = diasSemana.split(",").map(Number); // 0=Dom, 1=Seg...
+    for (let i = 1; i <= 7; i++) {
+      const d = new Date(agora);
+      d.setDate(d.getDate() + i);
+      d.setHours(h, m, 0, 0);
+      if (dias.includes(d.getDay())) return d;
+    }
+  }
+
+  if (frequencia === "mensal" && diaMes) {
+    const d = new Date(agora.getFullYear(), agora.getMonth(), diaMes, h, m, 0, 0);
+    if (d <= agora) {
+      d.setMonth(d.getMonth() + 1);
+    }
+    return d;
+  }
+
+  return null;
+}
+
+async function processarAutomatizacoes() {
+  try {
+    const agora = new Date();
+    const resAuto = await pool.query(
+      `SELECT * FROM automatizacoes_whatsapp 
+       WHERE ativa = true AND proxima_execucao <= $1`,
+      [agora]
+    );
+
+    for (const auto of resAuto.rows) {
+      console.log(`[WhatsApp] Processando automação: "${auto.nome}" (tipo: ${auto.tipo_documento})...`);
+      
+      let destinatarios = [];
+      const tipo = auto.destinatario_tipo;
+      const valor = auto.destinatario_valor;
+
+      if (tipo === "numero") {
+        if (valor) destinatarios.push({ numero: valor, nome: "destinatário" });
+      } else if (tipo === "professor") {
+        if (valor) {
+          const res = await pool.query("SELECT nome, telefone FROM professores WHERE id = $1", [parseInt(valor)]);
+          destinatarios = res.rows.filter(r => r.telefone).map(r => ({ numero: limparNumero(r.telefone), nome: r.nome }));
+        }
+      } else if (tipo === "todos_professores") {
+        const res = await pool.query("SELECT nome, telefone FROM professores");
+        destinatarios = res.rows.filter(r => r.telefone).map(r => ({ numero: limparNumero(r.telefone), nome: r.nome }));
+      } else if (tipo === "grupo") {
+        if (valor) destinatarios.push({ numero: valor, nome: "Grupo" });
+      } else if (tipo === "turma_alunos") {
+        if (valor) {
+          const res = await pool.query("SELECT nome_completo as nome, telefone as tel FROM alunos WHERE turma_atual = $1", [valor]);
+          destinatarios = res.rows.filter(r => r.tel).map(r => ({ numero: limparNumero(r.tel), nome: r.nome }));
+        }
+      } else if (tipo === "todos_alunos") {
+        const res = await pool.query("SELECT nome_completo as nome, telefone as tel FROM alunos");
+        destinatarios = res.rows.filter(r => r.tel).map(r => ({ numero: limparNumero(r.tel), nome: r.nome }));
+      } else if (tipo === "funcionarios") {
+        const res = await pool.query("SELECT nome_completo as nome, telefone_contato as tel FROM funcionarios");
+        destinatarios = res.rows.filter(r => r.tel).map(r => ({ numero: limparNumero(r.tel), nome: r.nome }));
+      }
+
+      console.log(`[WhatsApp] Encontrados ${destinatarios.length} destinatários para "${auto.nome}"`);
+
+      for (const dest of destinatarios) {
+        const mensagem = formatarMensagem(auto, dest.nome);
+        await pool.query(
+          `INSERT INTO fila_whatsapp (numero, mensagem, arquivo_base64, mimetype, nome_arquivo, status, criado_em, atualizado_em)
+           VALUES ($1, $2, $3, $4, $5, 'Pendente', NOW(), NOW())`,
+          [
+            dest.numero,
+            mensagem,
+            auto.arquivo_base64 || null,
+            auto.mimetype || null,
+            auto.nome_arquivo || null
+          ]
+        );
+      }
+
+      // Calcula próxima execução e desativa se for execução única
+      const proxima = calcularProxima(auto.frequencia, auto.dias_semana, auto.dia_mes, auto.horario);
+      const ativa = auto.frequencia === "unico" ? false : true;
+
+      await pool.query(
+        `UPDATE automatizacoes_whatsapp 
+         SET ultima_execucao = $1, proxima_execucao = $2, ativa = $3, atualizado_em = NOW()
+         WHERE id = $4`,
+        [agora, proxima, ativa, auto.id]
+      );
+
+      console.log(`[WhatsApp] Automação "${auto.nome}" atualizada. Próxima: ${proxima ? proxima.toISOString() : "N/A"}. Ativa: ${ativa}`);
+    }
+  } catch (err) {
+    console.error("[WhatsApp] Erro ao processar automações:", err.message);
+  }
+}
 
 console.log("[WhatsApp Bot] Aguardando inicialização ou comandos da nuvem...");

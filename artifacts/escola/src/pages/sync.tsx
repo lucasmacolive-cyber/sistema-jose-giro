@@ -3524,7 +3524,7 @@ function SecaoConfigDiario() {
 /* ══════════════════════════════════════════
    SEÇÃO: WhatsApp
 ══════════════════════════════════════════ */
-function SecaoWhatsApp() {
+function SecaoWhatsAppConexao() {
   const [status, setStatus] = useState<{ ready: boolean; code: string | null; number: string | null } | null>(null);
   const [carregando, setCarregando] = useState(true);
   const [inputNumber, setInputNumber] = useState("");
@@ -3551,7 +3551,7 @@ function SecaoWhatsApp() {
   const handleDisconnect = async () => {
     try {
       await fetch(API("/whatsapp/disconnect"), { method: "POST" });
-      toast({ title: "Comando enviado!", description: "O robô local será desconectado e um novo QR Code será gerado em instantes." });
+      toast({ title: "Comando enviado!", description: "O robô local será desconectado e um QR Code será gerado em instantes." });
     } catch (e) {
       toast({ title: "Erro", variant: "destructive" });
     }
@@ -3580,7 +3580,6 @@ function SecaoWhatsApp() {
   return (
     <div className="max-w-md space-y-6">
       <div className="bg-[#1a2332] rounded-3xl p-6 border border-white/5 text-center relative overflow-hidden">
-        {/* Adiciona um gradiente verde no fundo se estiver conectado */}
         {status?.ready && (
           <div className="absolute inset-0 bg-gradient-to-b from-[#22c55e]/10 to-transparent pointer-events-none" />
         )}
@@ -3649,6 +3648,707 @@ function SecaoWhatsApp() {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function SecaoWhatsAppAutomacoes() {
+  const [lista, setLista] = useState<any[]>([]);
+  const [carregando, setCarregando] = useState(true);
+  const [dialogAberto, setDialogAberto] = useState(false);
+  const [wizardStep, setWizardStep] = useState(1);
+  const [executandoId, setExecutandoId] = useState<number | null>(null);
+
+  const [professores, setProfessores] = useState<any[]>([]);
+  const [grupos, setGrupos] = useState<any[]>([]);
+  const [turmas, setTurmas] = useState<any[]>([]);
+
+  const [editId, setEditId] = useState<number | null>(null);
+  const [form, setForm] = useState<any>({
+    nome: "",
+    tipoDocumento: "mensagem",
+    mensagem: "",
+    arquivoBase64: "",
+    nomeArquivo: "",
+    mimetype: "",
+    frequencia: "unico",
+    diasSemana: [],
+    diaMes: "",
+    horario: "08:00",
+    destinatarioTipo: "numero",
+    destinatarioValor: ""
+  });
+
+  const { toast } = useToast();
+
+  const carregarDados = useCallback(async () => {
+    try {
+      const res = await fetch(API("/automatizacoes"));
+      const data = await res.json();
+      setLista(data);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setCarregando(false);
+    }
+  }, []);
+
+  const carregarListas = useCallback(async () => {
+    try {
+      const [resProfs, resGroups, resTurmas] = await Promise.all([
+        fetch(API("/professores")),
+        fetch(API("/whatsapp/groups")),
+        fetch(API("/turmas?all=true"))
+      ]);
+      setProfessores(await resProfs.json());
+      setGrupos(await resGroups.json());
+      setTurmas(await resTurmas.json());
+    } catch (err) {
+      console.error("Erro ao carregar listas:", err);
+    }
+  }, []);
+
+  useEffect(() => {
+    carregarDados();
+    carregarListas();
+  }, [carregarDados, carregarListas]);
+
+  const handleToggle = async (id: number) => {
+    try {
+      const res = await fetch(API(`/automatizacoes/${id}/toggle`), { method: "PATCH" });
+      const data = await res.json();
+      setLista(lista.map(a => a.id === id ? { ...a, ativa: data.ativa } : a));
+      toast({ title: data.ativa ? "Agendamento Ativado" : "Agendamento Pausado" });
+    } catch (e) {
+      toast({ title: "Erro ao atualizar status", variant: "destructive" });
+    }
+  };
+
+  const handleDelete = async (id: number) => {
+    if (!confirm("Tem certeza de que deseja excluir este agendamento?")) return;
+    try {
+      await fetch(API(`/automatizacoes/${id}`), { method: "DELETE" });
+      setLista(lista.filter(a => a.id !== id));
+      toast({ title: "Agendamento removido" });
+    } catch (e) {
+      toast({ title: "Erro ao remover", variant: "destructive" });
+    }
+  };
+
+  const handleExecutarAgora = async (id: number) => {
+    setExecutandoId(id);
+    try {
+      const res = await fetch(API(`/automatizacoes/${id}/executar-agora`), { method: "POST" });
+      const data = await res.json();
+      if (data.ok) {
+        toast({ title: "Enviado com sucesso!", description: `${data.mensagensEnfileiradas} mensagens adicionadas à fila de envio.` });
+        carregarDados();
+      } else {
+        toast({ title: "Falha ao executar", description: data.erro, variant: "destructive" });
+      }
+    } catch (e) {
+      toast({ title: "Erro de rede", variant: "destructive" });
+    } finally {
+      setExecutandoId(null);
+    }
+  };
+
+  const abrirNovo = () => {
+    setEditId(null);
+    setForm({
+      nome: "",
+      tipoDocumento: "mensagem",
+      mensagem: "",
+      arquivoBase64: "",
+      nomeArquivo: "",
+      mimetype: "",
+      frequencia: "unico",
+      diasSemana: [],
+      diaMes: "",
+      horario: "08:00",
+      destinatarioTipo: "numero",
+      destinatarioValor: ""
+    });
+    setWizardStep(1);
+    setDialogAberto(true);
+  };
+
+  const abrirEditar = (auto: any) => {
+    setEditId(auto.id);
+    setForm({
+      nome: auto.nome,
+      tipoDocumento: auto.tipoDocumento,
+      mensagem: auto.mensagem || "",
+      arquivoBase64: auto.arquivoBase64 || "",
+      nomeArquivo: auto.nomeArquivo || "",
+      mimetype: auto.mimetype || "",
+      frequencia: auto.frequencia,
+      diasSemana: auto.diasSemana ? auto.diasSemana.split(",").map(Number) : [],
+      diaMes: auto.diaMes || "",
+      horario: auto.horario,
+      destinatarioTipo: auto.destinatarioTipo,
+      destinatarioValor: auto.destinatarioValor || ""
+    });
+    setWizardStep(1);
+    setDialogAberto(true);
+  };
+
+  const handleSalvar = async (adicionarOutra: boolean = false) => {
+    if (!form.nome) {
+      toast({ title: "Preencha o nome do agendamento", variant: "destructive" });
+      return;
+    }
+    if (form.frequencia === "semanal" && form.diasSemana.length === 0) {
+      toast({ title: "Selecione ao menos um dia da semana", variant: "destructive" });
+      return;
+    }
+    if (form.frequencia === "mensal" && !form.diaMes) {
+      toast({ title: "Selecione o dia do mês", variant: "destructive" });
+      return;
+    }
+    if (!form.destinatarioValor && ["numero", "professor", "grupo", "turma_alunos"].includes(form.destinatarioTipo)) {
+      toast({ title: "Selecione ou preencha o destinatário", variant: "destructive" });
+      return;
+    }
+
+    const body = {
+      ...form,
+      diasSemana: form.diasSemana.length > 0 ? form.diasSemana.join(",") : null,
+      diaMes: form.diaMes ? parseInt(form.diaMes) : null,
+    };
+
+    try {
+      const url = editId ? API(`/automatizacoes/${editId}`) : API("/automatizacoes");
+      const method = editId ? "PUT" : "POST";
+      const res = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+      });
+      if (!res.ok) throw new Error("Erro");
+
+      toast({ title: editId ? "Agendamento atualizado!" : "Agendamento salvo!" });
+      carregarDados();
+
+      if (adicionarOutra && !editId) {
+        setForm({
+          nome: "",
+          tipoDocumento: "mensagem",
+          mensagem: "",
+          arquivoBase64: "",
+          nomeArquivo: "",
+          mimetype: "",
+          frequencia: "unico",
+          diasSemana: [],
+          diaMes: "",
+          horario: "08:00",
+          destinatarioTipo: "numero",
+          destinatarioValor: ""
+        });
+        setWizardStep(1);
+      } else {
+        setDialogAberto(false);
+      }
+    } catch (e) {
+      toast({ title: "Erro ao salvar agendamento", variant: "destructive" });
+    }
+  };
+
+  const traduzirFrequencia = (freq: string, dias: string, diaMes: number, hora: string) => {
+    const formatHora = `às ${hora}`;
+    if (freq === "unico") return `Única vez ${formatHora}`;
+    if (freq === "diario") return `Diariamente ${formatHora}`;
+    if (freq === "semanal" && dias) {
+      const nomes = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+      const diasArr = dias.split(",").map(Number);
+      const nomesDias = diasArr.map(d => nomes[d]).join(", ");
+      return `Semanal (${nomesDias}) ${formatHora}`;
+    }
+    if (freq === "mensal" && diaMes) return `Mensal (Dia ${diaMes}) ${formatHora}`;
+    return freq;
+  };
+
+  const traduzirDestinatario = (tipo: string, valor: string) => {
+    if (tipo === "numero") return `Número: ${valor}`;
+    if (tipo === "professor") {
+      const p = professores.find(prof => prof.id.toString() === valor);
+      return `Prof: ${p ? p.nome : valor}`;
+    }
+    if (tipo === "todos_professores") return "Todos os Professores";
+    if (tipo === "grupo") {
+      const g = grupos.find(gp => gp.jid === valor);
+      return `Grupo: ${g ? g.nome : "Selecionado"}`;
+    }
+    if (tipo === "turma_alunos") return `Alunos da Turma: ${valor}`;
+    if (tipo === "todos_alunos") return "Todos os Alunos";
+    if (tipo === "funcionarios") return "Equipe de Funcionários";
+    return tipo;
+  };
+
+  const traduzirDocumento = (tipo: string) => {
+    if (tipo === "mensagem") return "Mensagem de Texto";
+    if (tipo === "ficai") return "FICAI";
+    if (tipo === "freq_mensal") return "Frequência Mensal";
+    if (tipo === "resumo_turma") return "Resumo de Turma";
+    if (tipo === "pre_diario") return "Pré-diário";
+    return tipo;
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center bg-[#1a2332] p-6 rounded-3xl border border-white/5">
+        <div>
+          <h3 className="text-xl font-bold text-white mb-1">Agendamentos do WhatsApp</h3>
+          <p className="text-sm text-white/50">Crie regras e relatórios para envio periódico automático.</p>
+        </div>
+        <Button 
+          onClick={abrirNovo}
+          className="bg-[#22c55e] hover:bg-[#16a34a] text-white flex items-center gap-2 rounded-xl py-2.5 px-4 font-bold transition-all shadow-lg shadow-[#22c55e]/20"
+        >
+          <Plus className="w-4 h-4" /> Novo Agendamento
+        </Button>
+      </div>
+
+      {carregando ? (
+        <div className="flex justify-center p-12"><Loader2 className="w-8 h-8 animate-spin" /></div>
+      ) : lista.length === 0 ? (
+        <div className="bg-[#1a2332]/50 rounded-3xl border border-white/5 p-12 text-center text-white/40">
+          Nenhum envio agendado ainda. Clique em "Novo Agendamento" para programar um disparo!
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {lista.map((auto) => (
+            <div 
+              key={auto.id} 
+              className={`bg-[#1a2332] rounded-2xl p-5 border border-white/5 transition-all hover:border-white/10 relative overflow-hidden flex flex-col justify-between ${!auto.ativa ? "opacity-60" : ""}`}
+            >
+              <div className="space-y-3">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <h4 className="text-white font-bold text-base leading-tight mb-1">{auto.nome}</h4>
+                    <span className="text-[10px] uppercase font-bold tracking-wider text-[#22c55e] bg-[#22c55e]/10 px-2 py-0.5 rounded-full inline-block">
+                      {traduzirDocumento(auto.tipoDocumento)}
+                    </span>
+                  </div>
+                  
+                  <button
+                    onClick={() => handleToggle(auto.id)}
+                    className={`text-xs px-2.5 py-1 rounded-full font-bold transition-all ${auto.ativa ? "bg-[#22c55e]/20 text-[#22c55e] border border-[#22c55e]/30" : "bg-white/5 text-white/40 border border-white/10"}`}
+                  >
+                    {auto.ativa ? "Ativo" : "Pausado"}
+                  </button>
+                </div>
+
+                <div className="space-y-1.5 text-xs text-white/70">
+                  <p className="flex items-center gap-2">
+                    <span className="text-white/40 font-medium w-20">Frequência:</span>
+                    <span className="font-semibold text-white">{traduzirFrequencia(auto.frequencia, auto.diasSemana, auto.diaMes, auto.horario)}</span>
+                  </p>
+                  <p className="flex items-center gap-2">
+                    <span className="text-white/40 font-medium w-20">Enviar para:</span>
+                    <span className="font-semibold text-white truncate max-w-[200px]">{traduzirDestinatario(auto.destinatarioTipo, auto.destinatarioValor)}</span>
+                  </p>
+                  {auto.nomeArquivo && (
+                    <p className="flex items-center gap-2 text-sky-400">
+                      <span className="text-white/40 font-medium w-20">Arquivo:</span>
+                      <span className="font-bold truncate max-w-[200px]">{auto.nomeArquivo}</span>
+                    </p>
+                  )}
+                </div>
+
+                {auto.ativa && (
+                  <div className="pt-2.5 border-t border-white/5 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-white/40 font-mono">
+                    {auto.ultimaExecucao && (
+                      <p>Último: {new Date(auto.ultimaExecucao).toLocaleString("pt-BR")}</p>
+                    )}
+                    {auto.proximaExecucao && (
+                      <p>Próximo: {new Date(auto.proximaExecucao).toLocaleString("pt-BR")}</p>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex gap-2 mt-4 pt-3 border-t border-white/5 justify-end">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => handleExecutarAgora(auto.id)}
+                  disabled={executandoId === auto.id}
+                  className="h-8 text-xs text-[#22c55e] hover:text-white hover:bg-[#22c55e]/20 gap-1.5 font-bold"
+                >
+                  {executandoId === auto.id ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <PlayCircle className="w-3.5 h-3.5" />
+                  )}
+                  Enviar Agora
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => abrirEditar(auto)}
+                  className="h-8 text-xs text-white/60 hover:text-white hover:bg-white/5 gap-1.5 font-bold"
+                >
+                  <Pencil className="w-3.5 h-3.5" />
+                  Editar
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => handleDelete(auto.id)}
+                  className="h-8 text-xs text-red-400 hover:text-white hover:bg-red-500/20 gap-1.5 font-bold"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Excluir
+                </Button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <Dialog open={dialogAberto} onOpenChange={setDialogAberto}>
+        <DialogContent className="bg-[#0f172a] border-white/10 text-white max-w-lg max-h-[90vh] overflow-hidden flex flex-col rounded-3xl">
+          <DialogHeader className="border-b border-white/5 pb-4">
+            <DialogTitle className="flex items-center gap-2">
+              <Zap className="h-5 w-5 text-[#22c55e]" />
+              {editId ? "Editar Agendamento" : "Criar Agendamento Automático"}
+            </DialogTitle>
+            <p className="text-xs text-slate-400">Configure as regras de envio do WhatsApp.</p>
+          </DialogHeader>
+
+          <div className="px-6 py-4 border-b border-white/5 bg-slate-950/30">
+            <div className="flex justify-between items-center max-w-xs mx-auto">
+              {[1, 2, 3].map((step) => (
+                <div key={step} className="flex items-center gap-1.5">
+                  <div className={`w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs ${wizardStep === step ? "bg-[#22c55e] text-white shadow-md shadow-[#22c55e]/20" : wizardStep > step ? "bg-[#22c55e]/20 text-[#22c55e]" : "bg-white/5 text-white/40"}`}>
+                    {step}
+                  </div>
+                  <span className={`text-[10px] font-bold ${wizardStep === step ? "text-white" : "text-white/40"}`}>
+                    {step === 1 ? "Geral" : step === 2 ? "Frequência" : "Alvos"}
+                  </span>
+                  {step < 3 && <div className="w-6 h-px bg-white/10" />}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-6 space-y-4">
+            {wizardStep === 1 && (
+              <div className="space-y-4">
+                <div>
+                  <Label className="text-white/80 text-xs font-bold uppercase tracking-wider mb-2 block">Nome do Agendamento</Label>
+                  <Input
+                    value={form.nome}
+                    onChange={(e) => setForm({ ...form, nome: e.target.value })}
+                    placeholder="Ex: Envio Semanal de FICAI"
+                    className="bg-black/40 border-white/10 text-white"
+                  />
+                </div>
+
+                <div>
+                  <Label className="text-white/80 text-xs font-bold uppercase tracking-wider mb-2 block">Tipo de Mensagem/Documento</Label>
+                  <select
+                    value={form.tipoDocumento}
+                    onChange={(e) => setForm({ ...form, tipoDocumento: e.target.value })}
+                    className="w-full bg-[#1e293b] text-white border border-white/10 rounded-lg px-3 py-2.5 focus:outline-none focus:border-[#22c55e] text-sm font-semibold"
+                  >
+                    <option value="mensagem">Mensagem de Texto Livre</option>
+                    <option value="ficai">📋 FICAI (Ficha de Aluno Infrequente)</option>
+                    <option value="freq_mensal">📊 Frequência Mensal</option>
+                    <option value="resumo_turma">📝 Resumo de Turma</option>
+                    <option value="pre_diario">📆 Pré-diário</option>
+                  </select>
+                </div>
+
+                <div>
+                  <Label className="text-white/80 text-xs font-bold uppercase tracking-wider mb-2 block">
+                    {form.tipoDocumento === "mensagem" ? "Mensagem Livre" : "Mensagem/Legenda Adicional"}
+                  </Label>
+                  <Textarea
+                    value={form.mensagem}
+                    onChange={(e) => setForm({ ...form, mensagem: e.target.value })}
+                    placeholder={form.tipoDocumento === "mensagem" ? "Escreva a mensagem. Use {nome} para inserir o nome do destinatário." : "Adicione uma legenda opcional para acompanhar o arquivo..."}
+                    className="bg-black/40 border-white/10 text-white min-h-[100px]"
+                  />
+                </div>
+
+                <div className="bg-white/5 p-4 rounded-xl border border-white/10 space-y-2">
+                  <Label className="text-white/80 text-xs font-bold uppercase tracking-wider block">Arquivo Complementar (Opcional)</Label>
+                  {form.nomeArquivo ? (
+                    <div className="flex justify-between items-center bg-slate-800 px-3 py-2 rounded-lg border border-slate-700">
+                      <span className="text-xs font-bold text-sky-400 truncate max-w-[250px]">{form.nomeArquivo}</span>
+                      <button 
+                        type="button" 
+                        onClick={() => setForm({ ...form, arquivoBase64: "", nomeArquivo: "", mimetype: "" })}
+                        className="text-red-400 hover:text-red-300"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="relative border border-dashed border-white/20 hover:border-white/40 rounded-lg p-3 text-center cursor-pointer transition-all">
+                      <input 
+                        type="file" 
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          const reader = new FileReader();
+                          reader.onload = () => {
+                            const base64 = (reader.result as string).split(",")[1];
+                            setForm({
+                              ...form,
+                              arquivoBase64: base64,
+                              nomeArquivo: file.name,
+                              mimetype: file.type
+                            });
+                          };
+                          reader.readAsDataURL(file);
+                        }}
+                        className="absolute inset-0 opacity-0 cursor-pointer w-full h-full" 
+                      />
+                      <div className="flex flex-col items-center gap-1">
+                        <Upload className="w-5 h-5 text-white/50" />
+                        <span className="text-xs text-white/50 font-bold">Clique para anexar um arquivo</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {wizardStep === 2 && (
+              <div className="space-y-4">
+                <div>
+                  <Label className="text-white/80 text-xs font-bold uppercase tracking-wider mb-2 block">Frequência</Label>
+                  <select
+                    value={form.frequencia}
+                    onChange={(e) => setForm({ ...form, frequencia: e.target.value })}
+                    className="w-full bg-[#1e293b] text-white border border-white/10 rounded-lg px-3 py-2.5 focus:outline-none focus:border-[#22c55e] text-sm font-semibold"
+                  >
+                    <option value="unico">Executar uma única vez</option>
+                    <option value="diario">Diariamente</option>
+                    <option value="semanal">Semanalmente (Escolher dias)</option>
+                    <option value="mensal">Mensalmente (Escolher dia do mês)</option>
+                  </select>
+                </div>
+
+                {form.frequencia === "semanal" && (
+                  <div>
+                    <Label className="text-white/80 text-xs font-bold uppercase tracking-wider mb-2 block">Dias de Envio</Label>
+                    <div className="flex gap-2 flex-wrap">
+                      {[
+                        { label: "Dom", value: 0 },
+                        { label: "Seg", value: 1 },
+                        { label: "Ter", value: 2 },
+                        { label: "Qua", value: 3 },
+                        { label: "Qui", value: 4 },
+                        { label: "Sex", value: 5 },
+                        { label: "Sáb", value: 6 }
+                      ].map((d) => {
+                        const selecionado = form.diasSemana.includes(d.value);
+                        return (
+                          <button
+                            key={d.value}
+                            type="button"
+                            onClick={() => {
+                              const novos = selecionado
+                                ? form.diasSemana.filter((v: number) => v !== d.value)
+                                : [...form.diasSemana, d.value];
+                              setForm({ ...form, diasSemana: novos });
+                            }}
+                            className={`py-2 px-3.5 rounded-xl text-xs font-bold transition-all border ${selecionado ? "bg-[#22c55e] border-[#22c55e] text-white shadow-lg shadow-[#22c55e]/20" : "bg-white/5 border-white/10 text-white/60 hover:text-white"}`}
+                          >
+                            {d.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {form.frequencia === "mensal" && (
+                  <div>
+                    <Label className="text-white/80 text-xs font-bold uppercase tracking-wider mb-2 block">Dia do Mês (1-31)</Label>
+                    <Input
+                      type="number"
+                      min="1"
+                      max="31"
+                      value={form.diaMes}
+                      onChange={(e) => setForm({ ...form, diaMes: e.target.value })}
+                      placeholder="Ex: 10"
+                      className="bg-black/40 border-white/10 text-white"
+                    />
+                  </div>
+                )}
+
+                <div>
+                  <Label className="text-white/80 text-xs font-bold uppercase tracking-wider mb-2 block">Horário de Envio</Label>
+                  <Input
+                    type="time"
+                    value={form.horario}
+                    onChange={(e) => setForm({ ...form, horario: e.target.value })}
+                    className="bg-black/40 border-white/10 text-white text-lg font-mono"
+                  />
+                </div>
+              </div>
+            )}
+
+            {wizardStep === 3 && (
+              <div className="space-y-4">
+                <div>
+                  <Label className="text-white/80 text-xs font-bold uppercase tracking-wider mb-2 block">Enviar para quem?</Label>
+                  <select
+                    value={form.destinatarioTipo}
+                    onChange={(e) => setForm({ ...form, destinatarioTipo: e.target.value, destinatarioValor: "" })}
+                    className="w-full bg-[#1e293b] text-white border border-white/10 rounded-lg px-3 py-2.5 focus:outline-none focus:border-[#22c55e] text-sm font-semibold"
+                  >
+                    <option value="numero">Número de Telefone Específico</option>
+                    <option value="professor">Um Professor Específico</option>
+                    <option value="todos_professores">Todos os Professores</option>
+                    <option value="grupo">Grupo da Escola</option>
+                    <option value="turma_alunos">Alunos de uma Turma</option>
+                    <option value="todos_alunos">Todos os Alunos</option>
+                    <option value="funcionarios">Equipe de Funcionários</option>
+                  </select>
+                </div>
+
+                {form.destinatarioTipo === "numero" && (
+                  <div>
+                    <Label className="text-white/80 text-xs font-bold uppercase tracking-wider mb-2 block">Número do WhatsApp (com DDD)</Label>
+                    <Input
+                      value={form.destinatarioValor}
+                      onChange={(e) => setForm({ ...form, destinatarioValor: e.target.value.replace(/\D/g, "") })}
+                      placeholder="Ex: 22981310965"
+                      className="bg-black/40 border-white/10 text-white font-mono"
+                    />
+                  </div>
+                )}
+
+                {form.destinatarioTipo === "professor" && (
+                  <div>
+                    <Label className="text-white/80 text-xs font-bold uppercase tracking-wider mb-2 block">Selecione o Professor</Label>
+                    <select
+                      value={form.destinatarioValor}
+                      onChange={(e) => setForm({ ...form, destinatarioValor: e.target.value })}
+                      className="w-full bg-[#1e293b] text-white border border-white/10 rounded-lg px-3 py-2.5 focus:outline-none focus:border-[#22c55e] text-sm font-semibold"
+                    >
+                      <option value="">Selecione o professor...</option>
+                      {professores.map(p => (
+                        <option key={p.id} value={p.id}>{p.nome}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {form.destinatarioTipo === "grupo" && (
+                  <div>
+                    <Label className="text-white/80 text-xs font-bold uppercase tracking-wider mb-2 block">Selecione o Grupo da Escola</Label>
+                    <select
+                      value={form.destinatarioValor}
+                      onChange={(e) => setForm({ ...form, destinatarioValor: e.target.value })}
+                      className="w-full bg-[#1e293b] text-white border border-white/10 rounded-lg px-3 py-2.5 focus:outline-none focus:border-[#22c55e] text-sm font-semibold"
+                    >
+                      <option value="">Selecione o grupo...</option>
+                      {grupos.map(g => (
+                        <option key={g.jid} value={g.jid}>{g.nome}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {form.destinatarioTipo === "turma_alunos" && (
+                  <div>
+                    <Label className="text-white/80 text-xs font-bold uppercase tracking-wider mb-2 block">Selecione a Turma</Label>
+                    <select
+                      value={form.destinatarioValor}
+                      onChange={(e) => setForm({ ...form, destinatarioValor: e.target.value })}
+                      className="w-full bg-[#1e293b] text-white border border-white/10 rounded-lg px-3 py-2.5 focus:outline-none focus:border-[#22c55e] text-sm font-semibold"
+                    >
+                      <option value="">Selecione a turma...</option>
+                      {turmas.map(t => (
+                        <option key={t.nomeTurma} value={t.nomeTurma}>{t.nomeTurma}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="border-t border-white/5 p-6 flex justify-between bg-slate-950/20">
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={wizardStep === 1}
+              onClick={() => setWizardStep(wizardStep - 1)}
+              className="text-white/60 hover:text-white font-bold"
+            >
+              <ChevronLeft className="w-4 h-4 mr-1" /> Voltar
+            </Button>
+
+            <div className="flex gap-2">
+              {wizardStep < 3 ? (
+                <Button
+                  type="button"
+                  onClick={() => setWizardStep(wizardStep + 1)}
+                  className="bg-slate-700 hover:bg-slate-600 text-white font-bold"
+                >
+                  Avançar <ChevronRight className="w-4 h-4 ml-1" />
+                </Button>
+              ) : (
+                <>
+                  {!editId && (
+                    <Button
+                      type="button"
+                      onClick={() => handleSalvar(true)}
+                      className="bg-slate-800 hover:bg-slate-700 text-white border border-white/10 font-bold"
+                    >
+                      + Outra
+                    </Button>
+                  )}
+                  <Button
+                    type="button"
+                    onClick={() => handleSalvar(false)}
+                    className="bg-[#22c55e] hover:bg-[#16a34a] text-white font-bold"
+                  >
+                    <Check className="w-4 h-4 mr-1" /> Salvar
+                  </Button>
+                </>
+              )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+function SecaoWhatsApp() {
+  const [subSecao, setSubSecao] = useState<"conexao" | "automacoes">("conexao");
+
+  return (
+    <div className="space-y-6 max-w-4xl">
+      <div className="flex gap-2 bg-[#1a2332] p-1.5 rounded-2xl border border-white/5 max-w-sm">
+        <button
+          onClick={() => setSubSecao("conexao")}
+          className={`flex-1 py-2 px-4 rounded-xl text-sm font-bold transition-all ${subSecao === "conexao" ? "bg-[#22c55e] text-white shadow-lg shadow-[#22c55e]/15" : "text-white/60 hover:text-white"}`}
+        >
+          Conexão Bot
+        </button>
+        <button
+          onClick={() => setSubSecao("automacoes")}
+          className={`flex-1 py-2 px-4 rounded-xl text-sm font-bold transition-all ${subSecao === "automacoes" ? "bg-[#22c55e] text-white shadow-lg shadow-[#22c55e]/15" : "text-white/60 hover:text-white"}`}
+        >
+          ⚡ Agendamentos
+        </button>
+      </div>
+
+      {subSecao === "conexao" ? (
+        <SecaoWhatsAppConexao />
+      ) : (
+        <SecaoWhatsAppAutomacoes />
+      )}
     </div>
   );
 }
