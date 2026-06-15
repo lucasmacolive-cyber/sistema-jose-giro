@@ -43,7 +43,7 @@ async function loop() {
 
     if (isRegistered || targetNumber) {
       try {
-        await connectToWhatsApp(targetNumber || undefined, true);
+        await connectToWhatsApp(targetNumber || undefined, false);
       } catch(err) {
         // Ignora, não está registrado
       }

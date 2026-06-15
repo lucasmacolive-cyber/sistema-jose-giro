@@ -103,13 +103,40 @@ export async function connectToWhatsApp(pairingNumber?: string, waitForOpen: boo
       }
     }, 50000);
 
+    // Fallback: solicita o código de pareamento por delay se não receber evento QR imediatamente
+    if (formattedPairingNumber && !sock.authState.creds.registered) {
+      setTimeout(async () => {
+        if (!hasRequestedPairingCode && sock && !sock.authState.creds.registered) {
+          hasRequestedPairingCode = true;
+          try {
+            console.log(`[WhatsApp-Baileys] Solicitando Pairing Code direto para ${formattedPairingNumber}...`);
+            let code = await sock.requestPairingCode(formattedPairingNumber);
+            code = code?.match(/.{1,4}/g)?.join("-") || code;
+            await db.insert(configuracoesTable).values({ chave: "whatsapp_pairing_code", valor: code, atualizadoEm: new Date() })
+              .onConflictDoUpdate({ target: configuracoesTable.chave, set: { valor: code, atualizadoEm: new Date() } });
+            console.log(`[WhatsApp-Baileys] Código de Pareamento gerado com sucesso: ${code}`);
+            
+            if (!waitForOpen && !isResolved) {
+              clearTimeout(timeout);
+              isResolved = true;
+              resolve(sock);
+            }
+          } catch (err) {
+            console.error("[WhatsApp-Baileys] Erro ao solicitar pairing code direto:", err);
+            hasRequestedPairingCode = false; // permite tentar via QR se falhou
+          }
+        }
+      }, 3000);
+    }
+
     sock.ev.on("connection.update", async (update: any) => {
       const { connection, lastDisconnect, qr } = update;
 
       if (qr && formattedPairingNumber && sock && !sock.authState.creds.registered && !hasRequestedPairingCode) {
         hasRequestedPairingCode = true;
         try {
-          const code = await sock.requestPairingCode(formattedPairingNumber);
+          let code = await sock.requestPairingCode(formattedPairingNumber);
+          code = code?.match(/.{1,4}/g)?.join("-") || code;
           await db.insert(configuracoesTable).values({ chave: "whatsapp_pairing_code", valor: code, atualizadoEm: new Date() })
             .onConflictDoUpdate({ target: configuracoesTable.chave, set: { valor: code, atualizadoEm: new Date() } });
           

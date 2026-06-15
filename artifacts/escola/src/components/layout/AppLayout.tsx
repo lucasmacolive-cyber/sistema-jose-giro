@@ -254,15 +254,35 @@ function NotifPanel({ onClose }: { onClose: () => void }) {
 }
 
 /* ─── Status da Impressora ────────────────────────────────────────────────── */
+type PrinterStatus = "online" | "descanso" | "offline";
+
+function printerStatusStyle(s: PrinterStatus) {
+  if (s === "online")   return { badge: "bg-emerald-500/10 border-emerald-500/20 text-emerald-400", dot: "bg-emerald-400 animate-pulse", label: "Online" };
+  if (s === "descanso") return { badge: "bg-amber-500/10 border-amber-500/20 text-amber-400",     dot: "bg-amber-400 animate-pulse",   label: "Descanso" };
+  return                       { badge: "bg-red-500/10 border-red-500/20 text-red-400",           dot: "bg-red-400",                   label: "Offline" };
+}
+
 function PrinterStatusBadge() {
-  const [status, setStatus] = useState<{ online: boolean; ricohOnline: boolean; epsonOnline: boolean } | null>(null);
+  const [status, setStatus] = useState<{
+    online: boolean;
+    ricohOnline: boolean;
+    epsonOnline: boolean;
+    ricohStatus: PrinterStatus;
+    epsonStatus: PrinterStatus;
+  } | null>(null);
 
   useEffect(() => {
     const check = () => {
       fetch(`${BASE}/api/impressoes/status-agente`, { credentials: "include" })
         .then(r => r.json())
-        .then(d => setStatus(d))
-        .catch(() => setStatus({ online: false, ricohOnline: false, epsonOnline: false }));
+        .then(d => setStatus({
+          online: d.online,
+          ricohOnline: d.ricohOnline,
+          epsonOnline: d.epsonOnline,
+          ricohStatus: (d.ricohStatus as PrinterStatus) || (d.ricohOnline ? "online" : "offline"),
+          epsonStatus: (d.epsonStatus as PrinterStatus) || (d.epsonOnline ? "online" : "offline"),
+        }))
+        .catch(() => setStatus({ online: false, ricohOnline: false, epsonOnline: false, ricohStatus: "offline", epsonStatus: "offline" }));
     };
     check();
     const t = setInterval(check, 10000);
@@ -271,34 +291,35 @@ function PrinterStatusBadge() {
 
   if (status === null) return null;
 
+  const ricohSt = printerStatusStyle(status.ricohStatus);
+  const epsonSt = printerStatusStyle(status.epsonStatus);
+  const ricohTitle = status.ricohStatus === "online" ? "RICOH Online – Pronta para imprimir" : status.ricohStatus === "descanso" ? "RICOH em Modo de Espera – Será acordada ao enviar documento" : "RICOH Offline – Sem resposta de ping";
+  const epsonTitle = status.epsonStatus === "online" ? "EPSON Online – Pronta para imprimir" : status.epsonStatus === "descanso" ? "EPSON em Modo de Espera – Será acordada ao enviar documento" : "EPSON Offline – Sem resposta de ping";
+
   return (
     <div className="flex flex-col sm:flex-row items-center gap-1.5">
       {/* RICOH Badge */}
       <div
-        title={status.ricohOnline ? "Impressora RICOH Online" : "Impressora RICOH Offline (Sem resposta de ping)"}
+        title={ricohTitle}
         className={cn(
           "flex items-center gap-1 px-1.5 md:px-2 py-0.5 md:py-1 rounded-full border text-[8px] md:text-[9px] font-bold uppercase tracking-wider transition-colors cursor-help shrink-0",
-          status.ricohOnline
-            ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
-            : "bg-red-500/10 border-red-500/20 text-red-400"
+          ricohSt.badge
         )}
       >
-        <div className={cn("w-1 h-1 rounded-full", status.ricohOnline ? "bg-emerald-400 animate-pulse" : "bg-red-400")} />
-        <span>RICOH</span>
+        <div className={cn("w-1 h-1 rounded-full", ricohSt.dot)} />
+        <span>RICOH · {ricohSt.label}</span>
       </div>
 
       {/* EPSON Badge */}
       <div
-        title={status.epsonOnline ? "Impressora EPSON Online" : "Impressora EPSON Offline (Sem resposta de ping)"}
+        title={epsonTitle}
         className={cn(
           "flex items-center gap-1 px-1.5 md:px-2 py-0.5 md:py-1 rounded-full border text-[8px] md:text-[9px] font-bold uppercase tracking-wider transition-colors cursor-help shrink-0",
-          status.epsonOnline
-            ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
-            : "bg-red-500/10 border-red-500/20 text-red-400"
+          epsonSt.badge
         )}
       >
-        <div className={cn("w-1 h-1 rounded-full", status.epsonOnline ? "bg-emerald-400 animate-pulse" : "bg-red-400")} />
-        <span>EPSON</span>
+        <div className={cn("w-1 h-1 rounded-full", epsonSt.dot)} />
+        <span>EPSON · {epsonSt.label}</span>
       </div>
     </div>
   );

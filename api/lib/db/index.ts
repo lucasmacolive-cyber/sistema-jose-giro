@@ -22,6 +22,10 @@ export const pool = new Pool({
   ssl: { rejectUnauthorized: false } // Necessário para Neon
 });
 
+pool.on("error", (err) => {
+  console.error("Unexpected error on idle pg client in pool:", err);
+});
+
 export const db = drizzle(pool, { schema });
 
 export * from "./schema/index.js";

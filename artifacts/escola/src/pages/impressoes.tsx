@@ -456,8 +456,10 @@ export default function ImpressoesPage() {
 
   // Controle de auto-impressão
   const [agenteOnline, setAgenteOnline] = useState(false);
-  const [ricohOnline, setRicohOnline] = useState(false);
-  const [epsonOnline, setEpsonOnline] = useState(false);
+  const [ricohStatus, setRicohStatus] = useState<"online"|"descanso"|"offline">("offline");
+  const [epsonStatus, setEpsonStatus] = useState<"online"|"descanso"|"offline">("offline");
+  const ricohOnline = ricohStatus !== "offline";
+  const epsonOnline = epsonStatus !== "offline";
   const knownIds            = useRef<Set<number>>(new Set());
   const printedIds          = useRef<Set<number>>(new Set());
   const isFirstPoll         = useRef(true);
@@ -649,13 +651,13 @@ export default function ImpressoesPage() {
         if (res.ok) {
           const data = await res.json();
           setAgenteOnline(data.online);
-          setRicohOnline(data.ricohOnline || false);
-          setEpsonOnline(data.epsonOnline || false);
+          setRicohStatus((data.ricohStatus as any) || (data.ricohOnline ? "online" : "offline"));
+          setEpsonStatus((data.epsonStatus as any) || (data.epsonOnline ? "online" : "offline"));
         }
       } catch { 
         setAgenteOnline(false); 
-        setRicohOnline(false); 
-        setEpsonOnline(false); 
+        setRicohStatus("offline"); 
+        setEpsonStatus("offline"); 
       }
     }
 
@@ -826,16 +828,30 @@ export default function ImpressoesPage() {
                 </span>
               </div>
               <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/30 border border-white/5 text-[10px] font-medium uppercase tracking-wider">
-                <span className={`h-2 w-2 rounded-full ${ricohOnline ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)] animate-pulse" : "bg-red-500"}`} />
-                <span className={ricohOnline ? "text-emerald-400/80" : "text-red-400/80"}>
-                  RICOH {ricohOnline ? "Online" : "Offline"}
+                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/30 border border-white/5 text-[10px] font-medium uppercase tracking-wider">
+                <span className={`h-2 w-2 rounded-full ${
+                  ricohStatus === "online" ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)] animate-pulse" :
+                  ricohStatus === "descanso" ? "bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.5)] animate-pulse" : "bg-red-500"
+                }`} />
+                <span className={ricohStatus === "online" ? "text-emerald-400/80" : ricohStatus === "descanso" ? "text-amber-400/80" : "text-red-400/80"}>
+                  RICOH {
+                    ricohStatus === "online" ? "Online" :
+                    ricohStatus === "descanso" ? "Em Espera" : "Offline"
+                  }
                 </span>
               </div>
               <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/30 border border-white/5 text-[10px] font-medium uppercase tracking-wider">
-                <span className={`h-2 w-2 rounded-full ${epsonOnline ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)] animate-pulse" : "bg-red-500"}`} />
-                <span className={epsonOnline ? "text-emerald-400/80" : "text-red-400/80"}>
-                  EPSON {epsonOnline ? "Online" : "Offline"}
+                <span className={`h-2 w-2 rounded-full ${
+                  epsonStatus === "online" ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)] animate-pulse" :
+                  epsonStatus === "descanso" ? "bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.5)] animate-pulse" : "bg-red-500"
+                }`} />
+                <span className={epsonStatus === "online" ? "text-emerald-400/80" : epsonStatus === "descanso" ? "text-amber-400/80" : "text-red-400/80"}>
+                  EPSON {
+                    epsonStatus === "online" ? "Online" :
+                    epsonStatus === "descanso" ? "Em Espera" : "Offline"
+                  }
                 </span>
+              </div>
               </div>
               {pendentes > 0 && (
                 <span className="text-base font-normal bg-orange-500/20 text-orange-300 border border-orange-500/30 rounded-full px-3 py-0.5">
