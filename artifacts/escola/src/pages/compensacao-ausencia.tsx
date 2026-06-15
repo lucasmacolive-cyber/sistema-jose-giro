@@ -1,10 +1,15 @@
 // @ts-nocheck
 import { useEffect, useState } from "react";
-import { ArrowLeft, Printer } from "lucide-react";
+import { ArrowLeft, Printer, Send, Mail } from "lucide-react";
 import { CabecalhoTimbrado } from "@/components/CabecalhoTimbrado";
+import { WhatsAppSendModal } from "@/components/WhatsAppSendModal";
+import { EmailSendModal } from "@/components/EmailSendModal";
+import html2pdf from "html2pdf.js";
 
 export default function CompensacaoAusenciaPage() {
   const [params, setParams] = useState<Record<string, string>>({});
+  const [showWhatsAppModal, setShowWhatsAppModal] = useState(false);
+  const [showEmailModal, setShowEmailModal] = useState(false);
 
   useEffect(() => {
     const searchParams = new URLSearchParams(window.location.search);
@@ -16,7 +21,7 @@ export default function CompensacaoAusenciaPage() {
 
     const aluno = searchParams.get("aluno") || "__________________________________________________________";
     const turma = searchParams.get("turma") || "________";
-    const escola = searchParams.get("escola") || "Escola Municipal José Giró Faísca";
+    const school = searchParams.get("escola") || "Escola Municipal José Giró Faísca";
     const professor = searchParams.get("professor") || "________________________________________________________";
     const datasRaw = searchParams.get("datas") || "";
     
@@ -41,7 +46,7 @@ export default function CompensacaoAusenciaPage() {
     setParams({
       aluno,
       turma,
-      escola,
+      escola: school,
       professor,
       datas: datasFormated,
       dia,
@@ -58,6 +63,71 @@ export default function CompensacaoAusenciaPage() {
     window.history.back();
   }
 
+  async function handleSendWhatsApp(numero: string, mensagem: string) {
+    try {
+      const element = document.getElementById("documento-compensacao");
+      if (!element) throw new Error("Elemento do documento não encontrado");
+      
+      const filename = `Compensacao_Ausencia_${(params.aluno || "Aluno").split(" ")[0]}.pdf`;
+      const opt = {
+        margin:       10,
+        filename:     filename,
+        image:        { type: 'jpeg', quality: 0.98 },
+        html2canvas:  { scale: 2 },
+        jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+      };
+
+      const pdfBlob = await html2pdf().set(opt).from(element).outputPdf('blob');
+      const file = new File([pdfBlob], filename, { type: "application/pdf" });
+
+      const form = new FormData();
+      form.append("numero", numero);
+      form.append("mensagem", mensagem);
+      form.append("arquivo", file);
+
+      const BASE = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "") + "/";
+      const sendResp = await fetch(`${BASE}api/whatsapp/send-document`, { method: "POST", body: form });
+      const data = await sendResp.json();
+      if (!sendResp.ok) throw new Error(data.error || "Erro ao enviar via WhatsApp");
+    } catch (err: any) {
+      console.error(err);
+      throw err;
+    }
+  }
+
+  async function handleSendEmail(destinatario: string, assunto: string, corpo: string) {
+    try {
+      const element = document.getElementById("documento-compensacao");
+      if (!element) throw new Error("Elemento do documento não encontrado");
+      
+      const filename = `Compensacao_Ausencia_${(params.aluno || "Aluno").split(" ")[0]}.pdf`;
+      const opt = {
+        margin:       10,
+        filename:     filename,
+        image:        { type: 'jpeg', quality: 0.98 },
+        html2canvas:  { scale: 2 },
+        jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+      };
+
+      const pdfBlob = await html2pdf().set(opt).from(element).outputPdf('blob');
+      const file = new File([pdfBlob], filename, { type: "application/pdf" });
+
+      const form = new FormData();
+      form.append("destinatario", destinatario);
+      form.append("assunto", assunto);
+      form.append("corpo", corpo);
+      form.append("arquivo", file);
+
+      const BASE = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "") + "/";
+      const sendResp = await fetch(`${BASE}api/escola/send-email-document`, { method: "POST", body: form });
+      const data = await sendResp.json();
+      if (!sendResp.ok) throw new Error(data.erro || "Erro ao enviar e-mail");
+    } catch (err: any) {
+      console.error(err);
+      throw err;
+    }
+  }
+
   return (
     <div className="min-h-screen bg-[#0f172a] text-slate-100 flex flex-col items-center p-4 sm:p-8 print:p-0 print:bg-white print:text-black">
       {/* Barra de Ações - Invisível na Impressão */}
@@ -67,19 +137,35 @@ export default function CompensacaoAusenciaPage() {
           className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold bg-white/5 hover:bg-white/10 border border-white/10 text-white transition-all active:scale-95"
         >
           <ArrowLeft className="w-4 h-4" />
-          Voltar para o Diário
+          Voltar
         </button>
-        <button
-          onClick={handlePrint}
-          className="flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-bold bg-amber-600 hover:bg-amber-500 hover:scale-105 text-white transition-all shadow-lg shadow-amber-950/40 active:scale-95 animate-pulse hover:animate-none"
-        >
-          <Printer className="w-4 h-4" />
-          Imprimir Compensação
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={handlePrint}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold bg-amber-600 hover:bg-amber-500 text-white transition-all active:scale-95"
+          >
+            <Printer className="w-4 h-4" />
+            Imprimir
+          </button>
+          <button
+            onClick={() => setShowWhatsAppModal(true)}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold bg-emerald-600 hover:bg-emerald-500 text-white transition-all active:scale-95"
+          >
+            <Send className="w-4 h-4" />
+            WhatsApp
+          </button>
+          <button
+            onClick={() => setShowEmailModal(true)}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold bg-orange-600 hover:bg-orange-500 text-white transition-all active:scale-95"
+          >
+            <Mail className="w-4 h-4" />
+            E-mail
+          </button>
+        </div>
       </div>
 
       {/* Folha do Documento - Tamanho A4 proporcional na tela e exato na impressão */}
-      <div className="w-full max-w-[800px] bg-white text-black p-12 sm:p-16 rounded-2xl shadow-2xl flex flex-col justify-between font-sans aspect-[1/1.414] border border-slate-200 print:border-none print:shadow-none print:rounded-none print:p-0 print:m-0 print:w-full print:max-w-none print:aspect-auto">
+      <div id="documento-compensacao" className="w-full max-w-[800px] bg-white text-black p-12 sm:p-16 rounded-2xl shadow-2xl flex flex-col justify-between font-sans aspect-[1/1.414] border border-slate-200 print:border-none print:shadow-none print:rounded-none print:p-0 print:m-0 print:w-full print:max-w-none print:aspect-auto">
         
         {/* Cabeçalho */}
         <div className="w-full">
@@ -165,6 +251,20 @@ export default function CompensacaoAusenciaPage() {
           }
         }
       `}</style>
+
+      <WhatsAppSendModal 
+        open={showWhatsAppModal} 
+        onOpenChange={setShowWhatsAppModal} 
+        onSend={handleSendWhatsApp} 
+        title="Enviar Compensação de Ausência via WhatsApp"
+      />
+      <EmailSendModal
+        open={showEmailModal}
+        onOpenChange={setShowEmailModal}
+        onSend={handleSendEmail}
+        title="Enviar Compensação de Ausência por E-mail"
+        defaultSubject={`Compensação de Ausência - ${params.aluno}`}
+      />
     </div>
   );
 }

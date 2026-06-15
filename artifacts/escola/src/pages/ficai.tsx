@@ -1,9 +1,12 @@
 // @ts-nocheck
 import { useEffect, useState } from "react";
-import { ArrowLeft, Printer, Loader2, Check } from "lucide-react";
+import { ArrowLeft, Printer, Loader2, Check, Send, Mail } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "@/hooks/use-toast";
 import { CabecalhoTimbrado } from "@/components/CabecalhoTimbrado";
+import { WhatsAppSendModal } from "@/components/WhatsAppSendModal";
+import { EmailSendModal } from "@/components/EmailSendModal";
+import html2pdf from "html2pdf.js";
 
 const BASE = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "") + "/";
 
@@ -61,6 +64,8 @@ export default function FicaiPage() {
     ano: ""
   });
   const [imprimindoRicoh, setImprimindoRicoh] = useState(false);
+  const [showWhatsAppModal, setShowWhatsAppModal] = useState(false);
+  const [showEmailModal, setShowEmailModal] = useState(false);
 
   useEffect(() => {
     const searchParams = new URLSearchParams(window.location.search);
@@ -101,6 +106,115 @@ export default function FicaiPage() {
 
   function handleBack() {
     window.history.back();
+  }
+
+  function obterDocumentoHtml() {
+    const htmlContent = document.getElementById("ficai-print-content")?.innerHTML || "";
+    if (!htmlContent) throw new Error("Conteúdo de impressão não encontrado");
+
+    return `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <title>FICAI - E.M. José Giró Faísca</title>
+        <style>
+          body { font-family: Arial, Helvetica, sans-serif; margin: 0; padding: 0; color: #000; background: #fff; }
+          .ficai-page { page-break-after: always; box-sizing: border-box; padding: 1.5cm; width: 100%; min-height: 29.7cm; font-family: Arial, Helvetica, sans-serif; }
+          .ficai-page:last-child { page-break-after: avoid; }
+          .text-center { text-align: center; }
+          .font-bold { font-weight: bold; }
+          .uppercase { text-transform: uppercase; }
+          .underline { text-decoration: underline; }
+          .border { border: 1px solid #000; }
+          .border-t { border-top: 1px solid #000; }
+          .border-b { border-bottom: 1px solid #000; }
+          .p-2 { padding: 8px; }
+          .mb-4 { margin-bottom: 16px; }
+          .mt-4 { margin-top: 16px; }
+          .w-full { width: 100%; }
+          .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+          .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+          .flex-col { display: flex; flex-direction: column; }
+          .justify-between { justify-content: space-between; }
+          table.motivos-table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 8.5pt; }
+          table.motivos-table td { border: 1px solid #000; padding: 5px; vertical-align: top; }
+          .checkbox-box { width: 12px; height: 12px; border: 1px solid #000; display: inline-block; text-align: center; line-height: 10px; font-size: 8pt; font-weight: bold; }
+          .line-row { border-bottom: 1px solid #ccc; height: 28px; width: 100%; margin-top: 4px; }
+        </style>
+      </head>
+      <body>
+        ${htmlContent}
+      </body>
+      </html>
+    `;
+  }
+
+  async function handleSendWhatsApp(numero: string, mensagem: string) {
+    if (!alunos || alunos.length === 0) return;
+    try {
+      const htmlDoc = obterDocumentoHtml();
+      const container = document.createElement("div");
+      container.innerHTML = htmlDoc;
+
+      const filename = `FICAI_${alunos.map(a => a.nomeCompleto.split(" ")[0]).join("_")}.pdf`;
+      const opt = {
+        margin:       10,
+        filename:     filename,
+        image:        { type: 'jpeg', quality: 0.98 },
+        html2canvas:  { scale: 2 },
+        jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+      };
+
+      const pdfBlob = await html2pdf().set(opt).from(container).outputPdf('blob');
+      const file = new File([pdfBlob], filename, { type: "application/pdf" });
+
+      const form = new FormData();
+      form.append("numero", numero);
+      form.append("mensagem", mensagem);
+      form.append("arquivo", file);
+
+      const sendResp = await fetch(`${BASE}api/whatsapp/send-document`, { method: "POST", body: form });
+      const data = await sendResp.json();
+      if (!sendResp.ok) throw new Error(data.error || "Erro ao enviar via WhatsApp");
+    } catch (err: any) {
+      console.error(err);
+      throw err;
+    }
+  }
+
+  async function handleSendEmail(destinatario: string, assunto: string, corpo: string) {
+    if (!alunos || alunos.length === 0) return;
+    try {
+      const htmlDoc = obterDocumentoHtml();
+      const container = document.createElement("div");
+      container.innerHTML = htmlDoc;
+
+      const filename = `FICAI_${alunos.map(a => a.nomeCompleto.split(" ")[0]).join("_")}.pdf`;
+      const opt = {
+        margin:       10,
+        filename:     filename,
+        image:        { type: 'jpeg', quality: 0.98 },
+        html2canvas:  { scale: 2 },
+        jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+      };
+
+      const pdfBlob = await html2pdf().set(opt).from(container).outputPdf('blob');
+      const file = new File([pdfBlob], filename, { type: "application/pdf" });
+
+      const form = new FormData();
+      form.append("destinatario", destinatario);
+      form.append("assunto", assunto);
+      form.append("corpo", corpo);
+      form.append("arquivo", file);
+
+      const sendResp = await fetch(`${BASE}api/escola/send-email-document`, { method: "POST", body: form });
+      const data = await sendResp.json();
+      if (!sendResp.ok) throw new Error(data.erro || "Erro ao enviar e-mail");
+    } catch (err: any) {
+      console.error(err);
+      throw err;
+    }
   }
 
   async function handlePrintRicoh() {
@@ -232,6 +346,20 @@ export default function FicaiPage() {
           >
             <Printer className="w-4 h-4" />
             Imprimir local
+          </button>
+          <button
+            onClick={() => setShowWhatsAppModal(true)}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold bg-emerald-600 hover:bg-emerald-500 text-white transition-all active:scale-95 shrink-0"
+          >
+            <Send className="w-4 h-4" />
+            WhatsApp
+          </button>
+          <button
+            onClick={() => setShowEmailModal(true)}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold bg-orange-600 hover:bg-orange-500 text-white transition-all active:scale-95 shrink-0"
+          >
+            <Mail className="w-4 h-4" />
+            E-mail
           </button>
         </div>
       </div>
@@ -536,6 +664,19 @@ export default function FicaiPage() {
           }
         }
       `}</style>
+      <WhatsAppSendModal 
+        open={showWhatsAppModal} 
+        onOpenChange={setShowWhatsAppModal} 
+        onSend={handleSendWhatsApp} 
+        title="Enviar Ficha FICAI via WhatsApp"
+      />
+      <EmailSendModal
+        open={showEmailModal}
+        onOpenChange={setShowEmailModal}
+        onSend={handleSendEmail}
+        title="Enviar Ficha FICAI por E-mail"
+        defaultSubject={`Ficha FICAI - ${alunos?.map(a => a.nomeCompleto.split(" ")[0]).join(", ")}`}
+      />
     </div>
   );
 }

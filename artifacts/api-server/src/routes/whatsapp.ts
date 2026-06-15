@@ -77,10 +77,24 @@ router.post("/whatsapp/send-document", upload.single("arquivo"), async (req, res
   }
 
   try {
-    // Para simplificar, vou manter apenas o send message regular, 
-    // ou poderiamos implementar envio de arquivo no Baileys.
-    res.status(501).json({ error: "Envio de documento pendente de conversão para Baileys" });
+    const fileBase64 = arquivo.buffer.toString("base64");
+    const filename = arquivo.originalname || "documento.pdf";
+    const mimetype = arquivo.mimetype || "application/pdf";
+
+    await db.insert(filaWhatsappTable).values({
+      numero: numero,
+      mensagem: mensagem || "",
+      arquivoBase64: fileBase64,
+      mimetype: mimetype,
+      nomeArquivo: filename,
+      status: "Pendente",
+      criadoEm: new Date(),
+      atualizadoEm: new Date()
+    });
+
+    res.json({ success: true });
   } catch (err: any) {
+    console.error("Erro ao enfileirar documento WhatsApp:", err);
     res.status(500).json({ error: err.message });
   }
 });

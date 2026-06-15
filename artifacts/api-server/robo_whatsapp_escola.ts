@@ -76,7 +76,7 @@ async function loop() {
         console.log("Enviando mensagem para", msg.numero);
         try {
           const { sendWhatsAppMessage } = await import('./src/lib/whatsapp-baileys.js');
-          await sendWhatsAppMessage(msg.numero, msg.mensagem);
+          await sendWhatsAppMessage(msg.numero, msg.mensagem, msg.arquivoBase64, msg.mimetype, msg.nomeArquivo);
           await db.update(filaWhatsappTable).set({ status: 'Enviado', atualizadoEm: new Date() }).where(eq(filaWhatsappTable.id, msg.id));
         } catch(err) {
           console.error("Erro ao enviar msg:", err);

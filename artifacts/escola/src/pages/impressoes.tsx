@@ -456,6 +456,8 @@ export default function ImpressoesPage() {
 
   // Controle de auto-impressão
   const [agenteOnline, setAgenteOnline] = useState(false);
+  const [ricohOnline, setRicohOnline] = useState(false);
+  const [epsonOnline, setEpsonOnline] = useState(false);
   const knownIds            = useRef<Set<number>>(new Set());
   const printedIds          = useRef<Set<number>>(new Set());
   const isFirstPoll         = useRef(true);
@@ -647,8 +649,14 @@ export default function ImpressoesPage() {
         if (res.ok) {
           const data = await res.json();
           setAgenteOnline(data.online);
+          setRicohOnline(data.ricohOnline || false);
+          setEpsonOnline(data.epsonOnline || false);
         }
-      } catch { setAgenteOnline(false); }
+      } catch { 
+        setAgenteOnline(false); 
+        setRicohOnline(false); 
+        setEpsonOnline(false); 
+      }
     }
 
     poll();
@@ -809,12 +817,24 @@ export default function ImpressoesPage() {
         {/* ── Cabeçalho ── */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
           <div>
-            <h1 className="text-3xl font-display font-bold flex items-center gap-3">
+            <h1 className="text-3xl font-display font-bold flex flex-wrap items-center gap-3">
               Fila de Impressão
               <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/30 border border-white/5 text-[10px] font-medium uppercase tracking-wider">
                 <span className={`h-2 w-2 rounded-full ${agenteOnline ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)] animate-pulse" : "bg-red-500"}`} />
                 <span className={agenteOnline ? "text-emerald-400/80" : "text-red-400/80"}>
                   Robô {agenteOnline ? "Online" : "Offline"}
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/30 border border-white/5 text-[10px] font-medium uppercase tracking-wider">
+                <span className={`h-2 w-2 rounded-full ${ricohOnline ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)] animate-pulse" : "bg-red-500"}`} />
+                <span className={ricohOnline ? "text-emerald-400/80" : "text-red-400/80"}>
+                  RICOH {ricohOnline ? "Online" : "Offline"}
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/30 border border-white/5 text-[10px] font-medium uppercase tracking-wider">
+                <span className={`h-2 w-2 rounded-full ${epsonOnline ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)] animate-pulse" : "bg-red-500"}`} />
+                <span className={epsonOnline ? "text-emerald-400/80" : "text-red-400/80"}>
+                  EPSON {epsonOnline ? "Online" : "Offline"}
                 </span>
               </div>
               {pendentes > 0 && (

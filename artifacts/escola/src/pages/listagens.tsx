@@ -3,12 +3,14 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { useGetMe, useListarTurmas } from "@workspace/api-client-react";
-import { Loader2, FileSpreadsheet, LayoutList, Rows3, Download, UserCircle, Users, Printer } from "lucide-react";
+import { Loader2, FileSpreadsheet, LayoutList, Rows3, Download, UserCircle, Users, Printer, Send, Mail } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import * as XLSX from "xlsx";
 import { CABECALHO_CSS, obterCabecalhoHTML } from "@/components/CabecalhoTimbrado";
+import { WhatsAppSendModal } from "@/components/WhatsAppSendModal";
+import { EmailSendModal } from "@/components/EmailSendModal";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
@@ -303,6 +305,9 @@ export default function ListagensPage() {
   const [baixando,  setBaixando]  = useState(false);
   const [exportando, setExportando] = useState(false);
   const [imprimindoRicoh, setImprimindoRicoh] = useState(false);
+  const [showWhatsAppModal, setShowWhatsAppModal] = useState(false);
+  const [showEmailModal, setShowEmailModal] = useState(false);
+  const [modalType, setModalType] = useState<"alunos" | "professores" | "funcionarios">("alunos");
 
   const turmaObj = turmas?.find((t) => t.nomeTurma === turmaSelecionada);
   const qtdMarcadas = Object.values(colunasMarcadas).filter(Boolean).length;
@@ -488,6 +493,205 @@ export default function ListagensPage() {
     } finally {
       setGerando(false);
     }
+  }
+
+  async function gerarPdfAlunosBlob() {
+    const data = await fetchData();
+    if (!data) return null;
+
+    const hoje    = new Date().toLocaleDateString("pt-BR");
+    const orient  = orientacao === "paisagem" ? "landscape" : "portrait";
+    const doc     = new jsPDF({ orientation: orient, unit: "mm", format: "a4" });
+    const pageW   = doc.internal.pageSize.getWidth();
+    const margin  = 12;
+
+    const cabecalhoFonte = (nome: string, prof: string) => {
+      doc.setFontSize(7);
+      doc.setFont("helvetica", "bold");
+      doc.text("PREFEITURA DO MUNICÍPIO DE CAMPOS DOS GOYTACAZES", margin, 10);
+      doc.text("SECRETARIA MUNICIPAL DE EDUCAÇÃO, CIÊNCIA E TECNOLOGIA", margin, 14);
+      doc.text("E. M. JOSÉ GIRÓ FAÍSCA", margin, 18);
+      const infos: string[] = [];
+      if (showProfessor && !isTransferidos && prof) infos.push(`PROFESSOR(A): ${prof}`);
+      if (showTurma && !isTransferidos) infos.push(`TURMA: ${nome}`);
+      infos.push(`EMISSÃO: ${hoje}`);
+      doc.setFont("helvetica", "normal");
+      doc.text(infos.join("     "), margin, 22);
+      doc.setDrawColor(0);
+      doc.setLineWidth(0.4);
+      doc.line(margin, 24, pageW - margin, 24);
+    };
+
+    const colLabels = ["Nº", "Nome do Aluno", ...data.colunas.map((c) => c.label)];
+
+    data.blocos.forEach((bloco, idx) => {
+      if (idx > 0) doc.addPage();
+      cabecalhoFonte(bloco.nomeTurma, bloco.professorResponsavel);
+
+      const body = bloco.alunos.map((a, i) => [
+        String(i + 1),
+        a.nomeCompleto || "",
+        ...data.colunas.map((c) => {
+          if (c.ref === "_assinatura") return "_________________________";
+          return (a as any)[c.ref] || "";
+        }),
+      ]);
+
+      autoTable(doc, {
+        head:       [colLabels],
+        body,
+        startY:     27,
+        margin:     { left: margin, right: margin },
+        styles:     { fontSize: 8, cellPadding: 2 },
+        headStyles: { fillColor: [230, 230, 230], textColor: 0, fontStyle: "bold", fontSize: 7.5 },
+        alternateRowStyles: { fillColor: [248, 248, 248] },
+        tableLineColor: 0,
+        tableLineWidth: 0.1,
+      });
+    });
+
+    const hoje2 = new Date().toLocaleDateString("pt-BR").replace(/\//g, "-");
+    const filename = `Listagem_${data.titulo}_${hoje2}.pdf`;
+    const pdfBlob = doc.output('blob');
+    const file = new File([pdfBlob], filename, { type: "application/pdf" });
+    return { file, filename };
+  }
+
+  function gerarPdfProfessoresBlob() {
+    if (professores.length === 0) return null;
+    const hoje   = new Date().toLocaleDateString("pt-BR");
+    const orient = orientProf === "paisagem" ? "landscape" : "portrait";
+    const doc    = new jsPDF({ orientation: orient, unit: "mm", format: "a4" });
+    const pw     = doc.internal.pageSize.getWidth();
+    const mg     = 12;
+    const cols   = COLUNAS_PROF.filter(c => colProf[c.ref]);
+
+    doc.setFontSize(7); doc.setFont("helvetica", "bold");
+    doc.text("PREFEITURA DO MUNICÍPIO DE CAMPOS DOS GOYTACAZES", mg, 10);
+    doc.text("SECRETARIA MUNICIPAL DE EDUCAÇÃO, CIÊNCIA E TECNOLOGIA", mg, 14);
+    doc.text("E. M. JOSÉ GIRÓ FAÍSCA", mg, 18);
+    doc.setFont("helvetica", "normal");
+    doc.text(`LISTAGEM DE PROFESSORES · ${professores.length} registro(s) · EMISSÃO: ${hoje}`, mg, 22);
+    doc.setDrawColor(0); doc.setLineWidth(0.4); doc.line(mg, 24, pw - mg, 24);
+
+    autoTable(doc, {
+      head: [["Nº", "Nome do Professor", ...cols.map(c => c.label)]],
+      body: profesores.map((p: any, i) => [
+        String(i + 1),
+        p.nome || "",
+        ...cols.map(c => c.ref === "_assinatura" ? "_________________________" : (p[c.ref] || "")),
+      ]),
+      startY: 27,
+      margin: { left: mg, right: mg },
+      styles: { fontSize: 8, cellPadding: 2 },
+      headStyles: { fillColor: [124, 58, 237], textColor: 255, fontStyle: "bold", fontSize: 7.5 },
+      alternateRowStyles: { fillColor: [248, 245, 255] },
+      columnStyles: { 0: { cellWidth: 10, halign: "center" } },
+      tableLineColor: 0, tableLineWidth: 0.1,
+    });
+
+    const dataStr = new Date().toLocaleDateString("pt-BR").replace(/\//g, "-");
+    const filename = `Listagem_Professores_${dataStr}.pdf`;
+    const pdfBlob = doc.output('blob');
+    const file = new File([pdfBlob], filename, { type: "application/pdf" });
+    return { file, filename };
+  }
+
+  function gerarPdfFuncionariosBlob() {
+    if (funcionarios.length === 0) return null;
+    const hoje   = new Date().toLocaleDateString("pt-BR");
+    const orient = orientFunc === "paisagem" ? "landscape" : "portrait";
+    const doc    = new jsPDF({ orientation: orient, unit: "mm", format: "a4" });
+    const pw     = doc.internal.pageSize.getWidth();
+    const mg     = 12;
+    const cols   = COLUNAS_FUNC.filter(c => colFunc[c.ref]);
+
+    doc.setFontSize(7); doc.setFont("helvetica", "bold");
+    doc.text("PREFEITURA DO MUNICÍPIO DE CAMPOS DOS GOYTACAZES", mg, 10);
+    doc.text("SECRETARIA MUNICIPAL DE EDUCAÇÃO, CIÊNCIA E TECNOLOGIA", mg, 14);
+    doc.text("E. M. JOSÉ GIRÓ FAÍSCA", mg, 18);
+    doc.setFont("helvetica", "normal");
+    doc.text(`LISTAGEM DE FUNCIONÁRIOS · ${funcionarios.length} registro(s) · EMISSÃO: ${hoje}`, mg, 22);
+    doc.setDrawColor(0); doc.setLineWidth(0.4); doc.line(mg, 24, pw - mg, 24);
+
+    autoTable(doc, {
+      head: [["Nº", "Nome do Funcionário", ...cols.map(c => c.label)]],
+      body: (funcionarios as any[]).map((f, i) => [
+        String(i + 1),
+        f.nomeCompleto || "",
+        ...cols.map(c => c.ref === "_assinatura" ? "_________________________" : (f[c.ref] || "")),
+      ]),
+      startY: 27,
+      margin: { left: mg, right: mg },
+      styles: { fontSize: 8, cellPadding: 2 },
+      headStyles: { fillColor: [5, 150, 105], textColor: 255, fontStyle: "bold", fontSize: 7.5 },
+      alternateRowStyles: { fillColor: [240, 253, 249] },
+      columnStyles: { 0: { cellWidth: 10, halign: "center" } },
+      tableLineColor: 0, tableLineWidth: 0.1,
+    });
+
+    const dataStr = new Date().toLocaleDateString("pt-BR").replace(/\//g, "-");
+    const filename = `Listagem_Funcionarios_${dataStr}.pdf`;
+    const pdfBlob = doc.output('blob');
+    const file = new File([pdfBlob], filename, { type: "application/pdf" });
+    return { file, filename };
+  }
+
+  async function handleSendWhatsAppListagem(numero: string, mensagem: string) {
+    let result = null;
+    if (modalType === "alunos") {
+      result = await gerarPdfAlunosBlob();
+    } else if (modalType === "professores") {
+      result = gerarPdfProfessoresBlob();
+    } else if (modalType === "funcionarios") {
+      result = gerarPdfFuncionariosBlob();
+    }
+
+    if (!result) {
+      alert("Erro ao gerar o PDF.");
+      return;
+    }
+
+    const { file, filename } = result;
+
+    const form = new FormData();
+    form.append("numero", numero);
+    form.append("mensagem", mensagem);
+    form.append("arquivo", file);
+
+    const API_BASE = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "") + "/";
+    const sendResp = await fetch(`${API_BASE}api/whatsapp/send-document`, { method: "POST", body: form });
+    const data = await sendResp.json();
+    if (!sendResp.ok) throw new Error(data.error || "Erro ao enviar via WhatsApp");
+  }
+
+  async function handleSendEmailListagem(destinatario: string, assunto: string, corpo: string) {
+    let result = null;
+    if (modalType === "alunos") {
+      result = await gerarPdfAlunosBlob();
+    } else if (modalType === "professores") {
+      result = gerarPdfProfessoresBlob();
+    } else if (modalType === "funcionarios") {
+      result = gerarPdfFuncionariosBlob();
+    }
+
+    if (!result) {
+      alert("Erro ao gerar o PDF.");
+      return;
+    }
+
+    const { file, filename } = result;
+
+    const form = new FormData();
+    form.append("destinatario", destinatario);
+    form.append("assunto", assunto);
+    form.append("corpo", corpo);
+    form.append("arquivo", file);
+
+    const API_BASE = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "") + "/";
+    const sendResp = await fetch(`${API_BASE}api/escola/send-email-document`, { method: "POST", body: form });
+    const data = await sendResp.json();
+    if (!sendResp.ok) throw new Error(data.erro || "Erro ao enviar e-mail");
   }
 
   /* ── Baixar PDF ──────────────────────────────────────────────────── */
@@ -1017,6 +1221,24 @@ export default function ListagensPage() {
             </Button>
 
             <Button
+              onClick={() => { setModalType("alunos"); setShowWhatsAppModal(true); }}
+              disabled={gerando || baixando || exportando || !turmaSelecionada}
+              className="px-6 bg-[#25d366] hover:bg-[#20ba5a] text-white font-bold uppercase tracking-wider text-base rounded-xl shadow-lg transition-all hover:scale-[1.02]"
+              title="Enviar via WhatsApp"
+            >
+              <Send className="h-5 w-5" />
+            </Button>
+
+            <Button
+              onClick={() => { setModalType("alunos"); setShowEmailModal(true); }}
+              disabled={gerando || baixando || exportando || !turmaSelecionada}
+              className="px-6 bg-orange-600 hover:bg-orange-500 text-white font-bold uppercase tracking-wider text-base rounded-xl shadow-lg transition-all hover:scale-[1.02]"
+              title="Enviar por E-mail"
+            >
+              <Mail className="h-5 w-5" />
+            </Button>
+
+            <Button
               onClick={baixarExcel}
               disabled={gerando || baixando || exportando || !turmaSelecionada}
               className="px-6 bg-violet-600 hover:bg-violet-500 text-white font-bold uppercase tracking-wider text-base rounded-xl shadow-lg shadow-violet-500/20 transition-all hover:scale-[1.02]"
@@ -1184,6 +1406,22 @@ export default function ListagensPage() {
               {baixandoProf ? <Loader2 className="h-4 w-4 animate-spin" /> : <span className="flex items-center gap-2"><Download className="h-4 w-4" />PDF</span>}
             </Button>
             <Button
+              onClick={() => { setModalType("professores"); setShowWhatsAppModal(true); }}
+              disabled={gerandoProf || baixandoProf || exportandoProf || professores.length === 0}
+              className="px-6 bg-[#25d366] hover:bg-[#20ba5a] text-white font-bold uppercase tracking-wider text-sm rounded-xl shadow-lg transition-all hover:scale-[1.02]"
+              title="Enviar via WhatsApp"
+            >
+              <Send className="h-4 w-4" />
+            </Button>
+            <Button
+              onClick={() => { setModalType("professores"); setShowEmailModal(true); }}
+              disabled={gerandoProf || baixandoProf || exportandoProf || professores.length === 0}
+              className="px-6 bg-orange-600 hover:bg-orange-500 text-white font-bold uppercase tracking-wider text-sm rounded-xl shadow-lg transition-all hover:scale-[1.02]"
+              title="Enviar por E-mail"
+            >
+              <Mail className="h-4 w-4" />
+            </Button>
+            <Button
               onClick={baixarExcelProfessores}
               disabled={gerandoProf || baixandoProf || exportandoProf || professores.length === 0}
               className="px-6 bg-violet-700 hover:bg-violet-600 text-white font-bold uppercase tracking-wider text-sm rounded-xl shadow-lg shadow-violet-500/20 transition-all hover:scale-[1.02]"
@@ -1295,6 +1533,22 @@ export default function ListagensPage() {
               {baixandoFunc ? <Loader2 className="h-4 w-4 animate-spin" /> : <span className="flex items-center gap-2"><Download className="h-4 w-4" />PDF</span>}
             </Button>
             <Button
+              onClick={() => { setModalType("funcionarios"); setShowWhatsAppModal(true); }}
+              disabled={gerandoFunc || baixandoFunc || exportandoFunc || funcionarios.length === 0}
+              className="px-6 bg-[#25d366] hover:bg-[#20ba5a] text-white font-bold uppercase tracking-wider text-sm rounded-xl shadow-lg transition-all hover:scale-[1.02]"
+              title="Enviar via WhatsApp"
+            >
+              <Send className="h-4 w-4" />
+            </Button>
+            <Button
+              onClick={() => { setModalType("funcionarios"); setShowEmailModal(true); }}
+              disabled={gerandoFunc || baixandoFunc || exportandoFunc || funcionarios.length === 0}
+              className="px-6 bg-orange-600 hover:bg-orange-500 text-white font-bold uppercase tracking-wider text-sm rounded-xl shadow-lg transition-all hover:scale-[1.02]"
+              title="Enviar por E-mail"
+            >
+              <Mail className="h-4 w-4" />
+            </Button>
+            <Button
               onClick={baixarExcelFuncionarios}
               disabled={gerandoFunc || baixandoFunc || exportandoFunc || funcionarios.length === 0}
               className="px-6 bg-teal-600 hover:bg-teal-500 text-white font-bold uppercase tracking-wider text-sm rounded-xl shadow-lg shadow-teal-500/20 transition-all hover:scale-[1.02]"
@@ -1369,6 +1623,19 @@ export default function ListagensPage() {
           </div>
         </div>
 
+        <WhatsAppSendModal 
+          open={showWhatsAppModal} 
+          onOpenChange={setShowWhatsAppModal} 
+          onSend={handleSendWhatsApp} 
+          title={`Enviar Listagem de ${modalType === "alunos" ? "Alunos" : modalType === "professores" ? "Professores" : "Funcionários"} via WhatsApp`}
+        />
+        <EmailSendModal
+          open={showEmailModal}
+          onOpenChange={setShowEmailModal}
+          onSend={handleSendEmail}
+          title={`Enviar Listagem de ${modalType === "alunos" ? "Alunos" : modalType === "professores" ? "Professores" : "Funcionários"} por E-mail`}
+          defaultSubject={`Listagem de ${modalType === "alunos" ? "Alunos" : modalType === "professores" ? "Professores" : "Funcionários"}`}
+        />
       </div>
     </AppLayout>
   );

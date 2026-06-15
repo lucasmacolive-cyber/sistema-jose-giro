@@ -201,13 +201,23 @@ export async function generateWhatsAppPairing(number: string) {
   await connectToWhatsApp(cleanNumber, true);
 }
 
-export async function sendWhatsAppMessage(to: string, message: string) {
+export async function sendWhatsAppMessage(to: string, message: string, fileBase64?: string | null, mimetype?: string | null, filename?: string | null) {
   const socket = await connectToWhatsApp();
   let cleanTo = to;
   if (!cleanTo.includes("@g.us")) {
     cleanTo = formatToWhatsAppJidNumber(cleanTo) + "@s.whatsapp.net";
   }
-  await socket.sendMessage(cleanTo, { text: message });
+  if (fileBase64) {
+    const buffer = Buffer.from(fileBase64, "base64");
+    await socket.sendMessage(cleanTo, {
+      document: buffer,
+      mimetype: mimetype || "application/pdf",
+      fileName: filename || "documento.pdf",
+      caption: message || ""
+    });
+  } else {
+    await socket.sendMessage(cleanTo, { text: message });
+  }
 }
 
 export async function disconnectWhatsApp() {

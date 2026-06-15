@@ -7,9 +7,10 @@ import {
   FileText, Search, Loader2, ChevronRight, ChevronLeft,
   Baby, BookOpen, ClipboardList, Plus, X, Calendar,
   Pencil, Trash2, UserPlus, Check, Users, FileSpreadsheet,
-  Printer, AlertTriangle, ExternalLink, Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight, AlignJustify, Send
+  Printer, AlertTriangle, ExternalLink, Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight, AlignJustify, Send, Mail
 } from "lucide-react";
 import { WhatsAppSendModal } from "@/components/WhatsAppSendModal";
+import { EmailSendModal } from "@/components/EmailSendModal";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -366,7 +367,8 @@ function SecaoDeclaracoes() {
   const { data: me } = useGetMe({ query: { retry: false } } as any);
   const isMaster = me?.perfil === "Master";
   const [imprimindoRicoh, setImprimindoRicoh] = useState(false);
-
+  const [showWhatsAppModal, setShowWhatsAppModal] = useState(false);
+  const [showEmailModal, setShowEmailModal] = useState(false);
   const [busca, setBusca]           = useState("");
   const [alunoSel, setAlunoSel]     = useState<any>(null);
   const [showSug, setShowSug]       = useState(false);
@@ -551,6 +553,105 @@ function SecaoDeclaracoes() {
       alert("Erro ao tentar imprimir diretamente.");
     } finally {
       setImprimindoRicoh(false);
+    }
+  }
+
+  async function handleSendWhatsApp(numero: string, mensagem: string) {
+    if (!alunoSel || !nivel || !situacao) return;
+    try {
+      const html = gerarHtml({
+        aluno: alunoSel,
+        naturalidade,
+        nivel: nivel as "infantil" | "fundamental",
+        situacao: situacao as "matriculado(a)" | "matriculado e frequentando" | "cursou",
+        objetivo,
+        serieInfantil: nivel === "infantil" ? serieInfantil : undefined,
+        anoLetivo:     nivel === "fundamental" ? anoLetivo : undefined,
+        anoEscolar:    nivel === "fundamental" ? anoEscolarFinal : undefined,
+        resultado:     nivel === "fundamental" ? resultado : undefined,
+        dataTransf:    precisaTransf ? dataTransf : undefined,
+        progressaoComps: precisaProgressao ? progressaoComps : undefined,
+        anoReclassif:  precisaReclass ? anoReclassif : undefined,
+        matriculadoEm: nivel === "fundamental" ? matriculadoEm : undefined,
+      });
+
+      const container = document.createElement("div");
+      container.innerHTML = html;
+
+      const filename = `Declaracao_${alunoSel.nomeCompleto.replace(/\s+/g, "_")}.pdf`;
+      const opt = {
+        margin:       10,
+        filename:     filename,
+        image:        { type: 'jpeg', quality: 0.98 },
+        html2canvas:  { scale: 2 },
+        jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+      };
+
+      const pdfBlob = await html2pdf().set(opt).from(container).outputPdf('blob');
+      const file = new File([pdfBlob], filename, { type: "application/pdf" });
+
+      const form = new FormData();
+      form.append("numero", numero);
+      form.append("mensagem", mensagem);
+      form.append("arquivo", file);
+
+      const BASE = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "") + "/";
+      const sendResp = await fetch(`${BASE}api/whatsapp/send-document`, { method: "POST", body: form });
+      const data = await sendResp.json();
+      if (!sendResp.ok) throw new Error(data.error || "Erro ao enviar via WhatsApp");
+    } catch (err: any) {
+      console.error(err);
+      throw err;
+    }
+  }
+
+  async function handleSendEmail(destinatario: string, assunto: string, corpo: string) {
+    if (!alunoSel || !nivel || !situacao) return;
+    try {
+      const html = gerarHtml({
+        aluno: alunoSel,
+        naturalidade,
+        nivel: nivel as "infantil" | "fundamental",
+        situacao: situacao as "matriculado(a)" | "matriculado e frequentando" | "cursou",
+        objetivo,
+        serieInfantil: nivel === "infantil" ? serieInfantil : undefined,
+        anoLetivo:     nivel === "fundamental" ? anoLetivo : undefined,
+        anoEscolar:    nivel === "fundamental" ? anoEscolarFinal : undefined,
+        resultado:     nivel === "fundamental" ? resultado : undefined,
+        dataTransf:    precisaTransf ? dataTransf : undefined,
+        progressaoComps: precisaProgressao ? progressaoComps : undefined,
+        anoReclassif:  precisaReclass ? anoReclassif : undefined,
+        matriculadoEm: nivel === "fundamental" ? matriculadoEm : undefined,
+      });
+
+      const container = document.createElement("div");
+      container.innerHTML = html;
+
+      const filename = `Declaracao_${alunoSel.nomeCompleto.replace(/\s+/g, "_")}.pdf`;
+      const opt = {
+        margin:       10,
+        filename:     filename,
+        image:        { type: 'jpeg', quality: 0.98 },
+        html2canvas:  { scale: 2 },
+        jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+      };
+
+      const pdfBlob = await html2pdf().set(opt).from(container).outputPdf('blob');
+      const file = new File([pdfBlob], filename, { type: "application/pdf" });
+
+      const form = new FormData();
+      form.append("destinatario", destinatario);
+      form.append("assunto", assunto);
+      form.append("corpo", corpo);
+      form.append("arquivo", file);
+
+      const BASE = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "") + "/";
+      const sendResp = await fetch(`${BASE}api/escola/send-email-document`, { method: "POST", body: form });
+      const data = await sendResp.json();
+      if (!sendResp.ok) throw new Error(data.erro || "Erro ao enviar e-mail");
+    } catch (err: any) {
+      console.error(err);
+      throw err;
     }
   }
 
@@ -823,30 +924,54 @@ function SecaoDeclaracoes() {
 
         {/* Botão Gerar */}
         {alunoSel && (
-          <div className="flex flex-col sm:flex-row gap-3">
-            <Button
-              onClick={gerarDeclaracao}
-              disabled={!podeGerar}
-              className="flex-1 h-14 text-base font-bold bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed rounded-xl transition-all gap-2"
-            >
-              <FileText className="h-5 w-5" />
-              Gerar Declaração
-            </Button>
-
-            {isMaster && (
+          <div className="space-y-3">
+            <div className="flex flex-col sm:flex-row gap-3">
               <Button
-                onClick={imprimirNaRicoh}
-                disabled={!podeGerar || imprimindoRicoh}
-                className="flex-1 h-14 text-base font-bold bg-slate-700 hover:bg-slate-600 text-white rounded-xl transition-all gap-2 border border-white/10 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed"
+                onClick={gerarDeclaracao}
+                disabled={!podeGerar}
+                className="flex-1 h-14 text-base font-bold bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed rounded-xl transition-all gap-2"
               >
-                {imprimindoRicoh ? (
-                  <Loader2 className="h-5 w-5 animate-spin" />
-                ) : (
-                  <Printer className="h-5 w-5" />
-                )}
-                IMPRIMIR NA RICOH
+                <FileText className="h-5 w-5" />
+                Gerar / Abrir PDF
               </Button>
-            )}
+
+              {isMaster && (
+                <Button
+                  onClick={imprimirNaRicoh}
+                  disabled={!podeGerar || imprimindoRicoh}
+                  className="flex-1 h-14 text-base font-bold bg-slate-700 hover:bg-slate-600 text-white rounded-xl transition-all gap-2 border border-white/10 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {imprimindoRicoh ? (
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                  ) : (
+                    <Printer className="h-5 w-5" />
+                  )}
+                  IMPRIMIR NA RICOH
+                </Button>
+              )}
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-3">
+              <Button
+                type="button"
+                onClick={() => setShowWhatsAppModal(true)}
+                disabled={!podeGerar}
+                className="flex-1 h-12 text-sm font-bold bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl transition-all gap-2"
+              >
+                <Send className="h-4 w-4" />
+                WhatsApp
+              </Button>
+
+              <Button
+                type="button"
+                onClick={() => setShowEmailModal(true)}
+                disabled={!podeGerar}
+                className="flex-1 h-12 text-sm font-bold bg-orange-600 hover:bg-orange-500 text-white rounded-xl transition-all gap-2"
+              >
+                <Mail className="h-4 w-4" />
+                E-mail
+              </Button>
+            </div>
           </div>
         )}
 
@@ -867,6 +992,20 @@ function SecaoDeclaracoes() {
           </p>
         )}
       </div>
+
+      <WhatsAppSendModal 
+        open={showWhatsAppModal} 
+        onOpenChange={setShowWhatsAppModal} 
+        onSend={handleSendWhatsApp} 
+        title="Enviar Declaração via WhatsApp"
+      />
+      <EmailSendModal
+        open={showEmailModal}
+        onOpenChange={setShowEmailModal}
+        onSend={handleSendEmail}
+        title="Enviar Declaração por E-mail"
+        defaultSubject={`Declaração de Estudante - ${alunoSel?.nomeCompleto || ""}`}
+      />
     </div>
   );
 }
@@ -1189,6 +1328,8 @@ function SecaoPreDiario() {
   const [erro, setErro]             = useState("");
   const [dadosRevisao, setDadosRevisao] = useState<BlocoRev[] | null>(null);
   const [editandoNome, setEditandoNome] = useState<string | null>(null); // tmpId sendo editado
+  const [showWhatsAppModal, setShowWhatsAppModal] = useState(false);
+  const [showEmailModal, setShowEmailModal] = useState(false);
 
   const [meses, setMeses] = useState<any[]>(() => {
     const m = hoje.getMonth();
@@ -1540,6 +1681,91 @@ function SecaoPreDiario() {
     }
   }
 
+  async function handleSendWhatsAppPreDiario(numero: string, mensagem: string) {
+    if (!dadosRevisao) return;
+    try {
+      const dadosParaGerar = dadosRevisao.map(bloco => ({
+        ...bloco,
+        alunos: bloco.alunos
+          .filter(a => a.ativo)
+          .map((a, i) => ({ n: i + 1, nome: a.nome })),
+      }));
+      const html = gerarHtmlPreDiario(dadosParaGerar);
+      const container = document.createElement("div");
+      container.innerHTML = html;
+
+      const filename = `Pre-Diario.pdf`;
+      const opt = {
+        margin:       10,
+        filename:     filename,
+        image:        { type: 'jpeg', quality: 0.98 },
+        html2canvas:  { scale: 2 },
+        jsPDF:        { unit: 'mm', format: 'a4', orientation: 'landscape' }
+      };
+
+      const pdfBlob = await html2pdf().set(opt).from(container).outputPdf('blob');
+      const file = new File([pdfBlob], filename, { type: "application/pdf" });
+
+      const form = new FormData();
+      form.append("numero", numero);
+      form.append("mensagem", mensagem);
+      form.append("arquivo", file);
+
+      const BASE = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "") + "/";
+      const sendResp = await fetch(`${BASE}api/whatsapp/send-document`, { method: "POST", body: form });
+      const data = await sendResp.json();
+      if (!sendResp.ok) throw new Error(data.error || "Erro ao enviar via WhatsApp");
+      setDadosRevisao(null);
+      setEditandoNome(null);
+    } catch (err: any) {
+      console.error(err);
+      throw err;
+    }
+  }
+
+  async function handleSendEmailPreDiario(destinatario: string, assunto: string, corpo: string) {
+    if (!dadosRevisao) return;
+    try {
+      const dadosParaGerar = dadosRevisao.map(bloco => ({
+        ...bloco,
+        alunos: bloco.alunos
+          .filter(a => a.ativo)
+          .map((a, i) => ({ n: i + 1, nome: a.nome })),
+      }));
+      const html = gerarHtmlPreDiario(dadosParaGerar);
+      const container = document.createElement("div");
+      container.innerHTML = html;
+
+      const filename = `Pre-Diario.pdf`;
+      const opt = {
+        margin:       10,
+        filename:     filename,
+        image:        { type: 'jpeg', quality: 0.98 },
+        html2canvas:  { scale: 2 },
+        jsPDF:        { unit: 'mm', format: 'a4', orientation: 'landscape' }
+      };
+
+      const pdfBlob = await html2pdf().set(opt).from(container).outputPdf('blob');
+      const file = new File([pdfBlob], filename, { type: "application/pdf" });
+
+      const form = new FormData();
+      form.append("destinatario", destinatario);
+      form.append("assunto", assunto);
+      form.append("corpo", corpo);
+      form.append("arquivo", file);
+
+      const BASE = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "") + "/";
+      const sendResp = await fetch(`${BASE}api/escola/send-email-document`, { method: "POST", body: form });
+      const data = await sendResp.json();
+      if (!sendResp.ok) throw new Error(data.erro || "Erro ao enviar e-mail");
+      setDadosRevisao(null);
+      setEditandoNome(null);
+    } catch (err: any) {
+      console.error(err);
+      throw err;
+    }
+  }
+
   const labelBotao = meses.map(m => `${MESES_NOME[m.mes]} ${m.ano}`).join(" + ");
 
   const previewTotal = meses.reduce((acc, m) => acc + calcularPreviewCount(m.mes, m.ano, m.feriados, m.recessos), 0);
@@ -1697,6 +1923,20 @@ function SecaoPreDiario() {
                 className="flex items-center justify-center gap-1.5 px-5 py-2.5 rounded-xl text-sm font-bold bg-slate-700 hover:bg-slate-600 text-white border border-white/10 transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed shrink-0">
                 {imprimindoPreDiarioRicoh ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
                 Imprimir na RICOH
+              </button>
+              <button
+                onClick={() => setShowWhatsAppModal(true)}
+                type="button"
+                className="flex items-center justify-center gap-1.5 px-5 py-2.5 rounded-xl text-sm font-bold bg-emerald-600 hover:bg-emerald-500 text-white transition-all active:scale-95 shadow-lg shadow-emerald-500/20 shrink-0">
+                <Send className="h-4 w-4" />
+                WhatsApp
+              </button>
+              <button
+                onClick={() => setShowEmailModal(true)}
+                type="button"
+                className="flex items-center justify-center gap-1.5 px-5 py-2.5 rounded-xl text-sm font-bold bg-orange-600 hover:bg-orange-500 text-white transition-all active:scale-95 shadow-lg shadow-orange-500/20 shrink-0">
+                <Mail className="h-4 w-4" />
+                E-mail
               </button>
             </div>
           </div>
@@ -1876,6 +2116,19 @@ function SecaoPreDiario() {
           <><FileText className="h-4 w-4 mr-2" />Gerar Pré-Diário — {labelBotao}</>
         )}
       </Button>
+      <WhatsAppSendModal 
+        open={showWhatsAppModal} 
+        onOpenChange={setShowWhatsAppModal} 
+        onSend={handleSendWhatsAppPreDiario} 
+        title="Enviar Pré-Diário via WhatsApp"
+      />
+      <EmailSendModal
+        open={showEmailModal}
+        onOpenChange={setShowEmailModal}
+        onSend={handleSendEmailPreDiario}
+        title="Enviar Pré-Diário por E-mail"
+        defaultSubject={`Pré-Diário de Classe - ${labelBotao}`}
+      />
     </div>
   );
 }
@@ -1895,6 +2148,8 @@ function SecaoFicai() {
   const [imprimindoRicoh, setImprimindoRicoh] = useState(false);
   const [selecionados, setSelecionados] = useState<Record<number, boolean>>({});
   const [erro, setErro] = useState("");
+  const [showWhatsAppModal, setShowWhatsAppModal] = useState(false);
+  const [showEmailModal, setShowEmailModal] = useState(false);
 
   const { data: me } = useGetMe({ query: { retry: false } } as any);
 
@@ -2329,6 +2584,376 @@ function SecaoFicai() {
     }
   }
 
+  async function obterDocumentoFicaiHtml(ids: number[]) {
+    const promises = ids.map(id =>
+      fetch(`${BASE}api/alunos/${id}`, { credentials: "include" }).then(res => {
+        if (!res.ok) throw new Error(`Erro ao carregar dados do aluno ${id}`);
+        return res.json();
+      })
+    );
+    const fullAlunos = await Promise.all(promises);
+
+    const htmlContent = fullAlunos.map(aluno => {
+      const formatCPF = (c: string | null | undefined) => {
+        if (!c) return "____________________";
+        const clean = c.replace(/\D/g, "");
+        if (clean.length !== 11) return c;
+        return `${clean.substring(0, 3)}.${clean.substring(3, 6)}.${clean.substring(6, 9)}-${clean.substring(9)}`;
+      };
+
+      const getAnoEscolaridade = (tName: string | null | undefined) => {
+        if (!tName) return null;
+        const upper = tName.toUpperCase();
+        if (upper.includes("P1") || upper.includes("PRE 1") || upper.includes("PRÉ 1") || upper.includes("PRÉ I")) return "P1";
+        if (upper.includes("P2") || upper.includes("PRE 2") || upper.includes("PRÉ 2") || upper.includes("PRÉ II")) return "P2";
+        if (upper.includes("1º") || upper.includes("1O ") || upper.includes("1 AN")) return "1º";
+        if (upper.includes("2º") || upper.includes("2O ") || upper.includes("2 AN")) return "2º";
+        if (upper.includes("3º") || upper.includes("3O ") || upper.includes("3 AN")) return "3º";
+        if (upper.includes("4º") || upper.includes("4O ") || upper.includes("4 AN")) return "4º";
+        if (upper.includes("5º") || upper.includes("5O ") || upper.includes("5 AN")) return "5º";
+        if (upper.includes("6º") || upper.includes("6O ") || upper.includes("6 AN")) return "6º";
+        if (upper.includes("7º") || upper.includes("7O ") || upper.includes("7 AN")) return "7º";
+        if (upper.includes("8º") || upper.includes("8O ") || upper.includes("8 AN")) return "8º";
+        if (upper.includes("9º") || upper.includes("9O ") || upper.includes("9 AN")) return "9º";
+        if (upper.includes("EJA") || upper.includes("FASE")) return "EJA";
+        return null;
+      };
+
+      const anoEscolaridade = getAnoEscolaridade(aluno.turmaAtual);
+      const dataAtual = new Date();
+      const diaStr = String(dataAtual.getDate()).padStart(2, "0");
+      const mesStr = MESES_NOME[dataAtual.getMonth()];
+      const anoStr = String(dataAtual.getFullYear());
+      
+      const formattedCpf = formatCPF(aluno.cpf);
+      const etnia = aluno.etnia || "________________";
+      const telefone = aluno.telefone || "________________";
+      const filiacao = [
+        aluno.nomeMae ? `Mãe: ${aluno.nomeMae}` : "",
+        aluno.nomePai ? `Pai: ${aluno.nomePai}` : ""
+      ].filter(Boolean).join(" / ") || "________________________________________________";
+      const responsavel = aluno.responsavel || "________________________________________________";
+      const endereco = aluno.endereco || "________________________________________________";
+      
+      let bairro = "________________";
+      if (aluno.endereco) {
+        const match = aluno.endereco.match(/bairro\s*:?\s*([^,;]+)/i);
+        if (match) bairro = match[1].trim();
+      }
+
+      const checkboxesHtml = ["P1", "P2", "1º", "2º", "3º", "4º", "5º", "6º", "7º", "8º", "9º", "EJA"].map((anoItem) => {
+        const isChecked = anoEscolaridade === anoItem;
+        return `
+          <div style="display: inline-flex; align-items: center; margin-right: 16px; margin-bottom: 8px; font-weight: 500;">
+            <span class="checkbox-box">${isChecked ? "X" : ""}</span>
+            <span style="margin-left: 6px;">${anoItem}</span>
+          </div>
+        `;
+      }).join("");
+
+      const cabecalhoHtml = obterCabecalhoHTML(undefined, `
+        <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+          <span>FICHA DE COMUNICAÇÃO DE ALUNO INFREQUENTE</span>
+          <span style="font-size: 9pt; font-weight: 950; text-transform: uppercase; background: #000; color: #fff; padding: 2px 8px; border-radius: 4px; margin: 0;">FICAI - 2026</span>
+        </div>
+      `);
+
+      return `
+        <div class="student-ficai-doc" style="width: 100%; page-break-after: always; box-sizing: border-box; padding: 1.5cm; min-height: 29.7cm;">
+          <!-- PAGE 1: DADOS DO ALUNO E DADOS DA ESCOLA -->
+          <div class="ficai-page" style="background: #fff; color: #000; font-family: Arial, Helvetica, sans-serif; display: flex; flex-direction: column; justify-content: space-between; height: 100%;">
+            <div>
+              ${cabecalhoHtml}
+
+              <h2 style="text-align: center; font-weight: bold; font-size: 11pt; text-transform: uppercase; margin-top: 10px; margin-bottom: 16px; line-height: 1.4;">
+                FICHA DE COMUNICAÇÃO DE ALUNO INFREQUENTE<br/>
+                <span style="font-size: 9.5pt; font-weight: 600;">EDUCAÇÃO INFANTIL / ENSINO FUNDAMENTAL I, II E EJA</span>
+              </h2>
+
+              <div style="border: 2px solid #000; padding: 12px; margin-bottom: 12px; font-size: 8.5pt; line-height: 1.6;">
+                <p style="margin: 0 0 6px 0;"><span style="font-weight: bold; text-transform: uppercase; font-size: 9pt; background: #eaeaea; padding: 1px 4px;">1. DADOS DO ALUNO</span></p>
+                <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 12px; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px; margin-bottom: 6px;">
+                  <div>Nome Completo: <span style="font-weight: bold; text-transform: uppercase;">${aluno.nomeCompleto}</span></div>
+                  <div>Nº Matrícula: <span style="font-weight: bold;">${aluno.matricula || "________________"}</span></div>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1.3fr; gap: 12px; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px; margin-bottom: 6px;">
+                  <div>Data Nasc: <span style="font-weight: bold;">${aluno.dataNascimento ? new Date(aluno.dataNascimento).toLocaleDateString("pt-BR") : "________________"}</span></div>
+                  <div>CPF: <span style="font-weight: bold;">${formattedCpf}</span></div>
+                  <div>Raça/Etnia: <span style="font-weight: bold; text-transform: uppercase;">${etnia}</span></div>
+                </div>
+                <div style="border-bottom: 1px solid #e2e8f0; padding-bottom: 6px; margin-bottom: 6px;">
+                  Filiação: <span style="font-weight: bold; text-transform: uppercase;">${filiacao}</span>
+                </div>
+                <div style="border-bottom: 1px solid #e2e8f0; padding-bottom: 6px; margin-bottom: 6px;">
+                  Responsável Legal: <span style="font-weight: bold; text-transform: uppercase;">${responsavel}</span>
+                </div>
+                <div style="display: grid; grid-template-columns: 2.5fr 1fr; gap: 12px; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px; margin-bottom: 6px;">
+                  <div>Endereço Residencial: <span style="font-weight: bold; text-transform: uppercase; font-size: 8pt;">${endereco}</span></div>
+                  <div>Bairro: <span style="font-weight: bold; text-transform: uppercase;">${bairro}</span></div>
+                </div>
+                <div>
+                  Telefone de Contato: <span style="font-weight: bold;">${telefone}</span>
+                </div>
+              </div>
+
+              <div style="border: 2px solid #000; padding: 12px; margin-bottom: 12px; font-size: 8.5pt; line-height: 1.6;">
+                <p style="margin: 0 0 6px 0;"><span style="font-weight: bold; text-transform: uppercase; font-size: 9pt; background: #eaeaea; padding: 1px 4px;">2. DADOS DA ESCOLA</span></p>
+                <div style="border-bottom: 1px solid #e2e8f0; padding-bottom: 6px; margin-bottom: 6px;">
+                  Nome da Escola: <span style="font-weight: 950; text-transform: uppercase; font-size: 9.5pt;">E. M. JOSÉ GIRÓ FAÍSCA</span>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px; margin-bottom: 6px;">
+                  <div>Código INEP: <span style="font-weight: bold;">33124808</span></div>
+                  <div>Telefone Escola: <span style="font-weight: bold;">(22) 99876-5432</span></div>
+                </div>
+                <div style="margin-bottom: 6px;">
+                  Etapa de Ensino (Assinale a correspondente):
+                  <div style="margin-top: 6px;">
+                    ${checkboxesHtml}
+                  </div>
+                </div>
+              </div>
+
+              <div style="border: 2px solid #000; padding: 12px; font-size: 8.5pt; line-height: 1.5;">
+                <p style="margin: 0 0 6px 0;"><span style="font-weight: bold; text-transform: uppercase; font-size: 9pt; background: #eaeaea; padding: 1px 4px;">3. MOTIVOS DO ACIONAMENTO (INFREQUÊNCIA)</span></p>
+                <p style="margin: 0 0 8px 0; font-size: 8pt; color: #475569;">
+                  Assinale os fatores motivantes da infrequência conforme diagnóstico pedagógico inicial da escola:
+                </p>
+                <table class="motivos-table">
+                  <tr>
+                    <td style="width: 50%;">
+                      <div style="display: flex; align-items: flex-start; margin-bottom: 6px;">
+                        <span class="checkbox-box" style="margin-top: 2px;"></span>
+                        <div style="margin-left: 8px;">
+                          <strong style="font-size: 8pt;">A. Negligência Familiar / Falta de Acompanhamento</strong>
+                          <p style="font-size: 7.5pt; color: #555; margin: 0;">Pais ou responsáveis não realizam o controle diário da frequência do aluno.</p>
+                        </div>
+                      </div>
+                      <div style="display: flex; align-items: flex-start; margin-bottom: 6px;">
+                        <span class="checkbox-box" style="margin-top: 2px;"></span>
+                        <div style="margin-left: 8px;">
+                          <strong style="font-size: 8pt;">B. Problemas de Saúde do Aluno</strong>
+                          <p style="font-size: 7.5pt; color: #555; margin: 0;">Apresenta atestados recorrentes ou necessita de tratamento médico especializado.</p>
+                        </div>
+                      </div>
+                      <div style="display: flex; align-items: flex-start;">
+                        <span class="checkbox-box" style="margin-top: 2px;"></span>
+                        <div style="margin-left: 8px;">
+                          <strong style="font-size: 8pt;">C. Trabalho Infantil / Ajuda nos Afazeres Domésticos</strong>
+                          <p style="font-size: 7.5pt; color: #555; margin: 0;">Fica em casa cuidando de irmãos menores ou exerce atividade laboral precoce.</p>
+                        </div>
+                      </div>
+                    </td>
+                    <td style="width: 50%;">
+                      <div style="display: flex; align-items: flex-start; margin-bottom: 6px;">
+                        <span class="checkbox-box" style="margin-top: 2px;"></span>
+                        <div style="margin-left: 8px;">
+                          <strong style="font-size: 8pt;">D. Vulnerabilidade Social / Falta de Recursos</strong>
+                          <p style="font-size: 7.5pt; color: #555; margin: 0;">Dificuldades financeiras extremas, falta de uniforme ou de alimentação.</p>
+                        </div>
+                      </div>
+                      <div style="display: flex; align-items: flex-start; margin-bottom: 6px;">
+                        <span class="checkbox-box" style="margin-top: 2px;"></span>
+                        <div style="margin-left: 8px;">
+                          <strong style="font-size: 8pt;">E. Transporte ou Deslocamento Difícil</strong>
+                          <p style="font-size: 7.5pt; color: #555; margin: 0;">Residência em zona rural ou localidade com oferta precária de transporte escolar.</p>
+                        </div>
+                      </div>
+                      <div style="display: flex; align-items: flex-start;">
+                        <span class="checkbox-box" style="margin-top: 2px;"></span>
+                        <div style="margin-left: 8px;">
+                          <strong style="font-size: 8pt;">F. Desinteresse Escolar / Conflito no Ambiente</strong>
+                          <p style="font-size: 7.5pt; color: #555; margin: 0;">Dificuldades graves de aprendizagem ou problemas de relacionamento/bullying.</p>
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                </table>
+              </div>
+            </div>
+
+            <!-- Assinaturas Parte 1 -->
+            <div style="margin-top: 32px; font-size: 9pt; border-top: 1px solid #cbd5e1; padding-top: 16px;">
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 32px; text-align: center;">
+                <div>
+                  <p style="text-align: left; margin-bottom: 24px;">Campos dos Goytacazes, <span style="font-weight: bold; text-decoration: underline;">&nbsp;&nbsp;${diaStr}&nbsp;&nbsp;</span> de <span style="font-weight: bold; text-decoration: underline;">&nbsp;&nbsp;${mesStr}&nbsp;&nbsp;</span> de <span style="font-weight: bold; text-decoration: underline;">&nbsp;&nbsp;${anoStr}&nbsp;&nbsp;</span>.</p>
+                  <div style="border-top: 1px solid #000; width: 80%; margin: 40px auto 4px auto;"></div>
+                  <p style="font-weight: bold; font-size: 8pt; text-transform: uppercase; margin: 0;">Assinatura e Matrícula do/a Diretor/a</p>
+                </div>
+                <div>
+                  <p style="text-align: left; margin-bottom: 24px;">Campos dos Goytacazes, <span style="font-weight: bold; text-decoration: underline;">&nbsp;&nbsp;${diaStr}&nbsp;&nbsp;</span> de <span style="font-weight: bold; text-decoration: underline;">&nbsp;&nbsp;${mesStr}&nbsp;&nbsp;</span> de <span style="font-weight: bold; text-decoration: underline;">&nbsp;&nbsp;${anoStr}&nbsp;&nbsp;</span>.</p>
+                  <div style="border-top: 1px solid #000; width: 80%; margin: 40px auto 4px auto;"></div>
+                  <p style="font-weight: bold; font-size: 8pt; text-transform: uppercase; margin: 0;">Assinatura e Matrícula do/a Articulador/a</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- PAGE 2: RELATO DO ATENDIMENTO DO SERVIÇO SOCIAL -->
+          <div class="ficai-page" style="background: #fff; color: #000; font-family: Arial, Helvetica, sans-serif; display: flex; flex-direction: column; justify-content: space-between; page-break-before: always; height: 100%; box-sizing: border-box; padding-top: 1.5cm;">
+            <div>
+              <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #000; padding-bottom: 12px; margin-bottom: 24px;">
+                <p style="font-size: 8.5pt; font-weight: bold; color: #64748b; text-transform: uppercase; margin: 0;">Ficha FICAI - Serviço Social</p>
+                <p style="font-size: 8.5pt; font-weight: 600; color: #64748b; margin: 0;">Aluno: ${aluno.nomeCompleto}</p>
+              </div>
+              
+              <h3 style="font-weight: bold; font-size: 10pt; text-transform: uppercase; border-bottom: 2px solid #000; padding-bottom: 4px; margin-bottom: 16px; letter-spacing: 0.05em;">
+                RELATO DO ATENDIMENTO DO SERVIÇO SOCIAL:
+              </h3>
+              
+              <div>
+                ${Array.from({ length: 26 }).map(() => '<div class="line-row"></div>').join("")}
+              </div>
+            </div>
+
+            <div style="margin-top: 32px; font-size: 9pt;">
+              <div style="width: 50%; margin-left: auto; text-align: center;">
+                <p style="text-align: left; margin-bottom: 24px;">Campos dos Goytacazes, <span style="font-weight: bold; text-decoration: underline;">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span> de <span style="font-weight: bold; text-decoration: underline;">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span> de 2026.</p>
+                <div style="border-top: 1px solid #000; width: 80%; margin: 40px auto 4px auto;"></div>
+                <p style="font-weight: bold; font-size: 8pt; text-transform: uppercase; margin: 0;">Assinatura do/a Assistente Social</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- PAGE 3: MEDIDAS APLICADAS PELO CONSELHO TUTELAR -->
+          <div class="ficai-page" style="background: #fff; color: #000; font-family: Arial, Helvetica, sans-serif; display: flex; flex-direction: column; justify-content: space-between; page-break-before: always; height: 100%; box-sizing: border-box; padding-top: 1.5cm;">
+            <div>
+              <div style="display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #000; padding-bottom: 12px; margin-bottom: 24px;">
+                <p style="font-size: 8.5pt; font-weight: bold; color: #64748b; text-transform: uppercase; margin: 0;">Ficha FICAI - Conselho Tutelar</p>
+                <p style="font-size: 8.5pt; font-weight: 600; color: #64748b; margin: 0;">Aluno: ${aluno.nomeCompleto}</p>
+              </div>
+              
+              <h3 style="font-weight: bold; font-size: 10pt; text-transform: uppercase; border-bottom: 2px solid #000; padding-bottom: 4px; margin-bottom: 16px; letter-spacing: 0.05em;">
+                MEDIDAS APLICADAS PELO CONSELHO TUTELAR:
+              </h3>
+              
+              <div>
+                ${Array.from({ length: 22 }).map(() => '<div class="line-row"></div>').join("")}
+              </div>
+            </div>
+
+            <div style="margin-top: 32px; font-size: 9pt;">
+              <div style="width: 50%; margin-left: auto; text-align: center;">
+                <p style="text-align: left; margin-bottom: 24px;">Campos dos Goytacazes, <span style="font-weight: bold; text-decoration: underline;">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span> de <span style="font-weight: bold; text-decoration: underline;">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span> de 2026.</p>
+                <div style="border-top: 1px solid #000; width: 80%; margin: 40px auto 4px auto;"></div>
+                <p style="font-weight: bold; font-size: 8pt; text-transform: uppercase; margin: 0;">Assinatura do/a Conselheiro/a Tutelar</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    }).join("");
+
+    const htmlDocument = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <title>FICAI - E.M. José Giró Faísca</title>
+        <style>
+          body { font-family: Arial, Helvetica, sans-serif; margin: 0; padding: 0; color: #000; background: #fff; }
+          .ficai-page { page-break-after: always; box-sizing: border-box; padding: 1.5cm; width: 100%; min-height: 29.7cm; font-family: Arial, Helvetica, sans-serif; }
+          .ficai-page:last-child { page-break-after: avoid; }
+          .text-center { text-align: center; }
+          .font-bold { font-weight: bold; }
+          .uppercase { text-transform: uppercase; }
+          .underline { text-decoration: underline; }
+          .border { border: 1px solid #000; }
+          .border-t { border-top: 1px solid #000; }
+          .border-b { border-bottom: 1px solid #000; }
+          .p-2 { padding: 8px; }
+          .mb-4 { margin-bottom: 16px; }
+          .mt-4 { margin-top: 16px; }
+          .w-full { width: 100%; }
+          .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+          .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+          .flex-col { display: flex; flex-direction: column; }
+          .justify-between { justify-content: space-between; }
+          table.motivos-table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 8.5pt; }
+          table.motivos-table td { border: 1px solid #000; padding: 5px; vertical-align: top; }
+          .checkbox-box { width: 12px; height: 12px; border: 1px solid #000; display: inline-block; text-align: center; line-height: 10px; font-size: 8pt; font-weight: bold; }
+          .line-row { border-bottom: 1px solid #ccc; height: 28px; width: 100%; margin-top: 4px; }
+          
+          ${CABECALHO_CSS}
+        </style>
+      </head>
+      <body>
+        ${htmlContent}
+      </body>
+      </html>
+    `;
+
+    return { htmlDocument, nomesAlunos: fullAlunos.map(a => a.nomeCompleto) };
+  }
+
+  async function handleSendWhatsAppFicai(numero: string, mensagem: string) {
+    const ids = getSelectedIds();
+    if (ids.length === 0) return;
+    try {
+      const { htmlDocument, nomesAlunos } = await obterDocumentoFicaiHtml(ids);
+      const container = document.createElement("div");
+      container.innerHTML = htmlDocument;
+
+      const filename = `FICAI_${nomesAlunos.map(n => n.split(" ")[0]).join("_")}.pdf`;
+      const opt = {
+        margin:       10,
+        filename:     filename,
+        image:        { type: 'jpeg', quality: 0.98 },
+        html2canvas:  { scale: 2 },
+        jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+      };
+
+      const pdfBlob = await html2pdf().set(opt).from(container).outputPdf('blob');
+      const file = new File([pdfBlob], filename, { type: "application/pdf" });
+
+      const form = new FormData();
+      form.append("numero", numero);
+      form.append("mensagem", mensagem);
+      form.append("arquivo", file);
+
+      const sendResp = await fetch(`${BASE}api/whatsapp/send-document`, { method: "POST", body: form });
+      const data = await sendResp.json();
+      if (!sendResp.ok) throw new Error(data.error || "Erro ao enviar via WhatsApp");
+    } catch (err: any) {
+      console.error(err);
+      throw err;
+    }
+  }
+
+  async function handleSendEmailFicai(destinatario: string, assunto: string, corpo: string) {
+    const ids = getSelectedIds();
+    if (ids.length === 0) return;
+    try {
+      const { htmlDocument, nomesAlunos } = await obterDocumentoFicaiHtml(ids);
+      const container = document.createElement("div");
+      container.innerHTML = htmlDocument;
+
+      const filename = `FICAI_${nomesAlunos.map(n => n.split(" ")[0]).join("_")}.pdf`;
+      const opt = {
+        margin:       10,
+        filename:     filename,
+        image:        { type: 'jpeg', quality: 0.98 },
+        html2canvas:  { scale: 2 },
+        jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+      };
+
+      const pdfBlob = await html2pdf().set(opt).from(container).outputPdf('blob');
+      const file = new File([pdfBlob], filename, { type: "application/pdf" });
+
+      const form = new FormData();
+      form.append("destinatario", destinatario);
+      form.append("assunto", assunto);
+      form.append("corpo", corpo);
+      form.append("arquivo", file);
+
+      const sendResp = await fetch(`${BASE}api/escola/send-email-document`, { method: "POST", body: form });
+      const data = await sendResp.json();
+      if (!sendResp.ok) throw new Error(data.erro || "Erro ao enviar e-mail");
+    } catch (err: any) {
+      console.error(err);
+      throw err;
+    }
+  }
+
   return (
     <div className="bg-[#1e293b] p-6 rounded-2xl border border-white/10 shadow-[0_10px_30px_rgba(0,0,0,0.3)] space-y-6">
       <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
@@ -2433,38 +3058,75 @@ function SecaoFicai() {
           </div>
 
           {totalSelecionados > 0 && (
-            <div className="flex flex-col sm:flex-row gap-3 pt-4 border-t border-white/5">
-              <Button
-                onClick={handleVisualizar}
-                disabled={imprimindoRicoh}
-                className="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-bold h-11 rounded-xl flex items-center justify-center gap-1.5"
-              >
-                <ExternalLink className="h-4 w-4" />
-                Visualizar PDF ({totalSelecionados})
-              </Button>
-              <Button
-                onClick={handleImprimirLocal}
-                disabled={imprimindoRicoh}
-                className="flex-1 bg-amber-600 hover:bg-amber-500 text-white font-bold h-11 rounded-xl flex items-center justify-center gap-1.5"
-              >
-                <Printer className="h-4 w-4" />
-                Imprimir Local ({totalSelecionados})
-              </Button>
-              <Button
-                onClick={handlePrintRicoh}
-                disabled={imprimindoRicoh}
-                className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold h-11 rounded-xl flex items-center justify-center gap-1.5"
-              >
-                {imprimindoRicoh ? (
-                  <><Loader2 className="h-4 w-4 animate-spin mr-1.5" />Enviando...</>
-                ) : (
-                  <><Printer className="h-4 w-4" />Imprimir na RICOH ({totalSelecionados})</>
-                )}
-              </Button>
+            <div className="space-y-3 pt-4 border-t border-white/5">
+              <div className="flex flex-col sm:flex-row gap-3">
+                <Button
+                  onClick={handleVisualizar}
+                  disabled={imprimindoRicoh}
+                  className="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-bold h-11 rounded-xl flex items-center justify-center gap-1.5"
+                >
+                  <ExternalLink className="h-4 w-4" />
+                  Visualizar PDF ({totalSelecionados})
+                </Button>
+                <Button
+                  onClick={handleImprimirLocal}
+                  disabled={imprimindoRicoh}
+                  className="flex-1 bg-amber-600 hover:bg-amber-500 text-white font-bold h-11 rounded-xl flex items-center justify-center gap-1.5"
+                >
+                  <Printer className="h-4 w-4" />
+                  Imprimir Local ({totalSelecionados})
+                </Button>
+                <Button
+                  onClick={handlePrintRicoh}
+                  disabled={imprimindoRicoh}
+                  className="flex-1 bg-[#1e293b] hover:bg-[#334155] border border-white/10 text-white font-bold h-11 rounded-xl flex items-center justify-center gap-1.5"
+                >
+                  {imprimindoRicoh ? (
+                    <><Loader2 className="h-4 w-4 animate-spin mr-1.5" />Enviando...</>
+                  ) : (
+                    <><Printer className="h-4 w-4" />Imprimir na RICOH ({totalSelecionados})</>
+                  )}
+                </Button>
+              </div>
+
+              <div className="flex flex-col sm:flex-row gap-3">
+                <Button
+                  type="button"
+                  onClick={() => setShowWhatsAppModal(true)}
+                  disabled={imprimindoRicoh}
+                  className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold h-11 rounded-xl flex items-center justify-center gap-1.5"
+                >
+                  <Send className="h-4 w-4" />
+                  WhatsApp
+                </Button>
+                <Button
+                  type="button"
+                  onClick={() => setShowEmailModal(true)}
+                  disabled={imprimindoRicoh}
+                  className="flex-1 bg-orange-600 hover:bg-orange-500 text-white font-bold h-11 rounded-xl flex items-center justify-center gap-1.5"
+                >
+                  <Mail className="h-4 w-4" />
+                  E-mail
+                </Button>
+              </div>
             </div>
           )}
         </div>
       )}
+
+      <WhatsAppSendModal 
+        open={showWhatsAppModal} 
+        onOpenChange={setShowWhatsAppModal} 
+        onSend={handleSendWhatsAppFicai} 
+        title="Enviar Ficha FICAI via WhatsApp"
+      />
+      <EmailSendModal
+        open={showEmailModal}
+        onOpenChange={setShowEmailModal}
+        onSend={handleSendEmailFicai}
+        title="Enviar Ficha FICAI por E-mail"
+        defaultSubject={`Ficha FICAI - ${mesSel}/${anoSel}`}
+      />
     </div>
   );
 }
@@ -2526,6 +3188,7 @@ function SecaoModelosDinamicos() {
   const [incluirCabecalho, setIncluirCabecalho] = useState(true);
   const [imprimindoRicoh, setImprimindoRicoh] = useState(false);
   const [showWhatsAppModal, setShowWhatsAppModal] = useState(false);
+  const [showEmailModal, setShowEmailModal] = useState(false);
   const [assDirecao, setAssDirecao] = useState(true);
   const [assPedagoga, setAssPedagoga] = useState(false);
   const [assProfessora, setAssProfessora] = useState(false);
@@ -2738,6 +3401,43 @@ function SecaoModelosDinamicos() {
     }
   }
 
+  async function handleSendEmail(destinatario: string, assunto: string, corpo: string) {
+    if (alunosFiltrados.length === 0) return;
+    
+    try {
+      const html = gerarHtmlFinal();
+      
+      const container = document.createElement("div");
+      container.innerHTML = html;
+      
+      const filename = `Documentos_${alunosFiltrados.length}_alunos.pdf`;
+      const opt = {
+        margin:       10,
+        filename:     filename,
+        image:        { type: 'jpeg', quality: 0.98 },
+        html2canvas:  { scale: 2 },
+        jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+      };
+
+      const pdfBlob = await html2pdf().set(opt).from(container).outputPdf('blob');
+      const file = new File([pdfBlob], filename, { type: "application/pdf" });
+
+      const form = new FormData();
+      form.append("destinatario", destinatario);
+      form.append("assunto", assunto);
+      form.append("corpo", corpo);
+      form.append("arquivo", file);
+
+      const BASE = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "") + "/";
+      const sendResp = await fetch(`${BASE}api/escola/send-email-document`, { method: "POST", body: form });
+      const data = await sendResp.json();
+      if (!sendResp.ok) throw new Error(data.erro || "Erro ao enviar e-mail");
+    } catch (err: any) {
+      console.error(err);
+      throw err;
+    }
+  }
+
   // Helper de UI
   const btnBase = "text-center px-3 py-2 rounded-lg border text-xs font-medium transition-colors";
   const btnOff  = `${btnBase} bg-[#0f172a] border-[#334155] text-slate-300 hover:border-slate-500`;
@@ -2916,6 +3616,14 @@ function SecaoModelosDinamicos() {
               WhatsApp ({alunosFiltrados.length})
             </Button>
             <Button
+              onClick={() => setShowEmailModal(true)}
+              disabled={imprimindoRicoh || alunosFiltrados.length === 0}
+              className="flex-1 bg-orange-600 hover:bg-orange-500 text-white font-bold h-12 rounded-xl flex items-center justify-center gap-2"
+            >
+              <Mail className="h-4 w-4" />
+              E-mail ({alunosFiltrados.length})
+            </Button>
+            <Button
               onClick={handleImprimirLocal}
               disabled={imprimindoRicoh || alunosFiltrados.length === 0}
               className="flex-1 bg-amber-600 hover:bg-amber-500 text-white font-bold h-12 rounded-xl flex items-center justify-center gap-2"
@@ -2942,6 +3650,13 @@ function SecaoModelosDinamicos() {
         open={showWhatsAppModal} 
         onOpenChange={setShowWhatsAppModal} 
         onSend={handleSendWhatsApp} 
+      />
+      <EmailSendModal
+        open={showEmailModal}
+        onOpenChange={setShowEmailModal}
+        onSend={handleSendEmail}
+        title="Enviar Documentos por E-mail"
+        defaultSubject={`Documento Dinâmico - ${alunosFiltrados.length} Alunos`}
       />
     </div>
   );

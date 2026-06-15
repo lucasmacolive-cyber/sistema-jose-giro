@@ -7,7 +7,8 @@ import {
   ChevronLeft, ChevronRight, ChevronDown, AlertTriangle, Palette,
   RefreshCcw, Check, Settings2, Eye, EyeOff,
   Globe, Copy, ExternalLink, Upload, FileSpreadsheet,
-  Zap, ServerCrash, Camera, ImagePlus, Bookmark, ShieldCheck, WifiOff, MessageCircle, PlayCircle
+  Zap, ServerCrash, Camera, ImagePlus, Bookmark, ShieldCheck, WifiOff, MessageCircle, PlayCircle,
+  Mail, Phone
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
@@ -23,7 +24,7 @@ import { useSyncGlobal } from "@/contexts/SyncContext";
 /* ─── Menu ─── */
 type SecaoId =
   | "sincronizacao" | "cores" | "alunos"
-  | "turmas" | "professores" | "funcionarios" | "usuarios" | "logins" | "diario" | "whatsapp";
+  | "turmas" | "professores" | "funcionarios" | "usuarios" | "contatos" | "diario" | "whatsapp";
 
 const MENU: { id: SecaoId; label: string; icon: React.ElementType; desc: string; cor: string }[] = [
   { id: "sincronizacao", label: "Sincronização",    icon: RefreshCcw,  desc: "Integração com o SUAP",             cor: "#06b6d4" },
@@ -33,7 +34,7 @@ const MENU: { id: SecaoId; label: string; icon: React.ElementType; desc: string;
   { id: "professores",   label: "Editar Professores",icon: UserCircle, desc: "Gerenciar corpo docente",           cor: "#10b981" },
   { id: "funcionarios",  label: "Editar Funcionários",icon: Briefcase, desc: "Gerenciar equipe administrativa",   cor: "#f59e0b" },
   { id: "usuarios",      label: "Editar Usuários",  icon: KeyRound,    desc: "Gerenciar acessos ao sistema",      cor: "#ef4444" },
-  { id: "logins",        label: "Logins Externos",  icon: Globe,       desc: "Logins de sites externos",          cor: "#f97316" },
+  { id: "contatos",      label: "Contatos e E-mail", icon: Mail,       desc: "E-mail, WhatsApp e IPs da escola", cor: "#f97316" },
   { id: "diario",        label: "Config. Diário",   icon: BookOpen,    desc: "Configurações do Diário de Classe", cor: "#10b981" },
   { id: "whatsapp",      label: "Bot do WhatsApp",  icon: MessageCircle, desc: "Sincronizar número da escola",  cor: "#22c55e" },
 ];
@@ -3221,159 +3222,184 @@ function SecaoEditarTabela({ tabela }: { tabela: string }) {
 }
 
 /* ══════════════════════════════════════════
-   SEÇÃO: Logins Externos
+   SEÇÃO: E-mail, WhatsApp e IPs (Contatos)
 ══════════════════════════════════════════ */
-interface LoginExterno {
-  id: number; nomeSite: string; url?: string | null;
-  login: string; senha: string; descricao?: string | null;
-}
-
-function SecaoLogins() {
-  const [logins, setLogins] = useState<LoginExterno[]>([]);
+function SecaoContatos() {
+  const [form, setForm] = useState({
+    escola_email: "",
+    escola_telefone: "",
+    impressora_ricoh_ip: "",
+    impressora_epson_ip: "",
+    smtp_host: "smtp.gmail.com",
+    smtp_port: "465",
+    smtp_user: "",
+    smtp_pass: "",
+    smtp_secure: true
+  });
   const [loading, setLoading] = useState(true);
-  const [senhasVisiveis, setSenhasVisiveis] = useState<Set<number>>(new Set());
-  const [copiados, setCopiados] = useState<Set<string>>(new Set());
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [editando, setEditando] = useState<LoginExterno | null>(null);
-  const [form, setForm] = useState({ nomeSite: "", url: "", login: "", senha: "", descricao: "" });
+  const [salvando, setSalvando] = useState(false);
+  const { toast } = useToast();
 
   async function carregar() {
-    try { const r = await apiFetch("/logins-externos"); setLogins(r); }
-    finally { setLoading(false); }
+    try {
+      const r = await apiFetch("/escola/contatos");
+      setForm({
+        escola_email: r.escola_email || "",
+        escola_telefone: r.escola_telefone || "",
+        impressora_ricoh_ip: r.impressora_ricoh_ip || "",
+        impressora_epson_ip: r.impressora_epson_ip || "",
+        smtp_host: r.smtp_host || "smtp.gmail.com",
+        smtp_port: r.smtp_port || "465",
+        smtp_user: r.smtp_user || r.escola_email || "",
+        smtp_pass: r.smtp_pass || "",
+        smtp_secure: r.smtp_secure !== undefined ? (r.smtp_secure === "true" || r.smtp_secure === true) : true
+      });
+    } catch (err: any) {
+      toast({ title: "Erro ao carregar configurações", description: err.message, variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
   }
+
   useEffect(() => { carregar(); }, []);
 
-  function abrirNovo() { setEditando(null); setForm({ nomeSite: "", url: "", login: "", senha: "", descricao: "" }); setDialogOpen(true); }
-  function abrirEditar(l: LoginExterno) { setEditando(l); setForm({ nomeSite: l.nomeSite, url: l.url ?? "", login: l.login, senha: l.senha, descricao: l.descricao ?? "" }); setDialogOpen(true); }
-
   async function salvar() {
-    if (!form.nomeSite || !form.login || !form.senha) return;
-    const path  = editando ? `/logins-externos/${editando.id}` : "/logins-externos";
-    const method = editando ? "PUT" : "POST";
-    await apiFetch(path, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(form) });
-    setDialogOpen(false); carregar();
-  }
-
-  async function excluir(id: number) {
-    if (!confirm("Remover este login?")) return;
-    await apiFetch(`/logins-externos/${id}`, { method: "DELETE" });
-    carregar();
-  }
-
-  function toggleSenha(id: number) {
-    setSenhasVisiveis(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
-  }
-
-  async function copiar(texto: string, chave: string) {
-    await navigator.clipboard.writeText(texto);
-    setCopiados(prev => new Set(prev).add(chave));
-    setTimeout(() => setCopiados(prev => { const s = new Set(prev); s.delete(chave); return s; }), 2000);
+    setSalvando(true);
+    try {
+      await apiFetch("/escola/contatos", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form)
+      });
+      toast({ title: "Configurações salvas!", description: "Os contatos e configurações SMTP foram atualizados." });
+    } catch (err: any) {
+      toast({ title: "Erro ao salvar", description: err.message, variant: "destructive" });
+    } finally {
+      setSalvando(false);
+    }
   }
 
   if (loading) return <div className="flex items-center justify-center h-40"><Loader2 className="h-7 w-7 text-primary animate-spin" /></div>;
 
   return (
-    <div className="space-y-5">
-      <div className="flex items-center justify-between">
-        <p className="text-white/40 text-sm">Logins de sites externos para acesso rápido e automação</p>
-        <Button onClick={abrirNovo} size="sm" className="bg-orange-500/80 hover:bg-orange-500 gap-1.5 text-white">
-          <Plus className="h-3.5 w-3.5" /> Adicionar
-        </Button>
+    <div className="space-y-6">
+      <div className="bg-[#0f172a] p-6 rounded-2xl border border-white/[0.07] space-y-4">
+        <h3 className="text-md font-bold text-white flex items-center gap-2">
+          <Settings2 className="h-5 w-5 text-orange-400" />
+          Contatos e IPs de Referência
+        </h3>
+        <p className="text-white/40 text-xs">
+          Essas informações são usadas como referencial para o envio de e-mails, WhatsApp e ping das impressoras.
+        </p>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
+          <div className="space-y-1.5">
+            <Label className="text-white/60 text-xs uppercase tracking-wider">E-mail da Escola</Label>
+            <Input
+              value={form.escola_email}
+              onChange={e => setForm(f => ({ ...f, escola_email: e.target.value }))}
+              placeholder="escola@dominio.com"
+              className="bg-background/50 border-white/10 text-white"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-white/60 text-xs uppercase tracking-wider">Telefone/WhatsApp da Escola</Label>
+            <Input
+              value={form.escola_telefone}
+              onChange={e => setForm(f => ({ ...f, escola_telefone: e.target.value }))}
+              placeholder="(22) 99813-1096"
+              className="bg-background/50 border-white/10 text-white"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-white/60 text-xs uppercase tracking-wider">IP da Impressora RICOH</Label>
+            <Input
+              value={form.impressora_ricoh_ip}
+              onChange={e => setForm(f => ({ ...f, impressora_ricoh_ip: e.target.value }))}
+              placeholder="Ex: 192.168.1.100"
+              className="bg-background/50 border-white/10 text-white font-mono"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-white/60 text-xs uppercase tracking-wider">IP da Impressora EPSON</Label>
+            <Input
+              value={form.impressora_epson_ip}
+              onChange={e => setForm(f => ({ ...f, impressora_epson_ip: e.target.value }))}
+              placeholder="Ex: 192.168.1.101"
+              className="bg-background/50 border-white/10 text-white font-mono"
+            />
+          </div>
+        </div>
       </div>
 
-      {logins.length === 0 ? (
-        <div className="py-12 text-center text-white/30 border border-white/5 rounded-2xl border-dashed">
-          <Globe className="h-9 w-9 mx-auto mb-2 opacity-30" />
-          <p className="text-sm font-medium">Nenhum login salvo</p>
-          <p className="text-xs mt-1 opacity-60">Adicione logins de portais externos</p>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {logins.map(l => (
-            <div key={l.id} className="p-4 bg-[#0f172a] rounded-2xl border border-white/[0.07] space-y-3">
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-xl bg-orange-500/10 border border-orange-500/20 flex items-center justify-center shrink-0">
-                    <Globe className="h-4 w-4 text-orange-400" />
-                  </div>
-                  <div>
-                    <p className="font-bold text-white text-sm">{l.nomeSite}</p>
-                    {l.descricao && <p className="text-xs text-white/35 mt-0.5">{l.descricao}</p>}
-                  </div>
-                </div>
-                <div className="flex gap-1 shrink-0">
-                  {l.url && (
-                    <Button variant="ghost" size="icon" className="h-7 w-7 text-white/30 hover:text-white" onClick={() => window.open(l.url!, "_blank")} title="Abrir site">
-                      <ExternalLink className="h-3 w-3" />
-                    </Button>
-                  )}
-                  <Button variant="ghost" size="icon" className="h-7 w-7 text-white/30 hover:text-white" onClick={() => abrirEditar(l)}>
-                    <Pencil className="h-3 w-3" />
-                  </Button>
-                  <Button variant="ghost" size="icon" className="h-7 w-7 text-red-400/40 hover:text-red-400" onClick={() => excluir(l.id)}>
-                    <Trash2 className="h-3 w-3" />
-                  </Button>
-                </div>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                <div className="flex items-center gap-2 bg-white/5 rounded-xl px-3 py-2 border border-white/5">
-                  <span className="text-[10px] text-white/25 uppercase tracking-wider w-10 shrink-0">Login</span>
-                  <span className="text-xs text-white/75 flex-1 font-mono truncate">{l.login}</span>
-                  <Button variant="ghost" size="icon" className="h-5 w-5 text-white/25 hover:text-white shrink-0" onClick={() => copiar(l.login, `login-${l.id}`)}>
-                    {copiados.has(`login-${l.id}`) ? <Check className="h-2.5 w-2.5 text-green-400" /> : <Copy className="h-2.5 w-2.5" />}
-                  </Button>
-                </div>
-                <div className="flex items-center gap-2 bg-white/5 rounded-xl px-3 py-2 border border-white/5">
-                  <span className="text-[10px] text-white/25 uppercase tracking-wider w-10 shrink-0">Senha</span>
-                  <span className="text-xs text-white/75 flex-1 font-mono truncate">{senhasVisiveis.has(l.id) ? l.senha : "••••••••"}</span>
-                  <Button variant="ghost" size="icon" className="h-5 w-5 text-white/25 hover:text-white shrink-0" onClick={() => toggleSenha(l.id)}>
-                    {senhasVisiveis.has(l.id) ? <EyeOff className="h-2.5 w-2.5" /> : <Eye className="h-2.5 w-2.5" />}
-                  </Button>
-                  <Button variant="ghost" size="icon" className="h-5 w-5 text-white/25 hover:text-white shrink-0" onClick={() => copiar(l.senha, `senha-${l.id}`)}>
-                    {copiados.has(`senha-${l.id}`) ? <Check className="h-2.5 w-2.5 text-green-400" /> : <Copy className="h-2.5 w-2.5" />}
-                  </Button>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+      <div className="bg-[#0f172a] p-6 rounded-2xl border border-white/[0.07] space-y-4">
+        <h3 className="text-md font-bold text-white flex items-center gap-2">
+          <Mail className="h-5 w-5 text-orange-400" />
+          Configurações de E-mail (Servidor SMTP)
+        </h3>
+        <p className="text-white/40 text-xs">
+          Configure as credenciais SMTP do e-mail da escola para enviar documentos em PDF por e-mail diretamente do sistema.
+        </p>
 
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="bg-card border-white/10 max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-white">{editando ? "Editar Login" : "Novo Login Externo"}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 mt-2">
-            <div>
-              <Label className="text-white/60 text-xs uppercase tracking-wider">Nome do Site *</Label>
-              <Input value={form.nomeSite} onChange={e => setForm(f => ({ ...f, nomeSite: e.target.value }))} className="mt-1 bg-background/50 border-white/10 text-white" placeholder="Ex: SMAEC, SUAP, Diário Escolar" />
-            </div>
-            <div>
-              <Label className="text-white/60 text-xs uppercase tracking-wider">URL do Site</Label>
-              <Input value={form.url} onChange={e => setForm(f => ({ ...f, url: e.target.value }))} className="mt-1 bg-background/50 border-white/10 text-white" placeholder="https://..." />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label className="text-white/60 text-xs uppercase tracking-wider">Login / Usuário *</Label>
-                <Input value={form.login} onChange={e => setForm(f => ({ ...f, login: e.target.value }))} className="mt-1 bg-background/50 border-white/10 text-white" placeholder="Usuário" />
-              </div>
-              <div>
-                <Label className="text-white/60 text-xs uppercase tracking-wider">Senha *</Label>
-                <Input type="text" value={form.senha} onChange={e => setForm(f => ({ ...f, senha: e.target.value }))} className="mt-1 bg-background/50 border-white/10 text-white" placeholder="Senha" />
-              </div>
-            </div>
-            <div>
-              <Label className="text-white/60 text-xs uppercase tracking-wider">Observação</Label>
-              <Textarea value={form.descricao} onChange={e => setForm(f => ({ ...f, descricao: e.target.value }))} className="mt-1 bg-background/50 border-white/10 text-white resize-none" rows={2} placeholder="Ex: login da direção para baixar históricos" />
-            </div>
-            <div className="flex gap-3 pt-1">
-              <Button variant="outline" className="flex-1 border-white/10" onClick={() => setDialogOpen(false)}>Cancelar</Button>
-              <Button className="flex-1 bg-orange-500 hover:bg-orange-400" onClick={salvar} disabled={!form.nomeSite || !form.login || !form.senha}>Salvar</Button>
-            </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-2">
+          <div className="space-y-1.5 md:col-span-2">
+            <Label className="text-white/60 text-xs uppercase tracking-wider">Servidor SMTP (Host)</Label>
+            <Input
+              value={form.smtp_host}
+              onChange={e => setForm(f => ({ ...f, smtp_host: e.target.value }))}
+              placeholder="smtp.gmail.com"
+              className="bg-background/50 border-white/10 text-white"
+            />
           </div>
-        </DialogContent>
-      </Dialog>
+          <div className="space-y-1.5">
+            <Label className="text-white/60 text-xs uppercase tracking-wider">Porta SMTP</Label>
+            <Input
+              value={form.smtp_port}
+              onChange={e => setForm(f => ({ ...f, smtp_port: e.target.value }))}
+              placeholder="465 ou 587"
+              className="bg-background/50 border-white/10 text-white font-mono"
+            />
+          </div>
+          <div className="space-y-1.5 md:col-span-2">
+            <Label className="text-white/60 text-xs uppercase tracking-wider">Usuário SMTP / Login</Label>
+            <Input
+              value={form.smtp_user}
+              onChange={e => setForm(f => ({ ...f, smtp_user: e.target.value }))}
+              placeholder="escola@dominio.com"
+              className="bg-background/50 border-white/10 text-white"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-white/60 text-xs uppercase tracking-wider">Senha / Senha de App</Label>
+            <Input
+              type="password"
+              value={form.smtp_pass}
+              onChange={e => setForm(f => ({ ...f, smtp_pass: e.target.value }))}
+              placeholder="••••••••••••"
+              className="bg-background/50 border-white/10 text-white"
+            />
+          </div>
+          <div className="flex items-center gap-2 md:col-span-3 py-1">
+            <input
+              type="checkbox"
+              id="smtp_secure"
+              checked={form.smtp_secure}
+              onChange={e => setForm(f => ({ ...f, smtp_secure: e.target.checked }))}
+              className="rounded border-white/10 bg-background/50 text-orange-500 focus:ring-0 w-4 h-4 cursor-pointer"
+            />
+            <Label htmlFor="smtp_secure" className="text-white/70 text-xs cursor-pointer select-none">
+              Utilizar conexão segura SSL/TLS (Recomendado para porta 465)
+            </Label>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex justify-end pt-2">
+        <Button onClick={salvar} disabled={salvando} className="bg-orange-500 hover:bg-orange-600 gap-2 text-white px-6 font-semibold">
+          {salvando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+          Salvar Ajustes
+        </Button>
+      </div>
     </div>
   );
 }
@@ -3640,7 +3666,7 @@ export default function AjustesPage() {
       case "professores":    return <SecaoEditarTabela tabela="professores" />;
       case "funcionarios":   return <SecaoEditarTabela tabela="funcionarios" />;
       case "usuarios":       return <SecaoEditarTabela tabela="usuarios" />;
-      case "logins":         return <SecaoLogins />;
+      case "contatos":       return <SecaoContatos />;
       case "diario":         return <SecaoConfigDiario />;
       case "whatsapp":       return <SecaoWhatsApp />;
     }

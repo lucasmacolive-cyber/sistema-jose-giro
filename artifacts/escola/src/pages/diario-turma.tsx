@@ -8,11 +8,13 @@ import {
   ChevronLeft, ChevronRight, Loader2, BookOpen, Users,
   Printer, ArrowLeft, Plus, Trash2, CheckCircle2, XCircle,
   AlertTriangle, Info, ArrowRight, ArrowUpDown, CalendarCheck,
-  ExternalLink, FileText, Save, RefreshCcw, Check, Clock,
+  ExternalLink, FileText, Save, RefreshCcw, Check, Clock, Send, Mail
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
+import { WhatsAppSendModal } from "@/components/WhatsAppSendModal";
+import { EmailSendModal } from "@/components/EmailSendModal";
 import { CABECALHO_CSS, obterCabecalhoHTML } from "@/components/CabecalhoTimbrado";
 import {
   Tooltip,
@@ -123,6 +125,8 @@ export default function DiarioTurmaPage() {
 
   // Estados para FICAI
   const [showFicaiModal, setShowFicaiModal] = useState(false);
+  const [showWhatsAppDiarioModal, setShowWhatsAppDiarioModal] = useState(false);
+  const [showEmailDiarioModal, setShowEmailDiarioModal] = useState(false);
 
   useEffect(() => {
     const agora = new Date();
@@ -505,6 +509,127 @@ export default function DiarioTurmaPage() {
     }
   }
 
+  async function handleSendWhatsAppDiario(numero: string, mensagem: string) {
+    try {
+      const container = document.createElement("div");
+      container.innerHTML = `
+        <div style="padding: 20px; font-family: Arial, sans-serif; font-size: 10px;">
+          <div style="text-align: center; margin-bottom: 10px;">
+            <h2>DIÁRIO DE CLASSE - ${turmaNome}</h2>
+            <p>${MESES[mes-1]} / ${ano} &middot; Professor: ${turma?.professorResponsavel || "—"}</p>
+          </div>
+          <table style="width: 100%; border-collapse: collapse; margin-top: 10px;">
+            <thead>
+              <tr>
+                <th style="border: 1px solid #000; padding: 2px; text-align: left; background: #f0f0f0;">ALUNO</th>
+                ${(data?.aulas ?? []).map(a => `<th style="border: 1px solid #000; padding: 2px; text-align: center; background: #f0f0f0;">${a.data.split("/")[0]}</th>`).join("")}
+                <th style="border: 1px solid #000; padding: 2px; text-align: center; background: #f0f0f0;">%</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${(data?.alunos ?? []).map(aluno => {
+                const f = calcFreq(aluno.id);
+                return `
+                  <tr>
+                    <td style="border: 1px solid #000; padding: 2px; text-align: left;">${aluno.nomeCompleto}</td>
+                    ${(data?.aulas ?? []).map(aula => `<td style="border: 1px solid #000; padding: 2px; text-align: center;">${(data?.presencas?.[aula.id]?.[aluno.id] || "P")}</td>`).join("")}
+                    <td style="border: 1px solid #000; padding: 2px; text-align: center;">${f?.pct ?? 0}%</td>
+                  </tr>
+                `;
+              }).join("")}
+            </tbody>
+          </table>
+        </div>
+      `;
+
+      const filename = `Diario_${turmaNome.replace(/\s+/g, "_")}_${mes}_${ano}.pdf`;
+      const opt = {
+        margin:       10,
+        filename:     filename,
+        image:        { type: 'jpeg', quality: 0.98 },
+        html2canvas:  { scale: 2 },
+        jsPDF:        { unit: 'mm', format: 'a4', orientation: 'landscape' }
+      };
+
+      const pdfBlob = await html2pdf().set(opt).from(container).outputPdf('blob');
+      const file = new File([pdfBlob], filename, { type: "application/pdf" });
+
+      const form = new FormData();
+      form.append("numero", numero);
+      form.append("mensagem", mensagem);
+      form.append("arquivo", file);
+
+      const BASE_API = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "") + "/";
+      const sendResp = await fetch(`${BASE_API}api/whatsapp/send-document`, { method: "POST", body: form });
+      const resData = await sendResp.json();
+      if (!sendResp.ok) throw new Error(resData.error || "Erro ao enviar via WhatsApp");
+    } catch (err: any) {
+      console.error(err);
+      throw err;
+    }
+  }
+
+  async function handleSendEmailDiario(destinatario: string, assunto: string, corpo: string) {
+    try {
+      const container = document.createElement("div");
+      container.innerHTML = `
+        <div style="padding: 20px; font-family: Arial, sans-serif; font-size: 10px;">
+          <div style="text-align: center; margin-bottom: 10px;">
+            <h2>DIÁRIO DE CLASSE - ${turmaNome}</h2>
+            <p>${MESES[mes-1]} / ${ano} &middot; Professor: ${turma?.professorResponsavel || "—"}</p>
+          </div>
+          <table style="width: 100%; border-collapse: collapse; margin-top: 10px;">
+            <thead>
+              <tr>
+                <th style="border: 1px solid #000; padding: 2px; text-align: left; background: #f0f0f0;">ALUNO</th>
+                ${(data?.aulas ?? []).map(a => `<th style="border: 1px solid #000; padding: 2px; text-align: center; background: #f0f0f0;">${a.data.split("/")[0]}</th>`).join("")}
+                <th style="border: 1px solid #000; padding: 2px; text-align: center; background: #f0f0f0;">%</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${(data?.alunos ?? []).map(aluno => {
+                const f = calcFreq(aluno.id);
+                return `
+                  <tr>
+                    <td style="border: 1px solid #000; padding: 2px; text-align: left;">${aluno.nomeCompleto}</td>
+                    ${(data?.aulas ?? []).map(aula => `<td style="border: 1px solid #000; padding: 2px; text-align: center;">${(data?.presencas?.[aula.id]?.[aluno.id] || "P")}</td>`).join("")}
+                    <td style="border: 1px solid #000; padding: 2px; text-align: center;">${f?.pct ?? 0}%</td>
+                  </tr>
+                `;
+              }).join("")}
+            </tbody>
+          </table>
+        </div>
+      `;
+
+      const filename = `Diario_${turmaNome.replace(/\s+/g, "_")}_${mes}_${ano}.pdf`;
+      const opt = {
+        margin:       10,
+        filename:     filename,
+        image:        { type: 'jpeg', quality: 0.98 },
+        html2canvas:  { scale: 2 },
+        jsPDF:        { unit: 'mm', format: 'a4', orientation: 'landscape' }
+      };
+
+      const pdfBlob = await html2pdf().set(opt).from(container).outputPdf('blob');
+      const file = new File([pdfBlob], filename, { type: "application/pdf" });
+
+      const form = new FormData();
+      form.append("destinatario", destinatario);
+      form.append("assunto", assunto);
+      form.append("corpo", corpo);
+      form.append("arquivo", file);
+
+      const BASE_API = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "") + "/";
+      const sendResp = await fetch(`${BASE_API}api/escola/send-email-document`, { method: "POST", body: form });
+      const resData = await sendResp.json();
+      if (!sendResp.ok) throw new Error(resData.erro || "Erro ao enviar e-mail");
+    } catch (err: any) {
+      console.error(err);
+      throw err;
+    }
+  }
+
   async function imprimirDiarioNaRicoh() {
     setImprimindoRicoh(true);
     try {
@@ -680,6 +805,30 @@ export default function DiarioTurmaPage() {
             <FileText className="w-4 h-4" />
             Resumo de Presenças (PDF)
           </a>
+          <button
+            onClick={() => setShowWhatsAppDiarioModal(true)}
+            className="no-print flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-bold transition-all border hover:opacity-90 cursor-pointer"
+            style={{
+              color: textoCor,
+              background: "rgba(0,0,0,0.20)",
+              borderColor: "rgba(0,0,0,0.15)",
+            }}
+          >
+            <Send className="w-4 h-4" />
+            WhatsApp
+          </button>
+          <button
+            onClick={() => setShowEmailDiarioModal(true)}
+            className="no-print flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-bold transition-all border hover:opacity-90 cursor-pointer"
+            style={{
+              color: textoCor,
+              background: "rgba(0,0,0,0.20)",
+              borderColor: "rgba(0,0,0,0.15)",
+            }}
+          >
+            <Mail className="w-4 h-4" />
+            E-mail
+          </button>
           {isMaster && (
             <button
               onClick={imprimirDiarioNaRicoh}
@@ -1097,6 +1246,20 @@ export default function DiarioTurmaPage() {
           }
         }
       `}</style>
+
+      <WhatsAppSendModal 
+        open={showWhatsAppDiarioModal} 
+        onOpenChange={setShowWhatsAppDiarioModal} 
+        onSend={handleSendWhatsAppDiario} 
+        title="Enviar Diário de Classe via WhatsApp"
+      />
+      <EmailSendModal
+        open={showEmailDiarioModal}
+        onOpenChange={setShowEmailDiarioModal}
+        onSend={handleSendEmailDiario}
+        title="Enviar Diário de Classe por E-mail"
+        defaultSubject={`Diário de Classe - ${turmaNome} (${MESES[mes-1]}/${ano})`}
+      />
     </div>
     </AppLayout>
   );

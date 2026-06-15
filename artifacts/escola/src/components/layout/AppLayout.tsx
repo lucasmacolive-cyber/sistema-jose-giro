@@ -255,36 +255,51 @@ function NotifPanel({ onClose }: { onClose: () => void }) {
 
 /* ─── Status da Impressora ────────────────────────────────────────────────── */
 function PrinterStatusBadge() {
-  const [online, setOnline] = useState<boolean | null>(null);
+  const [status, setStatus] = useState<{ online: boolean; ricohOnline: boolean; epsonOnline: boolean } | null>(null);
 
   useEffect(() => {
     const check = () => {
       fetch(`${BASE}/api/impressoes/status-agente`, { credentials: "include" })
         .then(r => r.json())
-        .then(d => setOnline(d.online))
-        .catch(() => setOnline(false));
+        .then(d => setStatus(d))
+        .catch(() => setStatus({ online: false, ricohOnline: false, epsonOnline: false }));
     };
     check();
     const t = setInterval(check, 10000);
     return () => clearInterval(t);
   }, []);
 
-  if (online === null) return null;
+  if (status === null) return null;
 
   return (
-    <div
-      title={online ? "Robô de impressão conectado e aguardando documentos" : "Robô de impressão offline (Verifique se o computador principal está ligado)"}
-      className={cn(
-        "flex items-center gap-1.5 px-2 md:px-2.5 py-1 md:py-1.5 rounded-full border text-[9px] md:text-[10px] font-bold uppercase tracking-wider transition-colors cursor-help",
-        online
-          ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
-          : "bg-red-500/10 border-red-500/20 text-red-400"
-      )}
-    >
-      <div className={cn("w-1.5 h-1.5 rounded-full", online ? "bg-emerald-400 animate-pulse" : "bg-red-400")} />
-      <Printer className="h-3 w-3 hidden md:block" />
-      <span className="hidden md:inline">{online ? "Impressora Online" : "Impressora Offline"}</span>
-      <span className="md:hidden">{online ? "ON" : "OFF"}</span>
+    <div className="flex flex-col sm:flex-row items-center gap-1.5">
+      {/* RICOH Badge */}
+      <div
+        title={status.ricohOnline ? "Impressora RICOH Online" : "Impressora RICOH Offline (Sem resposta de ping)"}
+        className={cn(
+          "flex items-center gap-1 px-1.5 md:px-2 py-0.5 md:py-1 rounded-full border text-[8px] md:text-[9px] font-bold uppercase tracking-wider transition-colors cursor-help shrink-0",
+          status.ricohOnline
+            ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
+            : "bg-red-500/10 border-red-500/20 text-red-400"
+        )}
+      >
+        <div className={cn("w-1 h-1 rounded-full", status.ricohOnline ? "bg-emerald-400 animate-pulse" : "bg-red-400")} />
+        <span>RICOH</span>
+      </div>
+
+      {/* EPSON Badge */}
+      <div
+        title={status.epsonOnline ? "Impressora EPSON Online" : "Impressora EPSON Offline (Sem resposta de ping)"}
+        className={cn(
+          "flex items-center gap-1 px-1.5 md:px-2 py-0.5 md:py-1 rounded-full border text-[8px] md:text-[9px] font-bold uppercase tracking-wider transition-colors cursor-help shrink-0",
+          status.epsonOnline
+            ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
+            : "bg-red-500/10 border-red-500/20 text-red-400"
+        )}
+      >
+        <div className={cn("w-1 h-1 rounded-full", status.epsonOnline ? "bg-emerald-400 animate-pulse" : "bg-red-400")} />
+        <span>EPSON</span>
+      </div>
     </div>
   );
 }
