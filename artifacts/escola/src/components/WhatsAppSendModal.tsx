@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "./ui/dialog";
 import { Loader2, Send } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
@@ -16,11 +16,28 @@ export function WhatsAppSendModal({ open, onOpenChange, onSend, title = "Enviar 
   const [numeroOutro, setNumeroOutro] = useState("");
   const [professorId, setProfessorId] = useState("");
   const [funcionarioId, setFuncionarioId] = useState("");
+  const [escolaGrupoJid, setEscolaGrupoJid] = useState("");
   const [mensagem, setMensagem] = useState("Segue o documento solicitado.");
   const [enviando, setEnviando] = useState(false);
 
   const { data: professores } = useListarProfessores();
   const { data: funcionarios } = useListarFuncionarios();
+
+  useEffect(() => {
+    if (open) {
+      const BASE = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "") + "/";
+      fetch(`${BASE}api/escola/contatos`)
+        .then(res => res.json())
+        .then(data => {
+          if (data && data.escola_whatsapp_grupo) {
+            setEscolaGrupoJid(data.escola_whatsapp_grupo);
+          } else {
+            setEscolaGrupoJid("");
+          }
+        })
+        .catch(err => console.error("Erro ao carregar contatos da escola:", err));
+    }
+  }, [open]);
 
   // Máscara simples para celular (DD) 9XXXX-XXXX
   const handleNumeroChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -38,8 +55,7 @@ export function WhatsAppSendModal({ open, onOpenChange, onSend, title = "Enviar 
 
   const getNumeroFinal = () => {
     if (destinoTipo === "grupo") {
-      // O número do grupo pode ser configurado depois, mas por hora:
-      return "00000000000"; // Placeholder ou buscar do config depois
+      return escolaGrupoJid;
     }
     if (destinoTipo === "professor" && professorId) {
       const prof = professores?.find(p => p.id.toString() === professorId);
@@ -53,8 +69,18 @@ export function WhatsAppSendModal({ open, onOpenChange, onSend, title = "Enviar 
   };
 
   const handleSend = async () => {
-    const limpo = getNumeroFinal().replace(/\D/g, "");
-    if (limpo.length < 10) {
+    const rawNumber = getNumeroFinal();
+    if (destinoTipo === "grupo" && !rawNumber) {
+      toast({ 
+        title: "Grupo da Escola Não Configurado", 
+        description: "Por favor, configure o Grupo da Escola na aba 'Contatos e E-mail' em Ajustes.", 
+        variant: "destructive" 
+      });
+      return;
+    }
+
+    const limpo = rawNumber.includes("@g.us") ? rawNumber : rawNumber.replace(/\D/g, "");
+    if (!rawNumber.includes("@g.us") && limpo.length < 10) {
       toast({ title: "Número Inválido", description: "O contato selecionado não possui um número de celular válido cadastrado.", variant: "destructive" });
       return;
     }

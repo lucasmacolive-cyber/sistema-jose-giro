@@ -1,6 +1,8 @@
 import { Router, type IRouter } from "express";
 import { getWhatsAppStatus, sendWhatsAppMessage, sendWhatsAppDocument, disconnectWhatsApp, generateWhatsApp } from "../lib/whatsapp.js";
 import multer from "multer";
+import { db, configuracoesTable } from "../lib/db/index.ts";
+import { ilike } from "drizzle-orm";
 
 const router: IRouter = Router();
 
@@ -66,6 +68,19 @@ router.post("/whatsapp/send-document", upload.single("arquivo"), async (req, res
     res.json({ success: true });
   } catch (err: any) {
     console.error("[WhatsApp Send Doc] Erro:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get("/whatsapp/groups", async (req, res) => {
+  try {
+    const rows = await db.select().from(configuracoesTable).where(ilike(configuracoesTable.chave, "wa_group_%"));
+    const groups = rows.map(r => ({
+      jid: r.chave.replace("wa_group_", ""),
+      nome: r.valor
+    }));
+    res.json(groups);
+  } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
 });

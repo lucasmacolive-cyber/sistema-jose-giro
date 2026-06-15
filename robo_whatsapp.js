@@ -65,6 +65,20 @@ async function startWhatsApp(pairingNumber = null) {
         const number = sock.user.id.split(":")[0];
         await updateConfig("whatsapp_number", number);
       }
+
+      // Sincronizar grupos participando no banco de dados
+      try {
+        console.log("[WhatsApp] Buscando grupos participando...");
+        const groups = await sock.groupFetchAllParticipating();
+        for (const jid in groups) {
+          const name = groups[jid].subject;
+          const key = `wa_group_${jid}`;
+          await updateConfig(key, name);
+        }
+        console.log(`[WhatsApp] ${Object.keys(groups).length} grupos sincronizados!`);
+      } catch (err) {
+        console.error("[WhatsApp] Erro ao sincronizar grupos:", err.message);
+      }
     }
   });
 
@@ -138,7 +152,7 @@ setInterval(async () => {
   if (isReady && sock) {
     try {
       const resFila = await pool.query(`
-        SELECT id, numero, mensagem, tipo, url_arquivo, mimetype, nome_arquivo 
+        SELECT id, numero, mensagem, arquivo_base64, mimetype, nome_arquivo 
         FROM fila_whatsapp 
         WHERE status = 'Pendente' 
         ORDER BY criado_em ASC LIMIT 1
@@ -150,12 +164,13 @@ setInterval(async () => {
         
         // Formatar numero (adicionar 55 se nao tiver) e @s.whatsapp.net
         let jid = msg.numero;
-        if (!jid.startsWith("55")) jid = "55" + jid;
-        if (!jid.includes("@s.whatsapp.net")) jid = jid + "@s.whatsapp.net";
+        if (!jid.includes("@g.us")) {
+          if (!jid.startsWith("55")) jid = "55" + jid;
+          if (!jid.includes("@s.whatsapp.net")) jid = jid + "@s.whatsapp.net";
+        }
 
-        if (msg.tipo === "arquivo" && msg.url_arquivo) {
-          const resp = await fetch(msg.url_arquivo);
-          const buffer = Buffer.from(await resp.arrayBuffer());
+        if (msg.arquivo_base64) {
+          const buffer = Buffer.from(msg.arquivo_base64, "base64");
           await sock.sendMessage(jid, { 
             document: buffer, 
             mimetype: msg.mimetype || "application/pdf", 
@@ -166,7 +181,7 @@ setInterval(async () => {
           await sock.sendMessage(jid, { text: msg.mensagem });
         }
 
-        await pool.query("UPDATE fila_whatsapp SET status = 'Enviado', enviado_em = NOW() WHERE id = $1", [msg.id]);
+        await pool.query("UPDATE fila_whatsapp SET status = 'Enviado', atualizado_em = NOW() WHERE id = $1", [msg.id]);
         console.log(`[WhatsApp] Msg ${msg.id} enviada com sucesso!`);
       }
     } catch (err) {

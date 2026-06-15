@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db, filaWhatsappTable, configuracoesTable } from "../lib/db/index.js";
-import { eq } from "drizzle-orm";
+import { eq, ilike } from "drizzle-orm";
 import multer from "multer";
 
 const router = Router();
@@ -95,6 +95,19 @@ router.post("/whatsapp/send-document", upload.single("arquivo"), async (req, res
     res.json({ success: true });
   } catch (err: any) {
     console.error("Erro ao enfileirar documento WhatsApp:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get("/whatsapp/groups", async (req, res) => {
+  try {
+    const rows = await db.select().from(configuracoesTable).where(ilike(configuracoesTable.chave, "wa_group_%"));
+    const groups = rows.map(r => ({
+      jid: r.chave.replace("wa_group_", ""),
+      nome: r.valor
+    }));
+    res.json(groups);
+  } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
 });

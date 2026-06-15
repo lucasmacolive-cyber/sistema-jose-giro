@@ -47,6 +47,7 @@ router.get("/escola/contatos", async (_req, res) => {
     const keys = [
       "escola_email",
       "escola_telefone",
+      "escola_whatsapp_grupo",
       "impressora_ricoh_ip",
       "impressora_epson_ip",
       "smtp_host",
@@ -59,6 +60,7 @@ router.get("/escola/contatos", async (_req, res) => {
     const result = {
       escola_email: "",
       escola_telefone: "",
+      escola_whatsapp_grupo: "",
       impressora_ricoh_ip: "",
       impressora_epson_ip: "",
       smtp_host: "smtp.gmail.com",
@@ -84,6 +86,7 @@ router.put("/escola/contatos", async (req, res) => {
     const keys = [
       "escola_email",
       "escola_telefone",
+      "escola_whatsapp_grupo",
       "impressora_ricoh_ip",
       "impressora_epson_ip",
       "smtp_host",
