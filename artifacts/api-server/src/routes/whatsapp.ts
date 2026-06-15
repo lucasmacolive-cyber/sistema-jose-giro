@@ -44,10 +44,14 @@ router.post("/whatsapp/generate", async (req, res) => {
     return res.status(400).json({ error: "Número de telefone é obrigatório" });
   }
   try {
-    await db.insert(configuracoesTable).values({ chave: "whatsapp_command_generate", valor: number, atualizadoEm: new Date() })
-      .onConflictDoUpdate({ target: configuracoesTable.chave, set: { valor: number, atualizadoEm: new Date() } });
-    await db.insert(configuracoesTable).values({ chave: "whatsapp_number", valor: number, atualizadoEm: new Date() })
-      .onConflictDoUpdate({ target: configuracoesTable.chave, set: { valor: number, atualizadoEm: new Date() } });
+    let cleanNumber = number.replace(/\D/g, "");
+    if (cleanNumber.length === 10 || cleanNumber.length === 11) {
+      cleanNumber = "55" + cleanNumber;
+    }
+    await db.insert(configuracoesTable).values({ chave: "whatsapp_command_generate", valor: cleanNumber, atualizadoEm: new Date() })
+      .onConflictDoUpdate({ target: configuracoesTable.chave, set: { valor: cleanNumber, atualizadoEm: new Date() } });
+    await db.insert(configuracoesTable).values({ chave: "whatsapp_number", valor: cleanNumber, atualizadoEm: new Date() })
+      .onConflictDoUpdate({ target: configuracoesTable.chave, set: { valor: cleanNumber, atualizadoEm: new Date() } });
     res.json({ success: true });
   } catch(err: any) {
     res.status(500).json({ error: err.message });

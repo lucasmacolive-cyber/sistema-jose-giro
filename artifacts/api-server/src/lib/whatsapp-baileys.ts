@@ -66,6 +66,9 @@ let hasRequestedPairingCode = false;
 
 function formatToWhatsAppJidNumber(num: string): string {
   let clean = num.replace(/\D/g, "");
+  if (clean.length === 10 || clean.length === 11) {
+    clean = "55" + clean;
+  }
   if (clean.startsWith("55") && clean.length === 13) {
     const ddd = parseInt(clean.substring(2, 4));
     if (ddd >= 11 && ddd <= 28) {
@@ -152,10 +155,10 @@ export async function connectToWhatsApp(pairingNumber?: string, waitForOpen: boo
 
       if (connection === "close") {
         hasRequestedPairingCode = false;
+        sock = null; // Sempre define sock para null no fechamento para forçar a recriação na próxima tentativa
         const shouldReconnect = (lastDisconnect?.error as Boom)?.output?.statusCode !== DisconnectReason.loggedOut;
         if (!shouldReconnect) {
           await db.delete(configuracoesTable).where(eq(configuracoesTable.chave, "baileys_creds"));
-          sock = null;
         }
         if (!isResolved && !waitForOpen) {
           clearTimeout(timeout);
