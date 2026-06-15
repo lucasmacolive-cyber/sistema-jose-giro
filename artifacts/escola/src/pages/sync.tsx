@@ -3712,16 +3712,25 @@ function SecaoWhatsAppAutomacoes() {
     }
   }, []);
 
+  const [escolaGrupoJid, setEscolaGrupoJid] = useState("");
+
   const carregarListas = useCallback(async () => {
     try {
-      const [resProfs, resGroups, resTurmas] = await Promise.all([
+      const BASE = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "") + "/";
+      const [resProfs, resGroups, resTurmas, resEscola] = await Promise.all([
         fetch(API("/professores")),
         fetch(API("/whatsapp/groups")),
-        fetch(API("/turmas?all=true"))
+        fetch(API("/turmas?all=true")),
+        fetch(`${BASE}api/escola/contatos`)
       ]);
       setProfessores(await resProfs.json());
       setGrupos(await resGroups.json());
       setTurmas(await resTurmas.json());
+      
+      const escolaData = await resEscola.json();
+      if (escolaData && escolaData.escola_whatsapp_grupo) {
+        setEscolaGrupoJid(escolaData.escola_whatsapp_grupo);
+      }
     } catch (err) {
       console.error("Erro ao carregar listas:", err);
     }
@@ -4475,6 +4484,9 @@ function SecaoWhatsAppAutomacoes() {
                       className="w-full bg-[#1e293b] text-white border border-white/10 rounded-lg px-3 py-2.5 focus:outline-none focus:border-[#22c55e] text-sm font-semibold"
                     >
                       <option value="">Selecione o grupo...</option>
+                      {escolaGrupoJid && !grupos.some(g => g.jid === escolaGrupoJid) && (
+                        <option value={escolaGrupoJid}>Grupo da Escola (Oficial)</option>
+                      )}
                       {grupos.map(g => (
                         <option key={g.jid} value={g.jid}>{g.nome}</option>
                       ))}
