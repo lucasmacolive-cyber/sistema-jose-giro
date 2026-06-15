@@ -13,7 +13,7 @@ router.get("/whatsapp/status", async (req, res) => {
     const status = await getWhatsAppStatus();
     res.json(status);
   } catch(err) {
-    res.json({ ready: false, qr: null, number: null });
+    res.json({ ready: false, code: null, number: null });
   }
 });
 

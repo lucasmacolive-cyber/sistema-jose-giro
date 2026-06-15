@@ -28,6 +28,9 @@ router.post("/whatsapp/disconnect", async (req, res) => {
   try {
     await db.insert(configuracoesTable).values({ chave: "whatsapp_command_disconnect", valor: "true", atualizadoEm: new Date() })
       .onConflictDoUpdate({ target: configuracoesTable.chave, set: { valor: "true", atualizadoEm: new Date() } });
+    await db.insert(configuracoesTable).values({ chave: "whatsapp_command", valor: "logout", atualizadoEm: new Date() })
+      .onConflictDoUpdate({ target: configuracoesTable.chave, set: { valor: "logout", atualizadoEm: new Date() } });
+    
     // Remove local state on UI
     await db.delete(configuracoesTable).where(eq(configuracoesTable.chave, "whatsapp_ready"));
     await db.delete(configuracoesTable).where(eq(configuracoesTable.chave, "whatsapp_pairing_code"));
@@ -48,10 +51,23 @@ router.post("/whatsapp/generate", async (req, res) => {
     if (cleanNumber.length === 10 || cleanNumber.length === 11) {
       cleanNumber = "55" + cleanNumber;
     }
+    
+    // Clean old states
+    await db.delete(configuracoesTable).where(eq(configuracoesTable.chave, "whatsapp_ready"));
+    await db.delete(configuracoesTable).where(eq(configuracoesTable.chave, "whatsapp_pairing_code"));
+
+    // Write new protocol keys
     await db.insert(configuracoesTable).values({ chave: "whatsapp_command_generate", valor: cleanNumber, atualizadoEm: new Date() })
       .onConflictDoUpdate({ target: configuracoesTable.chave, set: { valor: cleanNumber, atualizadoEm: new Date() } });
     await db.insert(configuracoesTable).values({ chave: "whatsapp_number", valor: cleanNumber, atualizadoEm: new Date() })
       .onConflictDoUpdate({ target: configuracoesTable.chave, set: { valor: cleanNumber, atualizadoEm: new Date() } });
+
+    // Write old protocol keys (compatibility)
+    await db.insert(configuracoesTable).values({ chave: "whatsapp_target_number", valor: cleanNumber, atualizadoEm: new Date() })
+      .onConflictDoUpdate({ target: configuracoesTable.chave, set: { valor: cleanNumber, atualizadoEm: new Date() } });
+    await db.insert(configuracoesTable).values({ chave: "whatsapp_command", valor: "generate", atualizadoEm: new Date() })
+      .onConflictDoUpdate({ target: configuracoesTable.chave, set: { valor: "generate", atualizadoEm: new Date() } });
+
     res.json({ success: true });
   } catch(err: any) {
     res.status(500).json({ error: err.message });

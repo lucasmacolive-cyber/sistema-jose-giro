@@ -50,23 +50,53 @@ async function loop() {
     }
 
     // 2. Lê comandos
+    let numberToGenerate = null;
+    let shouldGenerate = false;
+    let shouldDisconnect = false;
+
+    // Check new protocol generate command
     const cmdGenerate = await db.select().from(configuracoesTable).where(eq(configuracoesTable.chave, 'whatsapp_command_generate'));
     if (cmdGenerate.length > 0) {
-      const number = cmdGenerate[0].valor;
-      console.log("Comando recebido: Gerar para", number);
+      numberToGenerate = cmdGenerate[0].valor;
+      shouldGenerate = true;
       await db.delete(configuracoesTable).where(eq(configuracoesTable.chave, 'whatsapp_command_generate'));
-      
-      // Limpa socket atual
-      await disconnectWhatsApp();
-      // Inicializa novo socket com pareamento (vai esperar 2.5s e chamar requestPairingCode e salvar no banco)
-      await connectToWhatsApp(number, false);
     }
 
+    // Check old protocol command (from Vercel)
+    const cmdOld = await db.select().from(configuracoesTable).where(eq(configuracoesTable.chave, 'whatsapp_command'));
+    if (cmdOld.length > 0) {
+      const cmdVal = cmdOld[0].valor;
+      if (cmdVal === 'generate') {
+        const targetNumberRow = await db.select().from(configuracoesTable).where(eq(configuracoesTable.chave, 'whatsapp_target_number'));
+        numberToGenerate = targetNumberRow.length > 0 ? targetNumberRow[0].valor : null;
+        shouldGenerate = true;
+      } else if (cmdVal === 'logout') {
+        shouldDisconnect = true;
+      }
+      await db.delete(configuracoesTable).where(eq(configuracoesTable.chave, 'whatsapp_command'));
+    }
+
+    // Check new protocol disconnect command
     const cmdDisconnect = await db.select().from(configuracoesTable).where(eq(configuracoesTable.chave, 'whatsapp_command_disconnect'));
     if (cmdDisconnect.length > 0) {
-      console.log("Comando recebido: Desconectar");
+      shouldDisconnect = true;
       await db.delete(configuracoesTable).where(eq(configuracoesTable.chave, 'whatsapp_command_disconnect'));
+    }
+
+    if (shouldDisconnect) {
+      console.log("Comando recebido: Desconectar");
       await disconnectWhatsApp();
+    }
+
+    if (shouldGenerate && numberToGenerate) {
+      console.log("Comando recebido: Gerar para", numberToGenerate);
+      await disconnectWhatsApp();
+      
+      // Salva o whatsapp_number nas configurações (para que o loop de conexão automática saiba qual número usar)
+      await db.insert(configuracoesTable).values({ chave: "whatsapp_number", valor: numberToGenerate, atualizadoEm: new Date() })
+        .onConflictDoUpdate({ target: configuracoesTable.chave, set: { valor: numberToGenerate, atualizadoEm: new Date() } });
+      
+      await connectToWhatsApp(numberToGenerate, false);
     }
 
     // 3. Processa fila de mensagens (isso só funciona se estiver conectado, então ignoramos se der erro dentro do Baileys)

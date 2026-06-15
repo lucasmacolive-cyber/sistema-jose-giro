@@ -9,22 +9,33 @@ export function initWhatsApp() {
 }
 
 export async function getWhatsAppStatus() {
-  const qrRow = await db.select().from(configuracoesTable).where(eq(configuracoesTable.chave, "whatsapp_qr"));
   const readyRow = await db.select().from(configuracoesTable).where(eq(configuracoesTable.chave, "whatsapp_ready"));
   const numberRow = await db.select().from(configuracoesTable).where(eq(configuracoesTable.chave, "whatsapp_number"));
+  const codeRow = await db.select().from(configuracoesTable).where(eq(configuracoesTable.chave, "whatsapp_pairing_code"));
   
-  const qr = qrRow[0]?.valor || null;
   const ready = readyRow[0]?.valor === "true";
   const number = numberRow[0]?.valor || null;
+  const code = codeRow[0]?.valor || null;
 
   return {
     ready: ready,
-    qr: qr,
+    code: code,
     number: number,
   };
 }
 
 export async function disconnectWhatsApp() {
+  // Envia comando sob novo protocolo
+  await db.insert(configuracoesTable).values({
+    chave: "whatsapp_command_disconnect",
+    valor: "true",
+    atualizadoEm: new Date(),
+  }).onConflictDoUpdate({
+    target: configuracoesTable.chave,
+    set: { valor: "true", atualizadoEm: new Date() },
+  });
+
+  // Envia comando sob antigo protocolo (compatibilidade)
   await db.insert(configuracoesTable).values({
     chave: "whatsapp_command",
     valor: "logout",
@@ -33,6 +44,11 @@ export async function disconnectWhatsApp() {
     target: configuracoesTable.chave,
     set: { valor: "logout", atualizadoEm: new Date() },
   });
+
+  // Limpa estado local do painel
+  await db.delete(configuracoesTable).where(eq(configuracoesTable.chave, "whatsapp_ready"));
+  await db.delete(configuracoesTable).where(eq(configuracoesTable.chave, "whatsapp_pairing_code"));
+  await db.delete(configuracoesTable).where(eq(configuracoesTable.chave, "whatsapp_number"));
 }
 
 export async function generateWhatsApp(number: string) {
@@ -41,7 +57,11 @@ export async function generateWhatsApp(number: string) {
     cleanNumber = "55" + cleanNumber;
   }
 
-  // Salva o número alvo formatado nas configurações
+  // Limpa estado de pareamento anterior para o novo começar limpo
+  await db.delete(configuracoesTable).where(eq(configuracoesTable.chave, "whatsapp_ready"));
+  await db.delete(configuracoesTable).where(eq(configuracoesTable.chave, "whatsapp_pairing_code"));
+
+  // Salva o número alvo formatado nas configurações (ambos protocolos)
   await db.insert(configuracoesTable).values({
     chave: "whatsapp_target_number",
     valor: cleanNumber,
@@ -51,7 +71,25 @@ export async function generateWhatsApp(number: string) {
     set: { valor: cleanNumber, atualizadoEm: new Date() },
   });
 
-  // Envia o comando de geração
+  await db.insert(configuracoesTable).values({
+    chave: "whatsapp_number",
+    valor: cleanNumber,
+    atualizadoEm: new Date(),
+  }).onConflictDoUpdate({
+    target: configuracoesTable.chave,
+    set: { valor: cleanNumber, atualizadoEm: new Date() },
+  });
+
+  // Envia o comando de geração (ambos protocolos)
+  await db.insert(configuracoesTable).values({
+    chave: "whatsapp_command_generate",
+    valor: cleanNumber,
+    atualizadoEm: new Date(),
+  }).onConflictDoUpdate({
+    target: configuracoesTable.chave,
+    set: { valor: cleanNumber, atualizadoEm: new Date() },
+  });
+
   await db.insert(configuracoesTable).values({
     chave: "whatsapp_command",
     valor: "generate",
