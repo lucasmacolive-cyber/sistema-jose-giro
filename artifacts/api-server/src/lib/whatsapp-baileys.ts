@@ -117,12 +117,8 @@ function formatToWhatsAppJidNumber(num: string): string {
   if (clean.length === 10 || clean.length === 11) {
     clean = "55" + clean;
   }
-  if (clean.startsWith("55") && clean.length === 13) {
-    const ddd = parseInt(clean.substring(2, 4));
-    if (ddd >= 11 && ddd <= 28) {
-      clean = clean.substring(0, 4) + clean.substring(5);
-    }
-  }
+  // Removido o drop automático do dígito 9 para evitar erros de autenticação (401)
+  // ao parear contas que utilizam o nono dígito no WhatsApp.
   return clean;
 }
 

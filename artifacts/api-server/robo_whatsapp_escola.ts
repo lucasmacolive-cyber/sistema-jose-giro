@@ -55,6 +55,19 @@ async function hasValidSession() {
 
 async function loop() {
   try {
+    const guiModeRow = await db.select().from(configuracoesTable).where(eq(configuracoesTable.chave, 'whatsapp_gui_mode'));
+    const guiMode = guiModeRow.length > 0 && guiModeRow[0].valor === 'true';
+
+    if (guiMode) {
+      const status = await getWhatsAppStatus();
+      if (status.ready) {
+        await appendWhatsAppLog("[Bot] Modo GUI ativado. Desconectando Baileys...");
+        await disconnectWhatsApp();
+      }
+      setTimeout(loop, 10000);
+      return;
+    }
+
     // 1. Conecta apenas se houver sessão registrada ou um número alvo para parear
     const isRegistered = await hasValidSession();
     const targetNumberRow = await db.select().from(configuracoesTable).where(eq(configuracoesTable.chave, 'whatsapp_number'));

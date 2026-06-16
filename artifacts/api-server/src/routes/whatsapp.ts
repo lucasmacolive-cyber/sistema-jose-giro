@@ -18,9 +18,12 @@ router.get("/whatsapp/status", async (req, res) => {
     const numberRow = await db.select().from(configuracoesTable).where(eq(configuracoesTable.chave, "whatsapp_number"));
     const number = numberRow.length > 0 ? numberRow[0].valor : null;
 
-    res.json({ ready, code, number });
+    const guiModeRow = await db.select().from(configuracoesTable).where(eq(configuracoesTable.chave, "whatsapp_gui_mode"));
+    const guiMode = guiModeRow.length > 0 && guiModeRow[0].valor === "true";
+
+    res.json({ ready, code, number, guiMode });
   } catch(err) {
-    res.json({ ready: false, code: null, number: null });
+    res.json({ ready: false, code: null, number: null, guiMode: false });
   }
 });
 
@@ -119,6 +122,18 @@ router.post("/whatsapp/send-document", upload.single("arquivo"), async (req, res
   }
 });
 
+router.post("/whatsapp/gui-mode", async (req, res) => {
+  const { enabled } = req.body;
+  try {
+    const value = enabled ? "true" : "false";
+    await db.insert(configuracoesTable).values({ chave: "whatsapp_gui_mode", valor: value, atualizadoEm: new Date() })
+      .onConflictDoUpdate({ target: configuracoesTable.chave, set: { valor: value, atualizadoEm: new Date() } });
+    res.json({ success: true, enabled: enabled });
+  } catch(err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.get("/whatsapp/groups", async (req, res) => {
   try {
     const rows = await db.select().from(configuracoesTable).where(ilike(configuracoesTable.chave, "wa_group_%"));
@@ -184,7 +199,7 @@ router.delete("/whatsapp/queue/:id", async (req, res) => {
 router.get("/whatsapp/logs", async (req, res) => {
   try {
     const row = await db.select().from(configuracoesTable).where(eq(configuracoesTable.chave, "whatsapp_logs"));
-    if (row.length > 0) {
+    if (row.length > 0 && row[0].valor) {
       const logs = JSON.parse(row[0].valor);
       res.json(logs);
     } else {

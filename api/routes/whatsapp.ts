@@ -13,7 +13,7 @@ router.get("/whatsapp/status", async (req, res) => {
     const status = await getWhatsAppStatus();
     res.json(status);
   } catch(err) {
-    res.json({ ready: false, code: null, number: null });
+    res.json({ ready: false, code: null, number: null, guiMode: false });
   }
 });
 
@@ -72,6 +72,18 @@ router.post("/whatsapp/send-document", upload.single("arquivo"), async (req, res
     res.json({ success: true });
   } catch (err: any) {
     console.error("[WhatsApp Send Doc] Erro:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post("/whatsapp/gui-mode", async (req, res) => {
+  const { enabled } = req.body;
+  try {
+    const value = enabled ? "true" : "false";
+    await db.insert(configuracoesTable).values({ chave: "whatsapp_gui_mode", valor: value, atualizadoEm: new Date() })
+      .onConflictDoUpdate({ target: configuracoesTable.chave, set: { valor: value, atualizadoEm: new Date() } });
+    res.json({ success: true, enabled: enabled });
+  } catch(err: any) {
     res.status(500).json({ error: err.message });
   }
 });
@@ -141,7 +153,7 @@ router.delete("/whatsapp/queue/:id", async (req, res) => {
 router.get("/whatsapp/logs", async (req, res) => {
   try {
     const row = await db.select().from(configuracoesTable).where(eq(configuracoesTable.chave, "whatsapp_logs"));
-    if (row.length > 0) {
+    if (row.length > 0 && row[0].valor) {
       const logs = JSON.parse(row[0].valor);
       res.json(logs);
     } else {

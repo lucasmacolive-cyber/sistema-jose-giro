@@ -3525,7 +3525,7 @@ function SecaoConfigDiario() {
    SEÇÃO: WhatsApp
 ══════════════════════════════════════════ */
 function SecaoWhatsAppConexao() {
-  const [status, setStatus] = useState<{ ready: boolean; code: string | null; number: string | null } | null>(null);
+  const [status, setStatus] = useState<{ ready: boolean; code: string | null; number: string | null; guiMode?: boolean } | null>(null);
   const [carregando, setCarregando] = useState(true);
   const [inputNumber, setInputNumber] = useState("");
   const { toast } = useToast();
@@ -3547,6 +3547,29 @@ function SecaoWhatsAppConexao() {
     check();
     return () => clearTimeout(timeout);
   }, []);
+
+  const handleToggleGuiMode = async (enabled: boolean) => {
+    try {
+      const res = await fetch(API("/whatsapp/gui-mode"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled })
+      });
+      if (res.ok) {
+        setStatus(prev => prev ? { ...prev, guiMode: enabled } : null);
+        toast({
+          title: "Modo alterado!",
+          description: enabled 
+            ? "Sistema configurado para envio via Automação do WhatsApp Desktop local." 
+            : "Sistema configurado para envio via pareamento de código (Baileys)."
+        });
+      } else {
+        toast({ title: "Erro ao alterar modo", variant: "destructive" });
+      }
+    } catch (e) {
+      toast({ title: "Erro de conexão", variant: "destructive" });
+    }
+  };
 
   const handleDisconnect = async () => {
     try {
@@ -3647,6 +3670,50 @@ function SecaoWhatsAppConexao() {
             </button>
           </div>
         )}
+      </div>
+
+      {/* Card de Configuração do Modo de Envio */}
+      <div className="bg-[#1a2332] rounded-3xl p-6 border border-white/5 relative overflow-hidden">
+        <h4 className="text-white font-bold text-base mb-2 flex items-center gap-2">
+          <Settings2 className="w-5 h-5 text-[#22c55e]" /> Modo de Envio das Mensagens
+        </h4>
+        <p className="text-xs text-white/50 mb-4">
+          Escolha como o sistema deve disparar as mensagens do WhatsApp (Fila de Envio).
+        </p>
+
+        <div className="space-y-3">
+          <label className={`flex items-start gap-3 p-3 rounded-2xl border transition-all cursor-pointer ${!status?.guiMode ? 'bg-[#22c55e]/10 border-[#22c55e]/40 shadow-md shadow-[#22c55e]/5' : 'bg-transparent border-white/5 hover:bg-white/5'}`}>
+            <input 
+              type="radio" 
+              name="guiMode" 
+              checked={!status?.guiMode}
+              onChange={() => handleToggleGuiMode(false)}
+              className="mt-1 accent-[#22c55e]"
+            />
+            <div className="text-left">
+              <span className="text-sm font-bold text-white block">Modo Robô (Headless/Baileys)</span>
+              <span className="text-xs text-white/40 block mt-0.5">
+                Executa em segundo plano via código. Ideal se a conexão Baileys estiver pareada e estável.
+              </span>
+            </div>
+          </label>
+
+          <label className={`flex items-start gap-3 p-3 rounded-2xl border transition-all cursor-pointer ${status?.guiMode ? 'bg-[#22c55e]/10 border-[#22c55e]/40 shadow-md shadow-[#22c55e]/5' : 'bg-transparent border-white/5 hover:bg-white/5'}`}>
+            <input 
+              type="radio" 
+              name="guiMode" 
+              checked={status?.guiMode || false}
+              onChange={() => handleToggleGuiMode(true)}
+              className="mt-1 accent-[#22c55e]"
+            />
+            <div className="text-left">
+              <span className="text-sm font-bold text-white block">Modo Aplicativo (Automação GUI)</span>
+              <span className="text-xs text-white/40 block mt-0.5">
+                Controla o aplicativo WhatsApp Desktop do computador local, abrindo janelas e colando os arquivos automaticamente.
+              </span>
+            </div>
+          </label>
+        </div>
       </div>
     </div>
   );

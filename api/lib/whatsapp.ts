@@ -12,15 +12,18 @@ export async function getWhatsAppStatus() {
   const readyRow = await db.select().from(configuracoesTable).where(eq(configuracoesTable.chave, "whatsapp_ready"));
   const numberRow = await db.select().from(configuracoesTable).where(eq(configuracoesTable.chave, "whatsapp_number"));
   const codeRow = await db.select().from(configuracoesTable).where(eq(configuracoesTable.chave, "whatsapp_pairing_code"));
+  const guiModeRow = await db.select().from(configuracoesTable).where(eq(configuracoesTable.chave, "whatsapp_gui_mode"));
   
   const ready = readyRow[0]?.valor === "true";
   const number = numberRow[0]?.valor || null;
   const code = codeRow[0]?.valor || null;
+  const guiMode = guiModeRow[0]?.valor === "true";
 
   return {
     ready: ready,
     code: code,
     number: number,
+    guiMode: guiMode,
   };
 }
 

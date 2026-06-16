@@ -144,14 +144,33 @@ async function startWhatsApp(pairingNumber = null) {
 }
 
 // Inicia com sessão local se existir
-if (fs.existsSync("baileys_auth")) {
-  startWhatsApp();
+async function boot() {
+  try {
+    const resGui = await pool.query("SELECT valor FROM configuracoes WHERE chave = 'whatsapp_gui_mode'");
+    const guiMode = resGui.rows[0]?.valor === "true";
+    if (guiMode) {
+      await appendWhatsAppLog("[WhatsApp] Modo GUI ativo. O robô local rodará apenas como agendador de mensagens.");
+    } else {
+      if (fs.existsSync("baileys_auth")) {
+        startWhatsApp();
+      }
+    }
+  } catch(e) {
+    if (fs.existsSync("baileys_auth")) {
+      startWhatsApp();
+    }
+  }
 }
+boot();
 
 // Loop de Fila e Comandos
 setInterval(async () => {
   try {
-    const cmdRes = await pool.query("SELECT valor FROM configuracoes WHERE chave = 'whatsapp_command'");
+    const resGui = await pool.query("SELECT valor FROM configuracoes WHERE chave = 'whatsapp_gui_mode'");
+    const guiMode = resGui.rows[0]?.valor === "true";
+
+    if (!guiMode) {
+      const cmdRes = await pool.query("SELECT valor FROM configuracoes WHERE chave = 'whatsapp_command'");
     if (cmdRes.rows.length > 0) {
       const cmd = cmdRes.rows[0].valor;
       
@@ -241,6 +260,8 @@ setInterval(async () => {
       await appendWhatsAppLog(`[Erro] Falha ao enviar mensagem da fila: ${err.message}`);
     }
   }
+  } // Fecha if (!guiMode)
+
 
   // Processa automações agendadas a cada 30 segundos
   const nowMs = Date.now();
