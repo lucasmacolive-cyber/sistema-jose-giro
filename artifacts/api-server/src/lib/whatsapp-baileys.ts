@@ -184,11 +184,17 @@ export async function connectToWhatsApp(pairingNumber?: string, waitForOpen: boo
 
       if (connection === "close") {
         hasRequestedPairingCode = false;
+        const isRegistered = !!(sock?.authState?.creds?.me?.id || sock?.authState?.creds?.registered);
         sock = null; // Sempre define sock para null no fechamento para forçar a recriação na próxima tentativa
-        const shouldReconnect = (lastDisconnect?.error as Boom)?.output?.statusCode !== DisconnectReason.loggedOut;
-        if (!shouldReconnect) {
+        const statusCode = (lastDisconnect?.error as Boom)?.output?.statusCode;
+        const isLoggedOut = statusCode === DisconnectReason.loggedOut;
+        
+        if (isLoggedOut && isRegistered) {
+          console.log("[WhatsApp-Baileys] Deslogado pelo usuário. Removendo credenciais...");
           await db.delete(configuracoesTable).where(eq(configuracoesTable.chave, "baileys_creds"));
+          await db.delete(configuracoesTable).where(like(configuracoesTable.chave, "baileys_%"));
         }
+        
         if (!isResolved && !waitForOpen) {
           clearTimeout(timeout);
           isResolved = true;
