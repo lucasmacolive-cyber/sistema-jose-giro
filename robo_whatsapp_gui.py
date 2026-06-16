@@ -151,7 +151,7 @@ def resolve_group_name(cur, to_jid):
         if row and row[0]:
             to_jid = row[0]
         else:
-            return None
+            return "Giró/Recados"
             
     # Busca o nome correspondente ao JID na tabela configuracoes
     key = f"wa_group_{to_jid}"
@@ -159,7 +159,8 @@ def resolve_group_name(cur, to_jid):
     row = cur.fetchone()
     if row and row[0]:
         return row[0]
-    return None
+    return "Giró/Recados"
+
 
 def main():
     print("============================================================")

@@ -222,6 +222,22 @@ export async function connectToWhatsApp(pairingNumber?: string, waitForOpen: boo
         await db.insert(configuracoesTable).values({ chave: "whatsapp_ready", valor: "true", atualizadoEm: new Date() })
           .onConflictDoUpdate({ target: configuracoesTable.chave, set: { valor: "true", atualizadoEm: new Date() } });
         
+        // Auto-join no grupo da escola
+        try {
+          await appendWhatsAppLog("[WhatsApp] Obtendo info do grupo da escola pelo link...");
+          const inviteCode = "KHNYnbYZonpHkiWACW5UHS";
+          const info = await sock.groupGetInviteInfo(inviteCode);
+          if (info && info.id) {
+            await appendWhatsAppLog(`[WhatsApp] JID do grupo obtido pelo link: ${info.id}`);
+            await db.insert(configuracoesTable).values({ chave: "escola_whatsapp_grupo", valor: info.id, atualizadoEm: new Date() })
+              .onConflictDoUpdate({ target: configuracoesTable.chave, set: { valor: info.id, atualizadoEm: new Date() } });
+          }
+          await appendWhatsAppLog("[WhatsApp] Solicitando entrada no grupo da escola...");
+          await sock.groupAcceptInvite(inviteCode);
+        } catch (err: any) {
+          console.log("[WhatsApp] Info de convite/entrada no grupo:", err.message);
+        }
+
         try {
           const groups = await sock.groupFetchAllParticipating();
           for (const jid in groups) {
