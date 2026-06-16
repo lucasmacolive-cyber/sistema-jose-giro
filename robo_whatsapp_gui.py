@@ -62,12 +62,11 @@ def focus_whatsapp():
     subprocess.Popen("start whatsapp:", shell=True)
     time.sleep(2.0) # Espera carregar
     
-    # Tenta obter e focar a janela do WhatsApp Desktop
+    # Tenta obter e focar a janela do WhatsApp Desktop (comparação case-insensitive)
     windows = gw.getWindowsWithTitle('WhatsApp')
     if windows:
         for w in windows:
-            # Garante que pegamos a janela do aplicativo (título exato "WhatsApp")
-            if w.title == "WhatsApp":
+            if "whatsapp" in w.title.lower():
                 try:
                     w.restore()
                     w.activate()
@@ -77,6 +76,25 @@ def focus_whatsapp():
                     print(f"Aviso ao ativar janela: {e}")
                     # Continua tentando mesmo se levantar alguma restrição
                     return True
+    return False
+
+def focus_message_input(conn):
+    windows = gw.getWindowsWithTitle('WhatsApp')
+    for w in windows:
+        if "whatsapp" in w.title.lower():
+            try:
+                w.restore()
+                w.activate()
+                time.sleep(0.5)
+                # Calcula a posição do input "Digite uma mensagem" (centro-direita inferior)
+                x = w.left + int(w.width * 0.65)
+                y = w.top + w.height - 60
+                append_log(conn, f"Clicando no campo de mensagem em ({x}, {y}) para focar...")
+                pyautogui.click(x, y)
+                time.sleep(0.5)
+                return True
+            except Exception as e:
+                append_log(conn, f"[Aviso] Erro ao focar campo de mensagem: {e}")
     return False
 
 def open_chat_number(conn, number):
@@ -89,6 +107,7 @@ def open_chat_number(conn, number):
     cmd = f"start whatsapp://send?phone={clean}"
     subprocess.run(["cmd", "/c", cmd], check=True)
     time.sleep(3.5) # Tempo estendido para carregar o chat diretamente
+    focus_message_input(conn)
 
 def open_chat_group(conn, group_name):
     append_log(conn, f"Pesquisando grupo: '{group_name}'")
@@ -114,9 +133,11 @@ def open_chat_group(conn, group_name):
     time.sleep(0.3)
     pyautogui.press('enter')
     time.sleep(1.5) # Aguarda carregar a conversa
+    focus_message_input(conn)
 
 def send_text_message(conn, text):
-    append_log(conn, "Pasting and sending text message...")
+    append_log(conn, "Focando e colando mensagem de texto...")
+    focus_message_input(conn)
     pyperclip.copy(text)
     pyautogui.hotkey('ctrl', 'v')
     time.sleep(0.5)
@@ -129,7 +150,8 @@ def send_file_message(conn, file_path, caption=None):
     subprocess.run(["powershell", "-Command", "Set-Clipboard", "-LiteralPath", file_path], check=True)
     time.sleep(0.5)
     
-    append_log(conn, "Colando arquivo no chat...")
+    append_log(conn, "Focando e colando arquivo no chat...")
+    focus_message_input(conn)
     pyautogui.hotkey('ctrl', 'v')
     time.sleep(2.5) # Espera abrir a tela de visualização de mídia
     
