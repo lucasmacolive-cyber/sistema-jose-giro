@@ -24,6 +24,29 @@ async function updateConfig(chave, valor) {
   await pool.query(query, [chave, valor]);
 }
 
+async function appendWhatsAppLog(msg) {
+  const time = new Date().toLocaleTimeString("pt-BR");
+  const line = `[${time}] ${msg}`;
+  console.log(line);
+  try {
+    const res = await pool.query("SELECT valor FROM configuracoes WHERE chave = 'whatsapp_logs'");
+    let logs = [];
+    if (res.rows.length > 0) {
+      try { logs = JSON.parse(res.rows[0].valor); } catch(e){}
+    }
+    logs.push(line);
+    if (logs.length > 100) logs.shift();
+    await pool.query(
+      `INSERT INTO configuracoes (chave, valor, atualizado_em) 
+       VALUES ('whatsapp_logs', $1, NOW())
+       ON CONFLICT (chave) DO UPDATE SET valor = $1, atualizado_em = NOW()`,
+      [JSON.stringify(logs)]
+    );
+  } catch(e) {
+    console.error("Erro gravando log do bot no banco:", e);
+  }
+}
+
 async function startWhatsApp(pairingNumber = null) {
   if (pairingNumber) {
     pairingNumber = pairingNumber.replace(/\D/g, "");
@@ -49,20 +72,19 @@ async function startWhatsApp(pairingNumber = null) {
 
     if (connection === "close") {
       const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
-      console.log("[WhatsApp] Conexão fechada. Reconectando:", shouldReconnect);
+      await appendWhatsAppLog("[Conexão] Conexão fechada. Reconectando: " + shouldReconnect);
       isReady = false;
       await updateConfig("whatsapp_ready", "false");
       if (shouldReconnect) {
         setTimeout(startWhatsApp, 3000);
       } else {
         // Logged out
-        console.log("[WhatsApp] Deslogado. Removendo pasta auth e aguardando comandos...");
+        await appendWhatsAppLog("[Conexão] Deslogado pelo usuário. Removendo pasta auth e aguardando comandos...");
         fs.rmSync("baileys_auth", { recursive: true, force: true });
         sock = null;
       }
     } else if (connection === "open") {
-      console.log("-----------------------------------------");
-      console.log("[WhatsApp] Cliente pronto e conectado com sucesso!");
+      await appendWhatsAppLog("[Conexão] Cliente pronto e conectado com sucesso!");
       isReady = true;
       await updateConfig("whatsapp_ready", "true");
       await updateConfig("whatsapp_pairing_code", ""); // clear code
@@ -109,13 +131,13 @@ async function startWhatsApp(pairingNumber = null) {
     // Wait until socket is ready to request code
     setTimeout(async () => {
       try {
-        console.log(`[WhatsApp] Solicitando Pairing Code para ${pairingNumber}...`);
+        await appendWhatsAppLog(`[Pareamento] Solicitando Pairing Code para ${pairingNumber}...`);
         let code = await sock.requestPairingCode(pairingNumber);
         code = code?.match(/.{1,4}/g)?.join("-") || code;
-        console.log(`[WhatsApp] Código de Pareamento: ${code}`);
+        await appendWhatsAppLog(`[Pareamento] Código de Pareamento gerado: ${code}`);
         await updateConfig("whatsapp_pairing_code", code);
       } catch (err) {
-        console.error("[WhatsApp] Erro ao gerar pairing code:", err);
+        await appendWhatsAppLog("[Erro] Falha ao gerar pairing code: " + err.message);
       }
     }, 2500);
   }
@@ -134,7 +156,7 @@ setInterval(async () => {
       const cmd = cmdRes.rows[0].valor;
       
       if (cmd === "logout") {
-        console.log(`[WhatsApp] Comando recebido: logout`);
+        await appendWhatsAppLog("[Bot] Comando recebido: Desconectar dispositivo.");
         await updateConfig("whatsapp_command", "");
         if (sock) {
           try { await sock.logout(); } catch(err){}
@@ -144,7 +166,7 @@ setInterval(async () => {
         await updateConfig("whatsapp_ready", "false");
       } 
       else if (cmd === "generate") {
-        console.log(`[WhatsApp] Comando recebido: generate`);
+        await appendWhatsAppLog("[Bot] Comando recebido: Gerar pareamento...");
         await updateConfig("whatsapp_command", "");
         
         // Remove sessão antiga
@@ -182,7 +204,7 @@ setInterval(async () => {
       
       if (resFila.rows.length > 0) {
         const msg = resFila.rows[0];
-        console.log(`[WhatsApp] Enviando msg para ${msg.numero}...`);
+        await appendWhatsAppLog(`[Bot] Despachando mensagem da fila (ID: ${msg.id}) para ${msg.numero}...`);
         
         // Formatar numero (adicionar 55 se nao tiver) e @s.whatsapp.net
         let jid = msg.numero;
@@ -192,7 +214,7 @@ setInterval(async () => {
           if (resolvedJid) {
             jid = resolvedJid;
           } else {
-            console.error("[WhatsApp] JID do grupo da escola não encontrado nas configurações!");
+            await appendWhatsAppLog("[Erro] JID do grupo da escola não encontrado nas configurações!");
             throw new Error("Grupo da escola não está resolvido nas configurações.");
           }
         } else if (!jid.includes("@g.us")) {
@@ -213,10 +235,10 @@ setInterval(async () => {
         }
 
         await pool.query("UPDATE fila_whatsapp SET status = 'Enviado', atualizado_em = NOW() WHERE id = $1", [msg.id]);
-        console.log(`[WhatsApp] Msg ${msg.id} enviada com sucesso!`);
+        await appendWhatsAppLog(`[Bot] Mensagem (ID: ${msg.id}) enviada com sucesso para ${msg.numero}`);
       }
     } catch (err) {
-      console.error("[WhatsApp] Erro ao enviar da fila:", err.message);
+      await appendWhatsAppLog(`[Erro] Falha ao enviar mensagem da fila: ${err.message}`);
     }
   }
 

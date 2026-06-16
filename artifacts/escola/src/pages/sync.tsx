@@ -8,7 +8,7 @@ import {
   RefreshCcw, Check, Settings2, Eye, EyeOff,
   Globe, Copy, ExternalLink, Upload, FileSpreadsheet,
   Zap, ServerCrash, Camera, ImagePlus, Bookmark, ShieldCheck, WifiOff, MessageCircle, PlayCircle,
-  Mail, Phone
+  Mail, Phone, FileText
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
@@ -4564,31 +4564,235 @@ function SecaoWhatsAppAutomacoes() {
   );
 }
 
+function SecaoWhatsAppLogs() {
+  const [logs, setLogs] = useState<string[]>([]);
+  const [carregando, setCarregando] = useState(true);
+
+  const carregarLogs = async () => {
+    try {
+      const res = await fetch(API("/whatsapp/logs"));
+      const data = await res.json();
+      setLogs(data);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setCarregando(false);
+    }
+  };
+
+  useEffect(() => {
+    carregarLogs();
+    const interval = setInterval(carregarLogs, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <h4 className="text-md font-bold text-white uppercase tracking-wider">Histórico de Fluxo do Bot</h4>
+        <Button onClick={carregarLogs} variant="outline" size="sm" className="gap-2 text-white border-white/10 hover:bg-white/5 h-8">
+          <RefreshCcw className="w-3.5 h-3.5" /> Atualizar
+        </Button>
+      </div>
+      
+      <div className="bg-black/40 border border-white/5 rounded-2xl p-4 font-mono text-xs text-green-400 overflow-y-auto max-h-[400px] space-y-1 h-[400px]">
+        {carregando ? (
+          <div className="flex justify-center items-center h-full text-white/40">Carregando logs...</div>
+        ) : logs.length === 0 ? (
+          <div className="flex justify-center items-center h-full text-white/40 italic">Nenhum log registrado ainda.</div>
+        ) : (
+          logs.map((line, idx) => (
+            <div key={idx} className="whitespace-pre-wrap">{line}</div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SecaoWhatsAppFila() {
+  const [queue, setQueue] = useState<any[]>([]);
+  const [carregando, setCarregando] = useState(true);
+  const { toast } = useToast();
+
+  const carregarQueue = async () => {
+    try {
+      const res = await fetch(API("/whatsapp/queue"));
+      const data = await res.json();
+      setQueue(data);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setCarregando(false);
+    }
+  };
+
+  useEffect(() => {
+    carregarQueue();
+    const interval = setInterval(carregarQueue, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleResend = async (id: number) => {
+    try {
+      const res = await fetch(API(`/whatsapp/queue/${id}/resend`), { method: "POST" });
+      if (!res.ok) throw new Error();
+      toast({ title: "Mensagem marcada para reenvio!" });
+      carregarQueue();
+    } catch (e) {
+      toast({ title: "Erro ao reenviar", variant: "destructive" });
+    }
+  };
+
+  const handleDelete = async (id: number) => {
+    try {
+      const res = await fetch(API(`/whatsapp/queue/${id}`), { method: "DELETE" });
+      if (!res.ok) throw new Error();
+      toast({ title: "Mensagem deletada da fila!" });
+      carregarQueue();
+    } catch (e) {
+      toast({ title: "Erro ao deletar", variant: "destructive" });
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <h4 className="text-md font-bold text-white uppercase tracking-wider">Fila de Disparos de Mensagens</h4>
+        <Button onClick={carregarQueue} variant="outline" size="sm" className="gap-2 text-white border-white/10 hover:bg-white/5 h-8">
+          <RefreshCcw className="w-3.5 h-3.5" /> Atualizar
+        </Button>
+      </div>
+
+      <div className="bg-[#1a2332] rounded-3xl border border-white/5 overflow-hidden shadow-xl">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm text-white/70">
+            <thead className="bg-white/5 text-[10px] text-white/50 font-bold uppercase tracking-wider border-b border-white/5">
+              <tr>
+                <th className="py-4 px-6">Destinatário</th>
+                <th className="py-4 px-6">Mensagem / Anexo</th>
+                <th className="py-4 px-6">Status</th>
+                <th className="py-4 px-6">Criado em</th>
+                <th className="py-4 px-6 text-right">Ações</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/5">
+              {carregando ? (
+                <tr>
+                  <td colSpan={5} className="py-10 text-center text-white/40">
+                    <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2" />
+                    Carregando fila...
+                  </td>
+                </tr>
+              ) : queue.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="py-10 text-center text-white/40 italic">
+                    Nenhuma mensagem na fila de envio.
+                  </td>
+                </tr>
+              ) : (
+                queue.map((msg) => {
+                  const isErro = msg.status === "Erro";
+                  const statusColor = 
+                    msg.status === "Pendente" ? "text-orange-400 bg-orange-500/10 border-orange-500/30" :
+                    msg.status === "Enviado" ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/30" :
+                    "text-red-400 bg-red-500/10 border-red-500/30";
+                  return (
+                    <tr key={msg.id} className="hover:bg-white/2 transition-colors">
+                      <td className="py-4 px-6 font-mono text-xs">{msg.numero}</td>
+                      <td className="py-4 px-6 max-w-xs">
+                        <div className="truncate text-xs text-white" title={msg.mensagem}>
+                          {msg.mensagem || <span className="italic text-white/30">Sem texto</span>}
+                        </div>
+                        {msg.nomeArquivo && (
+                          <div className="flex items-center gap-1.5 mt-1 text-[10px] text-sky-400">
+                            <FileText className="w-3 h-3" /> {msg.nomeArquivo}
+                          </div>
+                        )}
+                      </td>
+                      <td className="py-4 px-6">
+                        <span className={`inline-flex items-center gap-1 text-[10px] font-bold border rounded-full px-2 py-0.5 ${statusColor}`}>
+                          {msg.status}
+                          {isErro && msg.erro && (
+                            <span className="text-[9px] text-white/40 ml-1 font-normal block max-w-[120px] truncate" title={msg.erro}>
+                              ({msg.erro})
+                            </span>
+                          )}
+                        </span>
+                      </td>
+                      <td className="py-4 px-6 text-xs text-white/40">
+                        {new Date(msg.criadoEm).toLocaleDateString("pt-BR")} {new Date(msg.criadoEm).toLocaleTimeString("pt-BR", {hour: '2-digit', minute:'2-digit'})}
+                      </td>
+                      <td className="py-4 px-6 text-right space-x-2">
+                        {(msg.status === "Erro" || msg.status === "Enviado") && (
+                          <Button
+                            onClick={() => handleResend(msg.id)}
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0 rounded-lg text-amber-400 hover:text-amber-300 hover:bg-white/5"
+                            title="Reenviar"
+                          >
+                            <RefreshCcw className="w-3.5 h-3.5" />
+                          </Button>
+                        )}
+                        <Button
+                          onClick={() => handleDelete(msg.id)}
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 w-8 p-0 rounded-lg text-red-400 hover:text-red-300 hover:bg-white/5"
+                          title="Deletar"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function SecaoWhatsApp() {
-  const [subSecao, setSubSecao] = useState<"conexao" | "automacoes">("conexao");
+  const [subSecao, setSubSecao] = useState<"conexao" | "automacoes" | "fila" | "logs">("conexao");
 
   return (
     <div className="space-y-6 max-w-4xl">
-      <div className="flex gap-2 bg-[#1a2332] p-1.5 rounded-2xl border border-white/5 max-w-sm">
+      <div className="flex gap-2 bg-[#1a2332] p-1.5 rounded-2xl border border-white/5 max-w-lg">
         <button
           onClick={() => setSubSecao("conexao")}
-          className={`flex-1 py-2 px-4 rounded-xl text-sm font-bold transition-all ${subSecao === "conexao" ? "bg-[#22c55e] text-white shadow-lg shadow-[#22c55e]/15" : "text-white/60 hover:text-white"}`}
+          className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all ${subSecao === "conexao" ? "bg-[#22c55e] text-white shadow-lg shadow-[#22c55e]/15" : "text-white/60 hover:text-white"}`}
         >
           Conexão Bot
         </button>
         <button
           onClick={() => setSubSecao("automacoes")}
-          className={`flex-1 py-2 px-4 rounded-xl text-sm font-bold transition-all ${subSecao === "automacoes" ? "bg-[#22c55e] text-white shadow-lg shadow-[#22c55e]/15" : "text-white/60 hover:text-white"}`}
+          className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all ${subSecao === "automacoes" ? "bg-[#22c55e] text-white shadow-lg shadow-[#22c55e]/15" : "text-white/60 hover:text-white"}`}
         >
           ⚡ Agendamentos
         </button>
+        <button
+          onClick={() => setSubSecao("fila")}
+          className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all ${subSecao === "fila" ? "bg-[#22c55e] text-white shadow-lg shadow-[#22c55e]/15" : "text-white/60 hover:text-white"}`}
+        >
+          📋 Fila de Envio
+        </button>
+        <button
+          onClick={() => setSubSecao("logs")}
+          className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all ${subSecao === "logs" ? "bg-[#22c55e] text-white shadow-lg shadow-[#22c55e]/15" : "text-white/60 hover:text-white"}`}
+        >
+          📝 Logs do Bot
+        </button>
       </div>
 
-      {subSecao === "conexao" ? (
-        <SecaoWhatsAppConexao />
-      ) : (
-        <SecaoWhatsAppAutomacoes />
-      )}
+      {subSecao === "conexao" && <SecaoWhatsAppConexao />}
+      {subSecao === "automacoes" && <SecaoWhatsAppAutomacoes />}
+      {subSecao === "fila" && <SecaoWhatsAppFila />}
+      {subSecao === "logs" && <SecaoWhatsAppLogs />}
     </div>
   );
 }

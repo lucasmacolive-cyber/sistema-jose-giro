@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db, filaWhatsappTable, configuracoesTable } from "../lib/db/index.js";
-import { eq, ilike } from "drizzle-orm";
+import { eq, ilike, desc } from "drizzle-orm";
 import multer from "multer";
 
 const router = Router();
@@ -127,6 +127,69 @@ router.get("/whatsapp/groups", async (req, res) => {
       nome: r.valor
     }));
     res.json(groups);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Listar fila de envio ───────────────────────────────────────────────────
+router.get("/whatsapp/queue", async (req, res) => {
+  try {
+    const rows = await db
+      .select({
+        id: filaWhatsappTable.id,
+        numero: filaWhatsappTable.numero,
+        mensagem: filaWhatsappTable.mensagem,
+        nomeArquivo: filaWhatsappTable.nomeArquivo,
+        mimetype: filaWhatsappTable.mimetype,
+        status: filaWhatsappTable.status,
+        erro: filaWhatsappTable.erro,
+        criadoEm: filaWhatsappTable.criadoEm,
+        atualizadoEm: filaWhatsappTable.atualizadoEm,
+      })
+      .from(filaWhatsappTable)
+      .orderBy(desc(filaWhatsappTable.criadoEm))
+      .limit(100);
+    res.json(rows);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Reenviar mensagem ──────────────────────────────────────────────────────
+router.post("/whatsapp/queue/:id/resend", async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    await db.update(filaWhatsappTable)
+      .set({ status: "Pendente", erro: null, atualizadoEm: new Date() })
+      .where(eq(filaWhatsappTable.id, id));
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Deletar mensagem da fila ────────────────────────────────────────────────
+router.delete("/whatsapp/queue/:id", async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    await db.delete(filaWhatsappTable).where(eq(filaWhatsappTable.id, id));
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Obter logs do bot ───────────────────────────────────────────────────────
+router.get("/whatsapp/logs", async (req, res) => {
+  try {
+    const row = await db.select().from(configuracoesTable).where(eq(configuracoesTable.chave, "whatsapp_logs"));
+    if (row.length > 0) {
+      const logs = JSON.parse(row[0].valor);
+      res.json(logs);
+    } else {
+      res.json([]);
+    }
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

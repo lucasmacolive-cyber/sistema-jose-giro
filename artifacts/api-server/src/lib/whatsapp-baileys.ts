@@ -93,6 +93,25 @@ const usePostgresAuthState = async () => {
 let sock: any = null;
 let hasRequestedPairingCode = false;
 
+async function appendWhatsAppLog(msg: string) {
+  const time = new Date().toLocaleTimeString("pt-BR");
+  const line = `[${time}] ${msg}`;
+  console.log(line);
+  try {
+    const res = await db.select().from(configuracoesTable).where(eq(configuracoesTable.chave, "whatsapp_logs")).limit(1);
+    let logs = [];
+    if (res.length > 0) {
+      try { logs = JSON.parse(res[0].valor); } catch(e){}
+    }
+    logs.push(line);
+    if (logs.length > 100) logs.shift();
+    await db.insert(configuracoesTable).values({ chave: "whatsapp_logs", valor: JSON.stringify(logs), atualizadoEm: new Date() })
+      .onConflictDoUpdate({ target: configuracoesTable.chave, set: { valor: JSON.stringify(logs), atualizadoEm: new Date() } });
+  } catch(e) {
+    console.error("Erro gravando log do bot no banco:", e);
+  }
+}
+
 function formatToWhatsAppJidNumber(num: string): string {
   let clean = num.replace(/\D/g, "");
   if (clean.length === 10 || clean.length === 11) {
@@ -141,20 +160,20 @@ export async function connectToWhatsApp(pairingNumber?: string, waitForOpen: boo
         if (!hasRequestedPairingCode && sock && !sock.authState.creds.registered) {
           hasRequestedPairingCode = true;
           try {
-            console.log(`[WhatsApp-Baileys] Solicitando Pairing Code direto para ${formattedPairingNumber}...`);
+            await appendWhatsAppLog(`[Conexão] Solicitando Código de Pareamento para ${formattedPairingNumber}...`);
             let code = await sock.requestPairingCode(formattedPairingNumber);
             code = code?.match(/.{1,4}/g)?.join("-") || code;
             await db.insert(configuracoesTable).values({ chave: "whatsapp_pairing_code", valor: code, atualizadoEm: new Date() })
               .onConflictDoUpdate({ target: configuracoesTable.chave, set: { valor: code, atualizadoEm: new Date() } });
-            console.log(`[WhatsApp-Baileys] Código de Pareamento gerado com sucesso: ${code}`);
+            await appendWhatsAppLog(`[Conexão] Código de Pareamento gerado: ${code}`);
             
             if (!waitForOpen && !isResolved) {
               clearTimeout(timeout);
               isResolved = true;
               resolve(sock);
             }
-          } catch (err) {
-            console.error("[WhatsApp-Baileys] Erro ao solicitar pairing code direto:", err);
+          } catch (err: any) {
+            await appendWhatsAppLog(`[Erro] Falha ao solicitar pairing code: ${err.message}`);
             hasRequestedPairingCode = false; // permite tentar via QR se falhou
           }
         }
@@ -189,8 +208,10 @@ export async function connectToWhatsApp(pairingNumber?: string, waitForOpen: boo
         const statusCode = (lastDisconnect?.error as Boom)?.output?.statusCode;
         const isLoggedOut = statusCode === DisconnectReason.loggedOut;
         
+        await appendWhatsAppLog(`[Conexão] Conexão fechada. Código de status: ${statusCode || "desconhecido"}. Reconectando...`);
+
         if (isLoggedOut && isRegistered) {
-          console.log("[WhatsApp-Baileys] Deslogado pelo usuário. Removendo credenciais...");
+          await appendWhatsAppLog("[Conexão] Deslogado pelo usuário. Removendo credenciais...");
           await db.delete(configuracoesTable).where(eq(configuracoesTable.chave, "baileys_creds"));
           await db.delete(configuracoesTable).where(like(configuracoesTable.chave, "baileys_%"));
         }
@@ -201,6 +222,7 @@ export async function connectToWhatsApp(pairingNumber?: string, waitForOpen: boo
           reject(new Error("Conexão fechada."));
         }
       } else if (connection === "open") {
+        await appendWhatsAppLog(`[Conexão] Bot pronto e conectado com sucesso! Número: ${sock?.user?.id || ""}`);
         await db.insert(configuracoesTable).values({ chave: "whatsapp_ready", valor: "true", atualizadoEm: new Date() })
           .onConflictDoUpdate({ target: configuracoesTable.chave, set: { valor: "true", atualizadoEm: new Date() } });
         

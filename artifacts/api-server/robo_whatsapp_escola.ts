@@ -8,6 +8,25 @@ import path from 'path';
 
 dotenv.config();
 
+async function appendWhatsAppLog(msg: string) {
+  const time = new Date().toLocaleTimeString("pt-BR");
+  const line = `[${time}] ${msg}`;
+  console.log(line);
+  try {
+    const res = await db.select().from(configuracoesTable).where(eq(configuracoesTable.chave, "whatsapp_logs")).limit(1);
+    let logs = [];
+    if (res.length > 0) {
+      try { logs = JSON.parse(res[0].valor); } catch(e){}
+    }
+    logs.push(line);
+    if (logs.length > 100) logs.shift();
+    await db.insert(configuracoesTable).values({ chave: "whatsapp_logs", valor: JSON.stringify(logs), atualizadoEm: new Date() })
+      .onConflictDoUpdate({ target: configuracoesTable.chave, set: { valor: JSON.stringify(logs), atualizadoEm: new Date() } });
+  } catch(e) {
+    console.error("Erro gravando log do bot no banco:", e);
+  }
+}
+
 // Override console logging to write directly to the log file
 const logFile = path.join(process.cwd(), 'robo_whatsapp_log.txt');
 function log(msg: any, ...args: any[]) {
@@ -84,12 +103,12 @@ async function loop() {
     }
 
     if (shouldDisconnect) {
-      console.log("Comando recebido: Desconectar");
+      await appendWhatsAppLog("[Bot] Comando recebido: Desconectar dispositivo.");
       await disconnectWhatsApp();
     }
 
     if (shouldGenerate && numberToGenerate) {
-      console.log("Comando recebido: Gerar para", numberToGenerate);
+      await appendWhatsAppLog(`[Bot] Comando recebido: Gerar código para ${numberToGenerate}`);
       await disconnectWhatsApp();
       
       // Salva o whatsapp_number nas configurações (para que o loop de conexão automática saiba qual número usar)
@@ -99,18 +118,21 @@ async function loop() {
       await connectToWhatsApp(numberToGenerate, false);
     }
 
-    // 3. Processa fila de mensagens (isso só funciona se estiver conectado, então ignoramos se der erro dentro do Baileys)
     try {
-      const fila = await db.select().from(filaWhatsappTable).where(eq(filaWhatsappTable.status, 'Pendente')).limit(5);
-      for (const msg of fila) {
-        console.log("Enviando mensagem para", msg.numero);
-        try {
-          const { sendWhatsAppMessage } = await import('./src/lib/whatsapp-baileys.js');
-          await sendWhatsAppMessage(msg.numero, msg.mensagem, msg.arquivoBase64, msg.mimetype, msg.nomeArquivo);
-          await db.update(filaWhatsappTable).set({ status: 'Enviado', atualizadoEm: new Date() }).where(eq(filaWhatsappTable.id, msg.id));
-        } catch(err) {
-          console.error("Erro ao enviar msg:", err);
-          await db.update(filaWhatsappTable).set({ status: 'Erro', erro: String(err), atualizadoEm: new Date() }).where(eq(filaWhatsappTable.id, msg.id));
+      const status = await getWhatsAppStatus();
+      if (status.ready) {
+        const fila = await db.select().from(filaWhatsappTable).where(eq(filaWhatsappTable.status, 'Pendente')).limit(5);
+        for (const msg of fila) {
+          await appendWhatsAppLog(`[Bot] Despachando mensagem da fila (ID: ${msg.id}) para ${msg.numero}...`);
+          try {
+            const { sendWhatsAppMessage } = await import('./src/lib/whatsapp-baileys.js');
+            await sendWhatsAppMessage(msg.numero, msg.mensagem, msg.arquivoBase64, msg.mimetype, msg.nomeArquivo);
+            await db.update(filaWhatsappTable).set({ status: 'Enviado', atualizadoEm: new Date() }).where(eq(filaWhatsappTable.id, msg.id));
+            await appendWhatsAppLog(`[Bot] Mensagem (ID: ${msg.id}) enviada com sucesso para ${msg.numero}`);
+          } catch(err: any) {
+            await appendWhatsAppLog(`[Erro] Falha ao enviar mensagem (ID: ${msg.id}): ${err.message || String(err)}`);
+            await db.update(filaWhatsappTable).set({ status: 'Erro', erro: String(err), atualizadoEm: new Date() }).where(eq(filaWhatsappTable.id, msg.id));
+          }
         }
       }
     } catch(err) {

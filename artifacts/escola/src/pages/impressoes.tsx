@@ -454,6 +454,23 @@ export default function ImpressoesPage() {
   const [printEmAndamento, setPrintEmAndamento] = useState<Impressao | null>(null);
   const [showHistorico, setShowHistorico]       = useState(false);
 
+  const [pingLogs, setPingLogs] = useState<string[]>([]);
+  const [carregandoPings, setCarregandoPings] = useState(false);
+
+  const carregarPingLogs = async (mostrarLoading = false) => {
+    if (mostrarLoading) setCarregandoPings(true);
+    try {
+      const res = await fetch(API("impressoes/pings-log"), { credentials: "include" });
+      if (res.ok) {
+        setPingLogs(await res.json());
+      }
+    } catch (e) {
+      console.error("Erro ao carregar logs de ping:", e);
+    } finally {
+      if (mostrarLoading) setCarregandoPings(false);
+    }
+  };
+
   // Controle de auto-impressão
   const [agenteOnline, setAgenteOnline] = useState(false);
   const [ricohStatus, setRicohStatus] = useState<"online"|"descanso"|"offline">("offline");
@@ -663,7 +680,8 @@ export default function ImpressoesPage() {
 
     poll();
     checarAgente();
-    const interval = setInterval(() => { poll(); checarAgente(); }, 5000);
+    carregarPingLogs(true);
+    const interval = setInterval(() => { poll(); checarAgente(); carregarPingLogs(); }, 5000);
     return () => clearInterval(interval);
   }, [isAdmin]);
 
@@ -1015,6 +1033,37 @@ export default function ImpressoesPage() {
                     <a href="https://www.sumatrapdfreader.org/download-free-pdf-viewer" target="_blank" rel="noopener noreferrer" className="underline hover:text-amber-200">SumatraPDF</a>{" "}
                     (gratuito). Imagens funcionam sem ele.
                   </p>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Logs de Pings das Impressoras */}
+            <Card className="bg-card/40 backdrop-blur-md border-white/8">
+              <CardContent className="pt-4 pb-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-lg bg-violet-500/20 flex items-center justify-center">
+                      <Zap className="h-4 w-4 text-violet-400" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-white">Status das Impressoras</p>
+                      <p className="text-[11px] text-white/40">Logs de pings do agente</p>
+                    </div>
+                  </div>
+                  <Button onClick={() => carregarPingLogs(true)} variant="ghost" size="icon" className="h-8 w-8 text-white/40 hover:text-white hover:bg-white/5">
+                    <RefreshCw className={`h-3.5 w-3.5 ${carregandoPings ? "animate-spin" : ""}`} />
+                  </Button>
+                </div>
+                <div className="bg-black/30 border border-white/8 rounded-xl p-3 font-mono text-[10px] text-violet-300 overflow-y-auto max-h-[200px] space-y-1 h-[200px]">
+                  {carregandoPings ? (
+                    <div className="flex justify-center items-center h-full text-white/30">Carregando logs...</div>
+                  ) : pingLogs.length === 0 ? (
+                    <div className="flex justify-center items-center h-full text-white/30 italic">Nenhum ping registrado ainda.</div>
+                  ) : (
+                    pingLogs.map((line, idx) => (
+                      <div key={idx} className="whitespace-pre-wrap">{line}</div>
+                    ))
+                  )}
                 </div>
               </CardContent>
             </Card>

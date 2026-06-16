@@ -118,7 +118,7 @@ router.patch("/impressoes/:id/status", async (req, res) => {
 
 router.post("/impressoes/heartbeat", async (req, res) => {
   try {
-    const { ricohOnline, epsonOnline } = req.body;
+    const { ricohOnline, epsonOnline, ricohStatus, epsonStatus } = req.body;
     const agora = new Date().toISOString();
     
     // Atualiza heartbeat geral do agente
@@ -132,6 +132,28 @@ router.post("/impressoes/heartbeat", async (req, res) => {
     if (epsonOnline) {
       await db.insert(configuracoesTable).values({ chave: "last_heartbeat_epson", valor: agora })
         .onConflictDoUpdate({ target: configuracoesTable.chave, set: { valor: agora, atualizadoEm: new Date() } });
+    }
+
+    let pingMsg = `Ricoh: ${ricohOnline ? "ONLINE" : "OFFLINE"}`;
+    if (ricohStatus) pingMsg += ` (${ricohStatus})`;
+    pingMsg += `, Epson: ${epsonOnline ? "ONLINE" : "OFFLINE"}`;
+    if (epsonStatus) pingMsg += ` (${epsonStatus})`;
+
+    const time = new Date().toLocaleTimeString("pt-BR");
+    const line = `[${time}] ${pingMsg}`;
+
+    try {
+      const resLog = await db.select().from(configuracoesTable).where(eq(configuracoesTable.chave, "impressoras_pings_log")).limit(1);
+      let logs = [];
+      if (resLog.length > 0) {
+        try { logs = JSON.parse(resLog[0].valor); } catch(e){}
+      }
+      logs.push(line);
+      if (logs.length > 50) logs.shift();
+      await db.insert(configuracoesTable).values({ chave: "impressoras_pings_log", valor: JSON.stringify(logs) })
+        .onConflictDoUpdate({ target: configuracoesTable.chave, set: { valor: JSON.stringify(logs), atualizadoEm: new Date() } });
+    } catch (e) {
+      console.error("Erro ao salvar logs de pings:", e);
     }
 
     res.json({ ok: true });
@@ -543,6 +565,20 @@ while True:
     time.sleep(4)
 `;
 }
+
+router.get("/impressoes/pings-log", async (req, res) => {
+  try {
+    const row = await db.select().from(configuracoesTable).where(eq(configuracoesTable.chave, "impressoras_pings_log")).limit(1);
+    if (row.length > 0) {
+      const logs = JSON.parse(row[0].valor);
+      res.json(logs);
+    } else {
+      res.json([]);
+    }
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 export default router;
 // trigger rebuild
