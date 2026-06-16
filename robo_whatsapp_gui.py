@@ -146,8 +146,9 @@ def send_text_message(conn, text):
 
 def send_file_message(conn, file_path, caption=None):
     append_log(conn, f"Copiando arquivo para área de transferência: {os.path.basename(file_path)}")
-    # Comando powershell seguro sem shell=True
-    subprocess.run(["powershell", "-Command", "Set-Clipboard", "-LiteralPath", file_path], check=True)
+    # Comando powershell com aspas simples para tratar caminhos com espaços
+    cmd = f"Set-Clipboard -LiteralPath '{file_path}'"
+    subprocess.run(["powershell", "-Command", cmd], check=True)
     time.sleep(0.5)
     
     append_log(conn, "Focando e colando arquivo no chat...")
