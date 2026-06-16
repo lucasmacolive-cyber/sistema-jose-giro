@@ -3,35 +3,61 @@ import makeWASocket, { DisconnectReason, initAuthCreds, Browsers } from "@whiske
 import { Boom } from "@hapi/boom";
 import pino from "pino";
 import { db, configuracoesTable } from "./db/index.js";
-import { eq } from "drizzle-orm";
+import { eq, like } from "drizzle-orm";
 
 const usePostgresAuthState = async () => {
   const writeData = async (data: any, id: string) => {
     const key = `baileys_${id}`;
     const value = JSON.stringify(data, (k, v) => (typeof v === "bigint" ? v.toString() : v));
-    await db.insert(configuracoesTable)
-      .values({ chave: key, valor: value, atualizadoEm: new Date() })
-      .onConflictDoUpdate({ target: configuracoesTable.chave, set: { valor: value, atualizadoEm: new Date() } });
+    console.log(`[usePostgresAuthState] GRAVANDO chave: ${key}, tamanho: ${value.length}`);
+    try {
+      await db.insert(configuracoesTable)
+        .values({ chave: key, valor: value, atualizadoEm: new Date() })
+        .onConflictDoUpdate({ target: configuracoesTable.chave, set: { valor: value, atualizadoEm: new Date() } });
+      console.log(`[usePostgresAuthState] GRAVADO com sucesso: ${key}`);
+    } catch(err) {
+      console.error(`[usePostgresAuthState] ERRO gravando ${key}:`, err);
+    }
   };
 
   const readData = async (id: string) => {
     const key = `baileys_${id}`;
-    const row = await db.select().from(configuracoesTable).where(eq(configuracoesTable.chave, key));
-    if (row.length === 0 || !row[0].valor) return null;
-    return JSON.parse(row[0].valor, (k, v) => {
-      if (v !== null && typeof v === 'object' && 'type' in v && v.type === 'Buffer' && 'data' in v) {
-        return Buffer.from(v.data);
+    try {
+      const row = await db.select().from(configuracoesTable).where(eq(configuracoesTable.chave, key));
+      if (row.length === 0 || !row[0].valor) {
+        console.log(`[usePostgresAuthState] LIDO chave: ${key} (vazia/não encontrada)`);
+        return null;
       }
-      return v;
-    });
+      console.log(`[usePostgresAuthState] LIDO chave: ${key} (sucesso)`);
+      return JSON.parse(row[0].valor, (k, v) => {
+        if (v !== null && typeof v === 'object' && 'type' in v && v.type === 'Buffer' && 'data' in v) {
+          return Buffer.from(v.data);
+        }
+        return v;
+      });
+    } catch(err) {
+      console.error(`[usePostgresAuthState] ERRO lendo ${key}:`, err);
+      return null;
+    }
   };
 
   const removeData = async (id: string) => {
     const key = `baileys_${id}`;
-    await db.delete(configuracoesTable).where(eq(configuracoesTable.chave, key));
+    console.log(`[usePostgresAuthState] REMOVENDO chave: ${key}`);
+    try {
+      await db.delete(configuracoesTable).where(eq(configuracoesTable.chave, key));
+      console.log(`[usePostgresAuthState] REMOVIDO com sucesso: ${key}`);
+    } catch(err) {
+      console.error(`[usePostgresAuthState] ERRO removendo ${key}:`, err);
+    }
   };
 
-  const creds = await readData("creds") || initAuthCreds();
+  let creds = await readData("creds");
+  if (!creds) {
+    creds = initAuthCreds();
+    console.log("[usePostgresAuthState] Inicializando creds novas e gravando no banco...");
+    await writeData(creds, "creds");
+  }
 
   return {
     state: {
@@ -57,7 +83,10 @@ const usePostgresAuthState = async () => {
         }
       }
     },
-    saveCreds: () => writeData(creds, "creds")
+    saveCreds: () => {
+      console.log("[usePostgresAuthState] saveCreds acionado");
+      return writeData(creds, "creds");
+    }
   };
 };
 
@@ -258,7 +287,8 @@ export async function disconnectWhatsApp() {
   hasRequestedPairingCode = false;
   await db.delete(configuracoesTable).where(eq(configuracoesTable.chave, "whatsapp_ready"));
   await db.delete(configuracoesTable).where(eq(configuracoesTable.chave, "whatsapp_pairing_code"));
-  await db.delete(configuracoesTable).where(eq(configuracoesTable.chave, "baileys_creds"));
+  await db.delete(configuracoesTable).where(eq(configuracoesTable.chave, "whatsapp_number"));
+  await db.delete(configuracoesTable).where(like(configuracoesTable.chave, "baileys_%"));
 }
 
 

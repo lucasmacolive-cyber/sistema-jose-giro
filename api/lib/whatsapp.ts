@@ -1,5 +1,5 @@
 import { db, configuracoesTable } from "./db/index.js";
-import { eq } from "drizzle-orm";
+import { eq, like } from "drizzle-orm";
 import { filaWhatsappTable } from "./db/schema/fila-whatsapp.js";
 
 export function initWhatsApp() {
@@ -45,10 +45,11 @@ export async function disconnectWhatsApp() {
     set: { valor: "logout", atualizadoEm: new Date() },
   });
 
-  // Limpa estado local do painel
+  // Limpa estado local do painel e credenciais do Baileys
   await db.delete(configuracoesTable).where(eq(configuracoesTable.chave, "whatsapp_ready"));
   await db.delete(configuracoesTable).where(eq(configuracoesTable.chave, "whatsapp_pairing_code"));
   await db.delete(configuracoesTable).where(eq(configuracoesTable.chave, "whatsapp_number"));
+  await db.delete(configuracoesTable).where(like(configuracoesTable.chave, "baileys_%"));
 }
 
 export async function generateWhatsApp(number: string) {
