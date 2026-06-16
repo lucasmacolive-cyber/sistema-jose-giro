@@ -53,9 +53,18 @@ router.post("/automatizacoes", async (req, res) => {
       documentoAlvo:    data.documentoAlvo || null,
       documentoMes:     data.documentoMes || "atual",
       diasMes:          data.diasMes || null,
-      ativa:             true,
-      proximaExecucao:   proxima,
+      ativa:             data.frequencia === "imediato" ? false : true,
+      proximaExecucao:   data.frequencia === "imediato" ? new Date() : proxima,
     }).returning();
+
+    if (data.frequencia === "imediato") {
+      await executarAutomacao(nova);
+      await db.update(automatizacoesWhatsappTable).set({
+        ultimaExecucao: new Date(),
+        atualizadoEm: new Date(),
+      }).where(eq(automatizacoesWhatsappTable.id, nova.id));
+    }
+
     res.status(201).json(nova);
   } catch (err: any) {
     res.status(500).json({ erro: err.message });
@@ -85,10 +94,19 @@ router.put("/automatizacoes/:id", async (req, res) => {
       documentoAlvo:    data.documentoAlvo || null,
       documentoMes:     data.documentoMes || "atual",
       diasMes:          data.diasMes || null,
-      ativa:             data.ativa !== undefined ? data.ativa : true,
-      proximaExecucao:   proxima,
+      ativa:             data.frequencia === "imediato" ? false : (data.ativa !== undefined ? data.ativa : true),
+      proximaExecucao:   data.frequencia === "imediato" ? new Date() : proxima,
       atualizadoEm:      new Date(),
     }).where(eq(automatizacoesWhatsappTable.id, id)).returning();
+
+    if (data.frequencia === "imediato") {
+      await executarAutomacao(upd);
+      await db.update(automatizacoesWhatsappTable).set({
+        ultimaExecucao: new Date(),
+        atualizadoEm: new Date(),
+      }).where(eq(automatizacoesWhatsappTable.id, upd.id));
+    }
+
     res.json(upd);
   } catch (err: any) {
     res.status(500).json({ erro: err.message });
@@ -170,7 +188,7 @@ router.post("/automatizacoes/executar-pendentes", async (_req, res) => {
 // HELPERS
 // ═══════════════════════════════════════════════════════
 
-async function executarAutomacao(auto: any): Promise<number> {
+export async function executarAutomacao(auto: any): Promise<number> {
   const destinatarios = await resolverDestinatarios(auto.destinatarioTipo, auto.destinatarioValor);
   let count = 0;
 
@@ -649,6 +667,11 @@ function calcularProxima(
   diasMesStr?: string | null
 ): Date | null {
   const agora = new Date();
+
+  if (frequencia === "imediato") {
+    return agora;
+  }
+
   const [h, m] = (horario || "08:00").split(":").map(Number);
 
   if (frequencia === "unico") {

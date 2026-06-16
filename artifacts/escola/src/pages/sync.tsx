@@ -3916,6 +3916,7 @@ function SecaoWhatsAppAutomacoes() {
 
   const traduzirFrequencia = (freq: string, dias: string, diaMes: number, hora: string, diasMesStr?: string) => {
     const formatHora = `às ${hora}`;
+    if (freq === "imediato") return "Imediatamente";
     if (freq === "unico") return `Única vez ${formatHora}`;
     if (freq === "diario") return `Diariamente ${formatHora}`;
     if (freq === "semanal" && dias) {
@@ -4299,6 +4300,7 @@ function SecaoWhatsAppAutomacoes() {
                     className="w-full bg-[#1e293b] text-white border border-white/10 rounded-lg px-3 py-2.5 focus:outline-none focus:border-[#22c55e] text-sm font-semibold"
                   >
                     <option value="unico">Executar uma única vez</option>
+                    <option value="imediato">Enviar imediatamente</option>
                     <option value="diario">Diariamente</option>
                     <option value="semanal">Semanalmente (Escolher dias)</option>
                     <option value="mensal">Mensalmente (Escolher dia do mês)</option>
@@ -4417,15 +4419,17 @@ function SecaoWhatsAppAutomacoes() {
                   </div>
                 )}
 
-                <div>
-                  <Label className="text-white/80 text-xs font-bold uppercase tracking-wider mb-2 block">Horário de Envio</Label>
-                  <Input
-                    type="time"
-                    value={form.horario}
-                    onChange={(e) => setForm({ ...form, horario: e.target.value })}
-                    className="bg-black/40 border-white/10 text-white text-lg font-mono"
-                  />
-                </div>
+                {form.frequencia !== "imediato" && (
+                  <div>
+                    <Label className="text-white/80 text-xs font-bold uppercase tracking-wider mb-2 block">Horário de Envio</Label>
+                    <Input
+                      type="time"
+                      value={form.horario}
+                      onChange={(e) => setForm({ ...form, horario: e.target.value })}
+                      className="bg-black/40 border-white/10 text-white text-lg font-mono"
+                    />
+                  </div>
+                )}
               </div>
             )}
 

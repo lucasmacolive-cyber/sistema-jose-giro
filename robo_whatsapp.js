@@ -255,6 +255,11 @@ function formatarMensagem(auto, nomeDestinatario) {
 
 function calcularProxima(frequencia, diasSemana, diaMes, horario, diasMesStr) {
   const agora = new Date();
+
+  if (frequencia === "imediato") {
+    return agora;
+  }
+
   const [h, m] = (horario || "08:00").split(":").map(Number);
 
   if (frequencia === "unico") {
@@ -780,9 +785,9 @@ async function processarAutomatizacoes() {
         );
       }
 
-      // Calcula próxima execução e desativa se for execução única
+      // Calcula próxima execução e desativa se for execução única ou imediata
       const proxima = calcularProxima(auto.frequencia, auto.dias_semana, auto.dia_mes, auto.horario, auto.dias_mes);
-      const ativa = auto.frequencia === "unico" ? false : true;
+      const ativa = (auto.frequencia === "unico" || auto.frequencia === "imediato") ? false : true;
 
       await pool.query(
         `UPDATE automatizacoes_whatsapp 
