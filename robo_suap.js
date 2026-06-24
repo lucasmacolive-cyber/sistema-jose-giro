@@ -103,17 +103,32 @@ function encontrarLinkExport(html) {
 
 function encontrarLinkDownload(html) {
   const allLinks = [...html.matchAll(/href="([^"]+)"/g)].map((m) => m[1]);
+
+  // Prioridade 1: link com .xls no href
   const byXls = allLinks.find((h) => h.toLowerCase().includes(".xls"));
   if (byXls) return byXls;
+
+  // Prioridade 2: link de download do djtools ou padrões do SUAP
+  const byDjtools = allLinks.find((h) => {
+    const l = h.toLowerCase();
+    return l.includes("/djtools/download/") || l.includes("/djtools/files/") || l.includes("/djtools/result/");
+  });
+  if (byDjtools) return byDjtools;
+
+  // Prioridade 3: link genérico com "download" ou "arquivo" ou "continuar"
   const byDl = allLinks.find((h) => {
     const l = h.toLowerCase();
     return l.includes("download") || l.includes("arquivo") || l.includes("continuar");
   });
   if (byDl) return byDl;
+
+  // Prioridade 4: link com texto "baixar", "download", "aqui", etc.
   const byText = html.match(/<a[^>]+href="([^"]+)"[^>]*>[^<]*(baixar|download|clique aqui|aqui|arquivo)[^<]*<\/a>/i)?.[1];
   if (byText) return byText;
+
   return null;
 }
+
 
 function encontrarMetaRefresh(html) {
   const m = html.match(/<meta[^>]+http-equiv=["']refresh["'][^>]+content=["'][^"']*url=([^"'\s]+)/i);
@@ -215,50 +230,133 @@ async function sincronizarSUAP(usuario, senha) {
   });
 
   const ct = exportResp.headers["content-type"] || "";
-  if (isXlsBuffer(exportResp.body, ct)) return exportResp.body;
+  if (isXlsBuffer(exportResp.body, ct)) {
+    console.log("[Robo SUAP] ✓ Arquivo XLS recebido diretamente!");
+    return exportResp.body;
+  }
 
-  const exportPath = SUAP_RELATORIO_URL + "&xls=1";
-  let progressPath = exportPath;
-  if (exportResp.headers.location) {
-    progressPath = resolverPath(exportResp.headers.location);
-  } else if (exportResp.text) {
-    const metaUrl = encontrarMetaRefresh(exportResp.text);
-    if (metaUrl) progressPath = resolverPath(metaUrl);
-    else {
-      const taskHref = exportResp.text.match(/href="([^"]*(?:tarefa|task|progresso|gerar|arquivo|relatorio)[^"]*)"/i)?.[1];
-      if (taskHref) progressPath = resolverPath(taskHref);
+  // ── Detectar UUID da tarefa do djtools ─────────────────────────────────────
+  // O SUAP redireciona para /djtools/process2/{UUID}/ e emite JavaScript com
+  //   $.get("/djtools/process_progress2/0/{UUID}/", ...)
+  // Precisamos extrair o UUID para usar a API de polling
+  let taskUuid = null;
+  let process2Html = exportResp.text;
+
+  // Tentar extrair UUID diretamente da resposta do POST
+  let uuidMatch = process2Html.match(/\/djtools\/process(?:_progress)?2\/(?:0\/)?([a-f0-9-]{36})\//i);
+  
+  // Se não encontrou, seguir redirect para página /djtools/process2/...
+  if (!uuidMatch) {
+    let followPath = null;
+    if (exportResp.headers.location) {
+      followPath = resolverPath(exportResp.headers.location);
+    } else {
+      const metaUrl = encontrarMetaRefresh(exportResp.text);
+      if (metaUrl) followPath = resolverPath(metaUrl);
+    }
+    
+    if (followPath) {
+      console.log(`[Robo SUAP] Seguindo redirect para: ${followPath}`);
+      const followResp = await request("GET", followPath, jar);
+      process2Html = followResp.text;
+      
+      // Verificar se já é XLS
+      const fct = followResp.headers["content-type"] || "";
+      if (isXlsBuffer(followResp.body, fct)) return followResp.body;
+      
+      uuidMatch = process2Html.match(/\/djtools\/process(?:_progress)?2\/(?:0\/)?([a-f0-9-]{36})\//i);
     }
   }
 
-  console.log("[Robo SUAP] Aguardando 30 segundos mínimos exigidos pelo SUAP...");
-  await sleep(30000);
+  if (!uuidMatch) {
+    throw new Error("Não foi possível detectar o UUID da tarefa de geração do relatório SUAP. Estrutura inesperada.");
+  }
 
-  for (let tentativa = 0; tentativa < 120; tentativa++) {
-    console.log(`[Robo SUAP] Checando progresso (tentativa ${tentativa+1}/120)...`);
-    const pollResp = await request("GET", progressPath, jar, undefined, { Accept: "text/html,application/octet-stream,*/*" });
-    const pollCt = pollResp.headers["content-type"] || "";
+  taskUuid = uuidMatch[1];
+  console.log(`[Robo SUAP] Tarefa detectada! UUID: ${taskUuid}`);
+  console.log("[Robo SUAP] Usando API djtools/process_progress2 para monitorar conclusão...");
 
-    if (isXlsBuffer(pollResp.body, pollCt)) return pollResp.body;
+  // ── Polling via API AJAX do SUAP ───────────────────────────────────────────
+  // A API retorna: "percentual::message::file::url"
+  //   - Enquanto processa: "75:::: " (message vazio, file vazio)
+  //   - Quando conclui:    "100::Relatório gerado com sucesso.::1::url_ou_vazio"
+  //   - Se file != "": baixar via /djtools/process_progress2/1/{UUID}/
+  const statusUrl = `/djtools/process_progress2/0/${taskUuid}/`;
+  const downloadUrl = `/djtools/process_progress2/1/${taskUuid}/`;
 
-    const pollText = pollResp.text;
-    const dlLink = encontrarLinkDownload(pollText);
-    if (dlLink) {
-      console.log("[Robo SUAP] Link de download encontrado! Baixando...");
-      const dlResp = await request("GET", resolverPath(dlLink), jar, undefined, { Accept: "application/vnd.ms-excel,application/octet-stream,*/*" });
-      if (dlResp.body.length > 1000) return dlResp.body;
-    }
-
-    if (pollResp.headers.location) progressPath = resolverPath(pollResp.headers.location);
-    else {
-      const pollMeta = encontrarMetaRefresh(pollText);
-      if (pollMeta && pollMeta !== progressPath) progressPath = resolverPath(pollMeta);
-    }
-
+  for (let tentativa = 0; tentativa < 240; tentativa++) {
     await sleep(5000);
+    
+    console.log(`[Robo SUAP] Poll ${tentativa+1}/240 — Verificando status da tarefa...`);
+    
+    const statusResp = await request("GET", statusUrl, jar, undefined, {
+      Accept: "text/plain,*/*",
+      "X-Requested-With": "XMLHttpRequest",
+    });
+    
+    const statusText = statusResp.text.trim();
+    console.log(`[Robo SUAP]   → Status: "${statusText.slice(0, 120)}"`);
+
+    // Verificar se a resposta é diretamente um XLS
+    if (isXlsBuffer(statusResp.body, statusResp.headers["content-type"] || "")) {
+      console.log("[Robo SUAP] ✓ XLS recebido diretamente da API de status!");
+      return statusResp.body;
+    }
+
+    // Parsear resposta "percentual::message::file::url"
+    const tokens = statusText.split("::");
+    const percentual = tokens[0] || "";
+    const message = tokens[1] || "";
+    const file = tokens[2] || "";
+    const urlToken = tokens[3] || "";
+
+    console.log(`[Robo SUAP]   → Progresso: ${percentual}% | Mensagem: "${message.slice(0,60)}" | File: "${file}"`);
+
+    // Se message não está vazio, a tarefa concluiu
+    if (message && message.trim().length > 0) {
+      console.log(`[Robo SUAP] ✓ Tarefa concluída! Baixando arquivo via ${downloadUrl}`);
+      const dlResp = await request("GET", downloadUrl, jar, undefined, {
+        Accept: "application/vnd.ms-excel,application/octet-stream,*/*",
+      });
+      
+      const dlCt = dlResp.headers["content-type"] || "";
+      console.log(`[Robo SUAP]   → Download: status=${dlResp.status} | ct=${dlCt} | size=${dlResp.body.length}b`);
+
+      if (isXlsBuffer(dlResp.body, dlCt) || dlResp.body.length > 5000) {
+        console.log(`[Robo SUAP] ✓ Arquivo baixado com sucesso! ${dlResp.body.length} bytes`);
+        return dlResp.body;
+      }
+
+      // Se urlToken tem uma URL alternativa
+      if (urlToken && urlToken !== ".." && urlToken.length > 5) {
+        console.log(`[Robo SUAP]   → Tentando URL alternativa: ${urlToken}`);
+        const altResp = await request("GET", resolverPath(urlToken), jar, undefined, {
+          Accept: "application/vnd.ms-excel,application/octet-stream,*/*",
+        });
+        if (altResp.body.length > 5000) return altResp.body;
+      }
+
+      throw new Error(`Tarefa concluída mas o arquivo não foi encontrado. Resposta do download: ${dlResp.text.slice(0, 200)}`);
+    }
+
+    // Se file está preenchido mas message está vazio
+    if (file && file !== ".." && file.length > 0) {
+      console.log(`[Robo SUAP] ✓ Arquivo sinalizado como pronto (file=${file})! Baixando...`);
+      const dlResp = await request("GET", downloadUrl, jar, undefined, {
+        Accept: "application/vnd.ms-excel,application/octet-stream,*/*",
+      });
+      if (isXlsBuffer(dlResp.body, dlResp.headers["content-type"] || "") || dlResp.body.length > 5000) {
+        return dlResp.body;
+      }
+    }
   }
 
-  throw new Error("Timeout: o SUAP não concluiu a exportação XLS em 10 minutos.");
+  throw new Error("Timeout: o SUAP não concluiu a exportação XLS em 20 minutos.");
 }
+
+
+
+
 
 async function uploadToVercel(xlsBuffer) {
   return new Promise((resolve, reject) => {
