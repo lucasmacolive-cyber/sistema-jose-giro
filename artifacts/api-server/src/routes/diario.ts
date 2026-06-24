@@ -592,6 +592,51 @@ router.get("/diario/turmas", requireAuth, async (req, res) => {
   }
 });
 
+/* ─── PATCH /diario/turmas/:id/link-suap ─── */
+router.patch("/diario/turmas/:id/link-suap", requireAuth, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) return res.status(400).json({ ok: false, mensagem: "ID inválido" });
+    const { linkSuap } = req.body;
+    await db.update(turmasTable)
+      .set({ linkSuap: linkSuap || null })
+      .where(eq(turmasTable.id, id));
+    res.json({ ok: true });
+  } catch (e: any) {
+    res.status(500).json({ ok: false, mensagem: e.message });
+  }
+});
+
+/* ─── POST /diario/turmas/salvar-links-suap ─── salva todos de vez */
+router.post("/diario/turmas/salvar-links-suap", requireAuth, async (req, res) => {
+  try {
+    // body: { links: Array<{ turmaId: number; linkSuap: string }> }
+    const { links } = req.body as { links: Array<{ turmaId: number; linkSuap: string }> };
+    if (!Array.isArray(links)) return res.status(400).json({ ok: false, mensagem: "links deve ser um array" });
+
+    for (const entry of links) {
+      if (!entry.turmaId) continue;
+      await db.update(turmasTable)
+        .set({ linkSuap: entry.linkSuap || null })
+        .where(eq(turmasTable.id, entry.turmaId));
+    }
+
+    // Também salva na tabela sync/diario-links para compatibilidade
+    const linksValidos = links.filter(e => e.linkSuap?.includes("suap")).map(e => e.linkSuap);
+    if (linksValidos.length > 0) {
+      const { configuracoesTable: cfgTable } = await import("../lib/db/index.js");
+      await db.insert(cfgTable)
+        .values({ chave: "diario_links_salvos", valor: JSON.stringify(linksValidos), atualizadoEm: new Date() })
+        .onConflictDoUpdate({ target: cfgTable.chave, set: { valor: JSON.stringify(linksValidos), atualizadoEm: new Date() } });
+    }
+
+    res.json({ ok: true, salvos: links.length });
+  } catch (e: any) {
+    res.status(500).json({ ok: false, mensagem: e.message });
+  }
+});
+
+
 /* ─── GET /diario/configuracoes ─── */
 router.get("/diario/configuracoes", requireAuth, async (req, res) => {
   try {

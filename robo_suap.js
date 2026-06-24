@@ -201,22 +201,23 @@ async function sincronizarSUAP(usuario, senha) {
   console.log("[Robo SUAP] Login ok. Acessando relatório...");
   const reportResp = await request("GET", SUAP_RELATORIO_URL, jar, undefined, { Referer: `${SUAP_BASE}/edu/relatorio/` });
 
-  let exportPath = encontrarLinkExport(reportResp.text);
-  if (!exportPath) exportPath = "/edu/relatorio/?formato=xls";
-  
-  if (exportPath.startsWith("http")) {
-    exportPath = new URL(exportPath).pathname + new URL(exportPath).search;
-  }
+  console.log("[Robo SUAP] Solicitando geração do arquivo XLS via POST...");
+  const reportCsrf = extractCsrf(reportResp.text, jar);
+  const exportBody = new URLSearchParams({
+    csrfmiddlewaretoken: reportCsrf,
+    xls: "1",
+  }).toString();
 
-  console.log("[Robo SUAP] Solicitando geração do arquivo XLS...");
-  const exportResp = await request("GET", exportPath, jar, undefined, {
-    Referer: `${SUAP_BASE}/edu/relatorio/`,
+  const exportResp = await request("POST", SUAP_RELATORIO_URL + "&xls=1", jar, exportBody, {
+    Referer: `${SUAP_BASE}${SUAP_RELATORIO_URL}`,
+    "X-CSRFToken": reportCsrf,
     Accept: "application/vnd.ms-excel,application/octet-stream,text/html,*/*",
   });
 
   const ct = exportResp.headers["content-type"] || "";
   if (isXlsBuffer(exportResp.body, ct)) return exportResp.body;
 
+  const exportPath = SUAP_RELATORIO_URL + "&xls=1";
   let progressPath = exportPath;
   if (exportResp.headers.location) {
     progressPath = resolverPath(exportResp.headers.location);
@@ -232,8 +233,8 @@ async function sincronizarSUAP(usuario, senha) {
   console.log("[Robo SUAP] Aguardando 30 segundos mínimos exigidos pelo SUAP...");
   await sleep(30000);
 
-  for (let tentativa = 0; tentativa < 30; tentativa++) {
-    console.log(`[Robo SUAP] Checando progresso (tentativa ${tentativa+1}/30)...`);
+  for (let tentativa = 0; tentativa < 120; tentativa++) {
+    console.log(`[Robo SUAP] Checando progresso (tentativa ${tentativa+1}/120)...`);
     const pollResp = await request("GET", progressPath, jar, undefined, { Accept: "text/html,application/octet-stream,*/*" });
     const pollCt = pollResp.headers["content-type"] || "";
 
@@ -253,10 +254,10 @@ async function sincronizarSUAP(usuario, senha) {
       if (pollMeta && pollMeta !== progressPath) progressPath = resolverPath(pollMeta);
     }
 
-    await sleep(2000);
+    await sleep(5000);
   }
 
-  throw new Error("Timeout: o SUAP não concluiu a exportação XLS em 90 segundos.");
+  throw new Error("Timeout: o SUAP não concluiu a exportação XLS em 10 minutos.");
 }
 
 async function uploadToVercel(xlsBuffer) {

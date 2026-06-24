@@ -547,11 +547,26 @@ export default function DiarioTurmaPage() {
         margin:       10,
         filename:     filename,
         image:        { type: 'jpeg', quality: 0.98 },
-        html2canvas:  { scale: 2 },
+        html2canvas:  { scale: 2, useCORS: true, allowTaint: true },
         jsPDF:        { unit: 'mm', format: 'a4', orientation: 'landscape' }
       };
 
-      const pdfBlob = await html2pdf().set(opt).from(container).outputPdf('blob');
+      // FIX: html2canvas precisa que o elemento esteja no DOM para renderizar o conteúdo.
+      // Inserimos o container invisível fora da área visível e removemos após gerar o PDF.
+      container.style.position = 'fixed';
+      container.style.left = '-9999px';
+      container.style.top = '0';
+      container.style.zIndex = '-9999';
+      container.style.width = '1400px';
+      container.style.background = '#fff';
+      document.body.appendChild(container);
+      await new Promise<void>(r => setTimeout(r, 150));
+      let pdfBlob: Blob;
+      try {
+        pdfBlob = await html2pdf().set(opt).from(container).outputPdf('blob');
+      } finally {
+        if (container.parentNode) document.body.removeChild(container);
+      }
       const file = new File([pdfBlob], filename, { type: "application/pdf" });
 
       const form = new FormData();
@@ -607,11 +622,25 @@ export default function DiarioTurmaPage() {
         margin:       10,
         filename:     filename,
         image:        { type: 'jpeg', quality: 0.98 },
-        html2canvas:  { scale: 2 },
+        html2canvas:  { scale: 2, useCORS: true, allowTaint: true },
         jsPDF:        { unit: 'mm', format: 'a4', orientation: 'landscape' }
       };
 
-      const pdfBlob = await html2pdf().set(opt).from(container).outputPdf('blob');
+      // FIX: html2canvas precisa que o elemento esteja no DOM para renderizar o conteúdo.
+      container.style.position = 'fixed';
+      container.style.left = '-9999px';
+      container.style.top = '0';
+      container.style.zIndex = '-9999';
+      container.style.width = '1400px';
+      container.style.background = '#fff';
+      document.body.appendChild(container);
+      await new Promise<void>(r => setTimeout(r, 150));
+      let pdfBlob: Blob;
+      try {
+        pdfBlob = await html2pdf().set(opt).from(container).outputPdf('blob');
+      } finally {
+        if (container.parentNode) document.body.removeChild(container);
+      }
       const file = new File([pdfBlob], filename, { type: "application/pdf" });
 
       const form = new FormData();
@@ -669,11 +698,25 @@ export default function DiarioTurmaPage() {
         margin:       10,
         filename:     filename,
         image:        { type: 'jpeg', quality: 0.98 },
-        html2canvas:  { scale: 2 },
+        html2canvas:  { scale: 2, useCORS: true, allowTaint: true },
         jsPDF:        { unit: 'mm', format: 'a4', orientation: 'landscape' }
       };
 
-      const pdfBlob = await html2pdf().set(opt).from(container).outputPdf('blob');
+      // FIX: html2canvas precisa que o elemento esteja no DOM para renderizar o conteúdo.
+      container.style.position = 'fixed';
+      container.style.left = '-9999px';
+      container.style.top = '0';
+      container.style.zIndex = '-9999';
+      container.style.width = '1400px';
+      container.style.background = '#fff';
+      document.body.appendChild(container);
+      await new Promise<void>(r => setTimeout(r, 150));
+      let pdfBlob: Blob;
+      try {
+        pdfBlob = await html2pdf().set(opt).from(container).outputPdf('blob');
+      } finally {
+        if (container.parentNode) document.body.removeChild(container);
+      }
       const file = new File([pdfBlob], filename, { type: "application/pdf" });
 
       const form = new FormData();

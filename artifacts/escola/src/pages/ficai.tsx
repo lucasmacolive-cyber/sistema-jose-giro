@@ -7,6 +7,7 @@ import { CabecalhoTimbrado } from "@/components/CabecalhoTimbrado";
 import { WhatsAppSendModal } from "@/components/WhatsAppSendModal";
 import { EmailSendModal } from "@/components/EmailSendModal";
 import html2pdf from "html2pdf.js";
+import { gerarPdfBlob } from "@/lib/pdf-utils";
 
 const BASE = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "") + "/";
 
@@ -166,7 +167,7 @@ export default function FicaiPage() {
         jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
       };
 
-      const pdfBlob = await html2pdf().set(opt).from(container).outputPdf('blob');
+      const pdfBlob = await gerarPdfBlob(container, opt);
       const file = new File([pdfBlob], filename, { type: "application/pdf" });
 
       const form = new FormData();
@@ -199,7 +200,7 @@ export default function FicaiPage() {
         jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
       };
 
-      const pdfBlob = await html2pdf().set(opt).from(container).outputPdf('blob');
+      const pdfBlob = await gerarPdfBlob(container, opt);
       const file = new File([pdfBlob], filename, { type: "application/pdf" });
 
       const form = new FormData();

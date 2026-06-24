@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { motion } from "framer-motion";
 import html2pdf from "html2pdf.js";
+import { gerarPdfBlob } from "@/lib/pdf-utils";
 import { WhatsAppSendModal } from "@/components/WhatsAppSendModal";
 import { EmailSendModal } from "@/components/EmailSendModal";
 
@@ -136,7 +137,7 @@ export default function AlunoPerfilPage() {
         jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
       };
 
-      const pdfBlob = await html2pdf().set(opt).from(container).outputPdf('blob');
+      const pdfBlob = await gerarPdfBlob(container, opt);
       const file = new File([pdfBlob], filename, { type: "application/pdf" });
 
       const form = new FormData();
@@ -198,7 +199,7 @@ export default function AlunoPerfilPage() {
         jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
       };
 
-      const pdfBlob = await html2pdf().set(opt).from(container).outputPdf('blob');
+      const pdfBlob = await gerarPdfBlob(container, opt);
       const file = new File([pdfBlob], filename, { type: "application/pdf" });
 
       const form = new FormData();
@@ -248,7 +249,7 @@ export default function AlunoPerfilPage() {
         jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
       };
 
-      const pdfBlob = await html2pdf().set(opt).from(container).outputPdf('blob');
+      const pdfBlob = await gerarPdfBlob(container, opt);
       const file = new File([pdfBlob], filename, { type: "application/pdf" });
 
       const form = new FormData();

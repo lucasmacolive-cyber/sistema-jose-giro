@@ -134,6 +134,36 @@ router.post("/whatsapp/gui-mode", async (req, res) => {
   }
 });
 
+// ─── Modo Fantasma: leitura ────────────────────────────────────────────────
+router.get("/whatsapp/fantasma-mode", async (req, res) => {
+  try {
+    const rows = await db.select().from(configuracoesTable)
+      .where(eq(configuracoesTable.chave, "whatsapp_fantasma_mode"));
+    const enabled = rows.length > 0 && rows[0].valor === "true";
+    res.json({ enabled });
+  } catch(err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Modo Fantasma: gravação ───────────────────────────────────────────────
+router.post("/whatsapp/fantasma-mode", async (req, res) => {
+  const { enabled } = req.body;
+  try {
+    const value = enabled ? "true" : "false";
+    await db.insert(configuracoesTable)
+      .values({ chave: "whatsapp_fantasma_mode", valor: value, atualizadoEm: new Date() })
+      .onConflictDoUpdate({
+        target: configuracoesTable.chave,
+        set: { valor: value, atualizadoEm: new Date() }
+      });
+    res.json({ success: true, enabled });
+  } catch(err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
 router.get("/whatsapp/groups", async (req, res) => {
   try {
     const rows = await db.select().from(configuracoesTable).where(ilike(configuracoesTable.chave, "wa_group_%"));

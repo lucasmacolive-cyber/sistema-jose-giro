@@ -8,7 +8,7 @@ import {
   RefreshCcw, Check, Settings2, Eye, EyeOff,
   Globe, Copy, ExternalLink, Upload, FileSpreadsheet,
   Zap, ServerCrash, Camera, ImagePlus, Bookmark, ShieldCheck, WifiOff, MessageCircle, PlayCircle,
-  Mail, Phone, FileText
+  Mail, Phone, FileText, Link2, Sun, Sunset, GraduationCap
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
@@ -498,25 +498,55 @@ type DiarioSyncPhase =
 function BlocoDiariosSinc({ extensaoInstalada, apiBase }: { extensaoInstalada: boolean | null; apiBase: string }) {
   const { toast } = useToast();
   const syncGlobal = useSyncGlobal();
+
+  // ── Turmas carregadas da API ──────────────────────────────────────────────
+  const [turmas, setTurmas] = useState<any[]>([]);
+  const [carregandoTurmas, setCarregandoTurmas] = useState(true);
+
+  // ── Estado de diálogo para editar link de turma individual ─────────────────
+  const [dialogTurma, setDialogTurma] = useState<any | null>(null);
+
+  // ── Links por turma: Record<turmaId, link> ────────────────────────────────
+  const [linksPerTurma, setLinksPerTurma] = useState<Record<number, string>>({});
+  const [linksDirty, setLinksDirty] = useState<Record<number, boolean>>({});   // quais foram alterados
+  const [salvandoTodos, setSalvandoTodos] = useState(false);
+  const [autoSalvar, setAutoSalvar] = useState(false);
+
+  // ── Estado de download por turma ──────────────────────────────────────────
+  const [baixandoPorTurma, setBaixandoPorTurma] = useState<Record<number, { phase: "baixando"|"done"|"error"; msg: string }>>({});
+
+  // ── Metadata dos links (ultimaSync) ───────────────────────────────────────
+  type LinkMeta = { link: string; turma: string | null; ultimaSync: string | null; status: string | null };
+  const [linksMeta, setLinksMeta] = useState<LinkMeta[]>([]);
+
+  // ── Sincronização global (extensão) ───────────────────────────────────────
   const [phase, setPhase]         = useState<DiarioSyncPhase>("idle");
   const [msg, setMsg]             = useState("");
   const [progAtual, setProgAtual] = useState(0);
   const [progTotal, setProgTotal] = useState(0);
   const [resultados, setResultados] = useState<any[]>([]);
   const [showResultados, setShowResultados] = useState(false);
-  const [modo, setModo]           = useState<"manual" | "auto">("manual");
-  const [linksTexto, setLinksTexto] = useState("");
-  const [linksSalvos, setLinksSalvos] = useState<string[]>([]);
-  const [salvando, setSalvando]   = useState(false);
-  const [linksSujos, setLinksSujos] = useState(false);
-  const [autoContagem, setAutoContagem] = useState<number | null>(null); // countdown em segundos
-  const autoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Metadata dos links (turma identificada, última sync)
-  type LinkMeta = { link: string; turma: string | null; ultimaSync: string | null; status: string | null };
-  const [linksMeta, setLinksMeta] = useState<LinkMeta[]>([]);
-  const [linksBaixando, setLinksBaixando] = useState<Record<string, { phase: "baixando"|"done"|"error"; msg: string }>>({});
-  const [identificando, setIdentificando] = useState(false);
+  // ── Carrega turmas + links salvos ─────────────────────────────────────────
+  const carregarTurmas = useCallback(async () => {
+    setCarregandoTurmas(true);
+    try {
+      const r = await fetch(`${apiBase}/api/diario/turmas`, { credentials: "include" });
+      const data: any[] = await r.json();
+      setTurmas(Array.isArray(data) ? data : []);
+
+      // Pré-preenche os campos com links já salvos em cada turma
+      const initialLinks: Record<number, string> = {};
+      for (const t of data) {
+        if (t.linkSuap) initialLinks[t.id] = t.linkSuap;
+      }
+      setLinksPerTurma(prev => ({ ...initialLinks, ...prev }));
+    } catch {
+      toast({ title: "Erro ao carregar turmas", variant: "destructive" });
+    } finally {
+      setCarregandoTurmas(false);
+    }
+  }, [apiBase, toast]);
 
   const carregarLinksMeta = useCallback(() => {
     fetch(`${apiBase}/api/sync/diario-links-meta`, { credentials: "include" })
@@ -525,74 +555,18 @@ function BlocoDiariosSinc({ extensaoInstalada, apiBase }: { extensaoInstalada: b
       .catch(() => {});
   }, [apiBase]);
 
-  // Carregar links salvos ao montar
   useEffect(() => {
-    fetch(`${apiBase}/api/sync/diario-links`, { credentials: "include" })
-      .then(r => r.json())
-      .then(data => {
-        if (data.links?.length) {
-          setLinksSalvos(data.links);
-          setLinksTexto(data.links.join("\n"));
-        }
-      })
-      .catch(() => {});
+    carregarTurmas();
     carregarLinksMeta();
-  }, [apiBase, carregarLinksMeta]);
+  }, [carregarTurmas, carregarLinksMeta]);
 
-  // Auto-sync ao entrar como master (uma vez por dia)
-  useEffect(() => {
-    if (extensaoInstalada !== true || linksSalvos.length === 0) return;
-
-    // Verificar se é o usuário master
-    fetch(`${apiBase}/api/auth/me`, { credentials: "include" })
-      .then(r => r.json())
-      .then(user => {
-        if (user?.perfil !== "master") return;
-
-        // Verificar se já sincronizou hoje
-        const KEY = "diario_ultima_auto_sync";
-        const ultima = localStorage.getItem(KEY);
-        const agora = Date.now();
-        const OITO_HORAS = 8 * 60 * 60 * 1000;
-        if (ultima && agora - Number(ultima) < OITO_HORAS) return;
-
-        // Mostrar contagem regressiva de 5s antes de disparar
-        let restam = 5;
-        setAutoContagem(restam);
-        const tick = setInterval(() => {
-          restam -= 1;
-          if (restam <= 0) {
-            clearInterval(tick);
-            setAutoContagem(null);
-            localStorage.setItem(KEY, String(Date.now()));
-            // Disparar sync com os links salvos
-            window.dispatchEvent(new CustomEvent("suap-sync-diarios-start", {
-              detail: { apiBase, linksManual: linksSalvos }
-            }));
-            setPhase("diarios-opening");
-            setMsg("Sincronização automática iniciada...");
-            setResultados([]);
-            setShowResultados(false);
-          } else {
-            setAutoContagem(restam);
-          }
-        }, 1000);
-        autoTimerRef.current = tick as unknown as ReturnType<typeof setTimeout>;
-      })
-      .catch(() => {});
-
-    return () => {
-      if (autoTimerRef.current) clearInterval(autoTimerRef.current);
-    };
-  }, [extensaoInstalada, linksSalvos, apiBase]);
-
+  // ── Listener de eventos da extensão Chrome ────────────────────────────────
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail;
       if (!detail) return;
       const p = detail.phase as string;
       if (!p.startsWith("diarios") && p !== "error") return;
-
       setPhase(p as DiarioSyncPhase);
       setMsg(detail.msg || "");
       if (detail.atual) setProgAtual(detail.atual);
@@ -602,6 +576,8 @@ function BlocoDiariosSinc({ extensaoInstalada, apiBase }: { extensaoInstalada: b
         setShowResultados(true);
         toast({ title: "Diários importados!", description: detail.msg });
         setTimeout(() => setPhase("idle"), 6000);
+        carregarLinksMeta();
+        carregarTurmas();
       } else if (p === "error") {
         toast({ title: "Erro nos diários", description: detail.msg, variant: "destructive" });
         setTimeout(() => setPhase("idle"), 5000);
@@ -609,39 +585,82 @@ function BlocoDiariosSinc({ extensaoInstalada, apiBase }: { extensaoInstalada: b
     };
     window.addEventListener("suap-sync-update", handler);
     return () => window.removeEventListener("suap-sync-update", handler);
-  }, [toast]);
+  }, [toast, carregarLinksMeta, carregarTurmas]);
 
-  const parsearLinks = () =>
-    linksTexto.split("\n").map(l => l.trim()).filter(l => l.includes("suap") && l.includes("diario"));
+  // ── Atualizar link de uma turma no estado local ───────────────────────────
+  const setLink = (turmaId: number, value: string) => {
+    setLinksPerTurma(prev => ({ ...prev, [turmaId]: value }));
+    setLinksDirty(prev => ({ ...prev, [turmaId]: true }));
+  };
 
-  const salvarLinks = async () => {
-    const links = parsearLinks();
-    if (links.length === 0) {
-      toast({ title: "Nenhum link válido para salvar", variant: "destructive" });
-      return;
-    }
-    setSalvando(true);
+  // ── Salvar link de uma turma individualmente ──────────────────────────────
+  const salvarLinkTurma = async (turmaId: number) => {
+    const link = linksPerTurma[turmaId] || "";
     try {
-      const r = await fetch(`${apiBase}/api/sync/diario-links`, {
-        method: "POST",
+      await fetch(`${apiBase}/api/diario/turmas/${turmaId}/link-suap`, {
+        method: "PATCH",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ links }),
+        body: JSON.stringify({ linkSuap: link }),
       });
-      if (!r.ok) throw new Error();
-      setLinksSalvos(links);
-      setLinksSujos(false);
-      toast({ title: `${links.length} links salvos!`, description: "A sincronização automática vai usar esses diários." });
+      setLinksDirty(prev => ({ ...prev, [turmaId]: false }));
       carregarLinksMeta();
     } catch {
-      toast({ title: "Erro ao salvar links", variant: "destructive" });
-    } finally {
-      setSalvando(false);
+      // falha silenciosa — será salvo junto com "Salvar todos"
     }
   };
 
-  const baixarLink = async (link: string) => {
-    setLinksBaixando(prev => ({ ...prev, [link]: { phase: "baixando", msg: "" } }));
+  // ── Salvar todos os links de uma vez ─────────────────────────────────────
+  const salvarTodosOsLinks = async () => {
+    setSalvandoTodos(true);
+    try {
+      const entries = turmas
+        .filter(t => linksPerTurma[t.id]?.trim())
+        .map(t => ({ turmaId: t.id, linkSuap: linksPerTurma[t.id].trim() }));
+
+      const r = await fetch(`${apiBase}/api/diario/turmas/salvar-links-suap`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ links: entries }),
+      });
+      const d = await r.json();
+      if (d.ok) {
+        setLinksDirty({});
+        toast({ title: `${d.salvos} links salvos!`, description: "Os links foram associados a cada turma." });
+        // Também atualiza o sync/diario-links para retrocompatibilidade
+        const linksArr = entries.map(e => e.linkSuap);
+        if (linksArr.length > 0) {
+          await fetch(`${apiBase}/api/sync/diario-links`, {
+            method: "POST",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ links: linksArr }),
+          });
+        }
+        carregarLinksMeta();
+      } else {
+        toast({ title: "Erro ao salvar", description: d.mensagem, variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Erro de conexão", variant: "destructive" });
+    } finally {
+      setSalvandoTodos(false);
+    }
+  };
+
+  // ── Baixar/atualizar um diário individual pelo link ───────────────────────
+  const baixarDiario = async (turmaId: number) => {
+    const link = linksPerTurma[turmaId]?.trim();
+    if (!link) {
+      toast({ title: "Cole o link SUAP antes de atualizar", variant: "destructive" });
+      return;
+    }
+
+    // Salva o link antes de baixar
+    if (linksDirty[turmaId]) await salvarLinkTurma(turmaId);
+
+    setBaixandoPorTurma(prev => ({ ...prev, [turmaId]: { phase: "baixando", msg: "" } }));
     try {
       const r = await fetch(`${apiBase}/api/sync/baixar-diario`, {
         method: "POST",
@@ -651,92 +670,173 @@ function BlocoDiariosSinc({ extensaoInstalada, apiBase }: { extensaoInstalada: b
       });
       const data = await r.json();
       if (!r.ok || !data.ok) {
-        setLinksBaixando(prev => ({ ...prev, [link]: { phase: "error", msg: data.mensagem || "Erro ao baixar" } }));
-        toast({ title: "Erro ao baixar diário", description: data.mensagem, variant: "destructive" });
+        setBaixandoPorTurma(prev => ({ ...prev, [turmaId]: { phase: "error", msg: data.mensagem || "Erro ao baixar" } }));
+        toast({ title: "Erro ao atualizar diário", description: data.mensagem, variant: "destructive" });
         return;
       }
-      setLinksBaixando(prev => ({
+      setBaixandoPorTurma(prev => ({
         ...prev,
-        [link]: { phase: "done", msg: `${data.turma} · ${data.totalAulas} aulas · ${data.totalPresencas} presenças` },
+        [turmaId]: { phase: "done", msg: `${data.turma} · ${data.totalAulas} aulas · ${data.totalPresencas} presenças` },
       }));
       carregarLinksMeta();
     } catch (e: any) {
-      const msg = e.message || "Erro de conexão";
-      setLinksBaixando(prev => ({ ...prev, [link]: { phase: "error", msg } }));
-      toast({ title: "Erro de conexão", description: msg, variant: "destructive" });
+      const msgErr = e.message || "Erro de conexão";
+      setBaixandoPorTurma(prev => ({ ...prev, [turmaId]: { phase: "error", msg: msgErr } }));
+      toast({ title: "Erro de conexão", description: msgErr, variant: "destructive" });
     }
   };
 
-  const identificarLinks = async () => {
-    setIdentificando(true);
-    try {
-      const r = await fetch(`${apiBase}/api/sync/identificar-links`, {
-        method: "POST",
-        credentials: "include",
-      });
-      const data = await r.json();
-      if (data.ok) {
-        carregarLinksMeta();
-        toast({ title: `${data.identificados.length} turma(s) identificada(s)!`, description: "As turmas foram mapeadas automaticamente." });
-      } else {
-        toast({ title: "Erro ao identificar", description: data.mensagem, variant: "destructive" });
-      }
-    } catch {
-      toast({ title: "Erro de conexão", variant: "destructive" });
-    } finally {
-      setIdentificando(false);
-    }
-  };
-
-  const iniciarSyncDiarios = () => {
-    if (!extensaoInstalada || phase !== "idle") return;
-    const linksManual = modo === "manual" ? parsearLinks() : [];
-    if (modo === "manual" && linksManual.length === 0) {
-      toast({ title: "Nenhum link válido", description: "Cole os links das páginas dos diários (um por linha).", variant: "destructive" });
-      return;
-    }
-    window.dispatchEvent(new CustomEvent("suap-sync-diarios-start", { detail: { apiBase, linksManual } }));
-    setPhase("diarios-opening");
-    setMsg("Iniciando sincronização dos diários...");
-    setResultados([]);
-    setShowResultados(false);
-  };
-
+  // ── Derivados ─────────────────────────────────────────────────────────────
   const ativo = !["idle", "diarios-done", "error"].includes(phase);
+  const naoInstalada = extensaoInstalada === false;
+
+  const manha  = turmas.filter(t => t.turno?.toLowerCase().includes("manh"));
+  const tarde  = turmas.filter(t => t.turno?.toLowerCase().includes("tard"));
+  const outros = turmas.filter(t => !t.turno?.toLowerCase().includes("manh") && !t.turno?.toLowerCase().includes("tard"));
+
+  // Última sync de um link por turma
+  const getUltimaSync = (turmaId: number) => {
+    const link = linksPerTurma[turmaId];
+    if (!link) return null;
+    return linksMeta.find(m => m.link === link)?.ultimaSync ?? null;
+  };
+
+  const qtdLinksPreenchidos = turmas.filter(t => linksPerTurma[t.id]?.includes("suap")).length;
+  const algumDirty = Object.values(linksDirty).some(Boolean);
+
+  // ── Row por turma ─────────────────────────────────────────────────────────
+  const TurmaLinkRow = ({ t }: { t: any }) => {
+    const estado = baixandoPorTurma[t.id];
+    const fase   = estado?.phase ?? "idle";
+    const link   = linksPerTurma[t.id] ?? "";
+    const dirty  = linksDirty[t.id] ?? false;
+    const ultimaSync = getUltimaSync(t.id);
+    const turnoEmoji = t.turno?.toLowerCase().includes("manh") ? "🌅" : t.turno?.toLowerCase().includes("tard") ? "🌇" : "🎓";
+
+    return (
+      <div className="flex items-center justify-between gap-3 p-3 rounded-2xl bg-black/25 border border-white/6 hover:border-white/10 transition-all">
+        {/* Lado Esquerdo: info da turma */}
+        <div className="flex items-center gap-3 min-w-0 flex-1">
+          <span className="text-lg leading-none shrink-0">{turnoEmoji}</span>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <p className="text-xs font-bold text-white truncate">{t.nomeTurma}</p>
+              {link ? (
+                <span className="text-[0.55rem] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-medium shrink-0">Com Link</span>
+              ) : (
+                <span className="text-[0.55rem] px-1.5 py-0.5 rounded bg-red-500/10 text-red-400 border border-red-500/20 font-medium shrink-0">Sem Link</span>
+              )}
+            </div>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:gap-2 mt-0.5">
+              {t.professorResponsavel && (
+                <p className="text-[0.62rem] text-slate-400 truncate">{t.professorResponsavel}</p>
+              )}
+              {ultimaSync && (
+                <p className="text-[0.58rem] text-slate-500 truncate">
+                  • Sync: {new Date(ultimaSync).toLocaleDateString("pt-BR")} {new Date(ultimaSync).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Lado Direito: Ações */}
+        <div className="flex items-center gap-2 shrink-0">
+          {/* Botão Configurar Link (Pencil) */}
+          <button
+            onClick={() => setDialogTurma(t)}
+            title="Configurar Link SUAP"
+            className={cn(
+              "flex items-center justify-center p-2 rounded-xl border text-xs transition-all",
+              dirty 
+                ? "bg-amber-500/15 border-amber-500/30 text-amber-300 hover:bg-amber-500/25"
+                : link 
+                ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20" 
+                : "bg-white/5 border-white/6 text-slate-400 hover:bg-white/10"
+            )}
+          >
+            <Link2 className="h-3.5 w-3.5" />
+          </button>
+
+          {/* Botão Sincronizar individual */}
+          <button
+            onClick={() => baixarDiario(t.id)}
+            disabled={fase === "baixando" || !link}
+            title={!link ? "Configure o link SUAP antes de atualizar" : "Atualizar este diário agora"}
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-[0.68rem] font-black transition-all border ${
+              fase === "baixando"
+                ? "bg-amber-500/15 text-amber-300 border-amber-500/40 cursor-wait"
+                : fase === "done"
+                ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/40 hover:bg-emerald-500/25"
+                : fase === "error"
+                ? "bg-red-500/15 text-red-300 border-red-500/40 hover:bg-red-500/25"
+                : !link
+                ? "bg-white/5 text-slate-600 border-white/5 cursor-not-allowed opacity-40"
+                : "bg-violet-500/20 text-violet-300 border-violet-500/30 hover:bg-violet-500/30"
+            }`}
+          >
+            {fase === "baixando" ? (
+              <><Loader2 className="h-3 w-3 animate-spin" /> Baixando...</>
+            ) : fase === "done" ? (
+              <><Check className="h-3 w-3" /> Atualizado</>
+            ) : fase === "error" ? (
+              <><RefreshCcw className="h-3 w-3" /> Tentar</>
+            ) : (
+              <><RefreshCcw className="h-3 w-3" /> Sincronizar</>
+            )}
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  // ── Seção por turno ───────────────────────────────────────────────────────
+  const SecaoTurno = ({ titulo, icon, lista }: { titulo: string; icon: React.ReactNode; lista: any[] }) => {
+    if (lista.length === 0) return null;
+    return (
+      <div className="mb-4">
+        <div className="flex items-center gap-1.5 mb-2">
+          {icon}
+          <span className="text-[0.65rem] font-bold uppercase tracking-widest text-slate-400">{titulo}</span>
+          <span className="text-[0.6rem] text-slate-600">({lista.length} turmas)</span>
+        </div>
+        <div className="space-y-2">
+          {lista.map(t => <TurmaLinkRow key={t.id} t={t} />)}
+        </div>
+      </div>
+    );
+  };
+
+  // ── Barra de progresso (extensão) ─────────────────────────────────────────
   const pct = phase === "idle" ? 0
     : phase === "diarios-opening" ? 5
     : phase === "diarios-login" ? 15
     : phase === "diarios-listing" ? 25
     : phase === "diarios-processing" && progTotal > 0 ? 25 + Math.round((progAtual / progTotal) * 70)
-    : phase === "diarios-done" ? 100
-    : 0;
-
+    : phase === "diarios-done" ? 100 : 0;
   const cor = phase === "error" ? "#ef4444" : phase === "diarios-done" ? "#10b981" : "#8b5cf6";
-
-  const naoInstalada = extensaoInstalada === false;
-
-  const qtdLinksValidos = linksTexto.split("\n").filter(l => l.trim().includes("suap") && l.trim().includes("diario")).length;
 
   return (
     <div
       className="bg-[#0f172a] rounded-2xl border p-6 transition-all duration-500"
       style={{ borderColor: ativo ? `${cor}55` : "rgba(255,255,255,0.07)" }}
     >
-      {/* Cabeçalho */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+      {/* ── Cabeçalho ────────────────────────────────────────────────────── */}
+      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-5">
         <div>
           <div className="flex items-center gap-2 mb-1">
             <BookOpen className="h-4 w-4 text-violet-400" />
             <h3 className="text-sm font-bold text-white">Sincronizar Diários de Classe</h3>
             <span className="text-[0.6rem] font-black uppercase tracking-widest bg-violet-500/20 text-violet-300 px-2 py-0.5 rounded-full">v3.1</span>
           </div>
-          <p className="text-xs text-slate-400 leading-relaxed max-w-xl">
-            Importa as presenças de cada diário do SUAP. Cole os links das páginas ou use o modo automático.
+          <p className="text-xs text-slate-400 leading-relaxed">
+            Configure o link SUAP de cada turma (abrindo o balão individual) para atualizar as presenças.
           </p>
         </div>
-        
+
+        {/* Botões de topo */}
         <div className="flex flex-col items-end gap-2">
-          {/* Botão Global Sync */}
+          {/* Sincronização automática via servidor */}
           <button
             onClick={syncGlobal.iniciarSincronizacaoGlobal}
             disabled={syncGlobal.fase === "baixando"}
@@ -748,16 +848,31 @@ function BlocoDiariosSinc({ extensaoInstalada, apiBase }: { extensaoInstalada: b
             )}
           >
             {syncGlobal.fase === "baixando" ? (
-              <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Atualizando Tudo...</>
+              <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Sincronizando...</>
             ) : syncGlobal.fase === "done" ? (
               <><Check className="h-3.5 w-3.5" /> Atualizado</>
             ) : (
-              <><RefreshCcw className="h-3.5 w-3.5" /> Atualizar Todos (Servidor)</>
+              <><RefreshCcw className="h-3.5 w-3.5" /> Sincronizar Tudo (Servidor)</>
             )}
           </button>
-          
+
+          {/* Importar via extensão Chrome */}
           <button
-            onClick={iniciarSyncDiarios}
+            onClick={() => {
+              if (!extensaoInstalada || ativo) return;
+              const linksManual = turmas
+                .filter(t => linksPerTurma[t.id]?.includes("suap"))
+                .map(t => linksPerTurma[t.id]);
+              if (linksManual.length === 0) {
+                toast({ title: "Nenhum link preenchido", description: "Cole os links SUAP das turmas antes de importar via extensão.", variant: "destructive" });
+                return;
+              }
+              window.dispatchEvent(new CustomEvent("suap-sync-diarios-start", { detail: { apiBase, linksManual } }));
+              setPhase("diarios-opening");
+              setMsg("Iniciando sincronização dos diários...");
+              setResultados([]);
+              setShowResultados(false);
+            }}
             disabled={ativo || naoInstalada}
             className={`flex-shrink-0 flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-xs transition-all ${
               naoInstalada
@@ -773,15 +888,15 @@ function BlocoDiariosSinc({ extensaoInstalada, apiBase }: { extensaoInstalada: b
         </div>
       </div>
 
-      {/* Barra de Progresso Global Sync */}
+      {/* ── Barra de progresso do sync global (servidor) ──────────────────── */}
       {syncGlobal.fase === "baixando" && (
-        <div className="mb-4 p-4 rounded-xl border border-amber-500/30 bg-amber-500/5 backdrop-blur-md animate-pulse">
+        <div className="mb-4 p-4 rounded-xl border border-amber-500/30 bg-amber-500/5 backdrop-blur-md">
           <div className="flex items-center justify-between text-xs font-bold text-amber-400 mb-2">
             <span>Sincronização em andamento (Servidor)</span>
             <span>{syncGlobal.progresso.total > 0 ? Math.round((syncGlobal.progresso.atual / syncGlobal.progresso.total) * 100) : 0}%</span>
           </div>
-          <div className="h-2 rounded-full bg-black/50 overflow-hidden mb-2">
-            <div 
+          <div className="h-2 rounded-full bg-black/50 overflow-hidden mb-1.5">
+            <div
               className="h-full bg-amber-400 transition-all duration-300"
               style={{ width: `${syncGlobal.progresso.total > 0 ? (syncGlobal.progresso.atual / syncGlobal.progresso.total) * 100 : 0}%` }}
             />
@@ -793,184 +908,78 @@ function BlocoDiariosSinc({ extensaoInstalada, apiBase }: { extensaoInstalada: b
         </div>
       )}
 
-      {/* Toggle modo */}
-      {!ativo && (
-        <div className="flex gap-1 p-1 bg-white/5 rounded-xl mb-4 w-fit">
-          {(["manual", "auto"] as const).map(m => (
-            <button
-              key={m}
-              onClick={() => setModo(m)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                modo === m
-                  ? "bg-violet-600 text-white shadow"
-                  : "text-slate-400 hover:text-white"
-              }`}
-            >
-              {m === "manual" ? "Links manuais" : "Automático"}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* Contagem regressiva do auto-sync */}
-      {autoContagem !== null && (
-        <div className="flex items-center justify-between gap-3 mb-4 px-4 py-3 rounded-xl bg-violet-500/10 border border-violet-500/30">
-          <div className="flex items-center gap-2.5">
-            <Loader2 className="h-4 w-4 text-violet-400 animate-spin" />
-            <span className="text-sm text-violet-300 font-medium">
-              Sincronização automática em <span className="font-black text-white">{autoContagem}s</span>...
-            </span>
-          </div>
-          <button
-            onClick={() => {
-              if (autoTimerRef.current) clearInterval(autoTimerRef.current);
-              setAutoContagem(null);
-            }}
-            className="text-[0.7rem] font-bold text-slate-400 hover:text-white transition-colors px-2 py-1 rounded-lg hover:bg-white/10"
-          >
-            Cancelar
-          </button>
-        </div>
-      )}
-
-      {/* Modo manual: textarea de links */}
-      {modo === "manual" && !ativo && (
-        <div className="mb-4">
-          <div className="flex items-center justify-between mb-2">
-            <label className="text-[0.7rem] font-bold uppercase tracking-widest text-slate-400">
-              Links dos diários (um por linha)
-            </label>
-            <div className="flex items-center gap-2">
-              {linksSalvos.length > 0 && !linksSujos && (
-                <span className="flex items-center gap-1 text-[0.65rem] text-emerald-400 font-bold">
-                  <Check className="h-3 w-3" /> {linksSalvos.length} salvos · sync automático ativo
-                </span>
-              )}
-              <button
-                onClick={salvarLinks}
-                disabled={salvando || qtdLinksValidos === 0}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[0.7rem] font-bold transition-all ${
-                  salvando || qtdLinksValidos === 0
-                    ? "bg-white/5 text-slate-500 cursor-not-allowed"
-                    : linksSujos
-                    ? "bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 border border-amber-500/30"
-                    : "bg-violet-500/20 text-violet-300 hover:bg-violet-500/30"
-                }`}
-              >
-                {salvando ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
-                {salvando ? "Salvando..." : linksSujos ? "Salvar alterações" : "Salvar links"}
-              </button>
-            </div>
-          </div>
-          <textarea
-            value={linksTexto}
-            onChange={e => { setLinksTexto(e.target.value); setLinksSujos(true); }}
-            rows={6}
-            placeholder={`https://suap.campos.rj.gov.br/edu/diario/56202/\nhttps://suap.campos.rj.gov.br/edu/diario/56255/\n...`}
-            className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-2.5 text-xs text-white placeholder:text-slate-600 resize-none font-mono focus:outline-none focus:border-violet-500/50 transition-colors"
-          />
-          <p className="mt-1.5 text-[0.65rem] text-slate-500">
-            {qtdLinksValidos > 0
-              ? <span className="text-violet-400 font-bold">{qtdLinksValidos} link{qtdLinksValidos > 1 ? "s" : ""} válido{qtdLinksValidos > 1 ? "s" : ""} · salve para ativar o sync automático diário</span>
-              : "Cole os links das páginas dos diários copiados da barra de endereço do SUAP"
-            }
-          </p>
-        </div>
-      )}
-
-      {/* ── Lista de diários com botão individual por link ── */}
-      {linksMeta.length > 0 && !ativo && (
-        <div className="mb-4">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-[0.7rem] font-bold uppercase tracking-widest text-slate-400">
-              Diários cadastrados ({linksMeta.length})
-            </span>
-            <button
-              onClick={identificarLinks}
-              disabled={identificando}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[0.68rem] font-bold bg-slate-700/60 text-slate-300 hover:bg-slate-700 transition-all disabled:opacity-50"
-            >
-              {identificando ? <Loader2 className="h-3 w-3 animate-spin" /> : <Search className="h-3 w-3" />}
-              {identificando ? "Identificando..." : "Identificar turmas"}
-            </button>
-          </div>
-          <div className="space-y-1.5">
-            {linksMeta.map(({ link, turma, ultimaSync }) => {
-              const estado = linksBaixando[link];
-              const fase = estado?.phase ?? "idle";
-              const suapId = link.match(/\/edu\/diario\/(\d+)\//)?.[1] ?? "?";
-              return (
-                <div key={link} className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-black/30 border border-white/6">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-bold text-white truncate">
-                      {turma ?? <span className="text-slate-400">Diário #{suapId}</span>}
-                    </p>
-                    {ultimaSync && (
-                      <p className="text-[0.6rem] text-slate-500 mt-0.5">
-                        Atualizado: {new Date(ultimaSync).toLocaleDateString("pt-BR")} {new Date(ultimaSync).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
-                      </p>
-                    )}
-                    {!turma && (
-                      <p className="text-[0.6rem] text-slate-600 mt-0.5 font-mono truncate">
-                        {link.replace("https://suap.campos.rj.gov.br", "").substring(0, 40)}
-                      </p>
-                    )}
-                    {fase === "error" && <p className="text-[0.6rem] text-red-400 mt-0.5">{estado?.msg}</p>}
-                    {fase === "done"  && <p className="text-[0.6rem] text-emerald-400 mt-0.5">{estado?.msg}</p>}
-                  </div>
-                  {/* 3-state button */}
-                  <button
-                    onClick={() => { if (fase !== "baixando") baixarLink(link); }}
-                    disabled={fase === "baixando"}
-                    className={`flex-shrink-0 relative flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[0.68rem] font-black transition-all overflow-hidden border ${
-                      fase === "baixando"
-                        ? "bg-amber-500/15 text-amber-300 border-amber-500/40 cursor-wait"
-                        : fase === "done"
-                        ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/40 hover:bg-emerald-500/25 cursor-pointer"
-                        : "bg-red-500/15 text-red-300 border-red-500/40 hover:bg-red-500/25 cursor-pointer"
-                    }`}
-                  >
-                    {fase === "baixando" && (
-                      <span className="absolute inset-0 overflow-hidden rounded-lg">
-                        <span className="absolute inset-y-0 left-0 bg-amber-400/20 animate-[growing_1.5s_ease-in-out_infinite]" style={{ width: "60%" }} />
-                      </span>
-                    )}
-                    <span className="relative flex items-center gap-1">
-                      {fase === "baixando" ? (
-                        <><Loader2 className="h-3 w-3 animate-spin" /> Baixando...</>
-                      ) : fase === "done" ? (
-                        <><Check className="h-3 w-3" /> Sincronizar</>
-                      ) : (
-                        <><RefreshCcw className="h-3 w-3" /> Atualizar</>
-                      )}
-                    </span>
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Modo automático: info */}
-      {modo === "auto" && !ativo && (
-        <div className="mb-4 p-3 rounded-xl bg-amber-500/8 border border-amber-500/20 text-xs text-amber-300/80">
-          <p className="font-bold text-amber-300 mb-1">Modo automático</p>
-          A extensão vai navegar pela lista de diários do SUAP, clicar em cada um e aguardar a geração de cada PDF.
-          Pode demorar 3–5 min por diário. Prefira o modo "Links manuais" para mais controle.
-        </div>
-      )}
-
+      {/* ── Aviso extensão não instalada ──────────────────────────────────── */}
       {naoInstalada && (
         <div className="flex items-center gap-2 p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-300 text-xs mb-4">
           <AlertTriangle className="h-4 w-4 shrink-0" />
-          Extensão Chrome não detectada. Instale a extensão v3.1.0 primeiro (disponível em Ajustes → Sincronização acima).
+          Extensão Chrome não detectada. Instale a extensão v3.1.0 para usar o modo "Importar via Extensão".
         </div>
       )}
 
-      {/* Barra de progresso */}
+      {/* ── Carregando turmas ─────────────────────────────────────────────── */}
+      {carregandoTurmas ? (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="h-6 w-6 animate-spin text-violet-400" />
+          <span className="ml-2 text-sm text-slate-400">Carregando turmas...</span>
+        </div>
+      ) : turmas.length === 0 ? (
+        <div className="text-center py-10 text-slate-500 text-sm">
+          Nenhuma turma cadastrada. Cadastre turmas para configurar os links dos diários.
+        </div>
+      ) : (
+        <>
+          {/* ── Seções por turno ──────────────────────────────────────────── */}
+          <div className="max-h-[520px] overflow-y-auto pr-1 space-y-1 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-white/10">
+            <SecaoTurno titulo="Turno da Manhã" icon={<Sun className="h-3.5 w-3.5 text-amber-400" />} lista={manha} />
+            <SecaoTurno titulo="Turno da Tarde" icon={<Sunset className="h-3.5 w-3.5 text-orange-400" />} lista={tarde} />
+            <SecaoTurno titulo="Outros Turnos"  icon={<GraduationCap className="h-3.5 w-3.5 text-violet-400" />} lista={outros} />
+          </div>
+
+          {/* ── Rodapé: salvar todos + checkbox ──────────────────────────── */}
+          <div className="mt-4 pt-4 border-t border-white/6 flex flex-col gap-3">
+            {/* Checkbox salvar todos */}
+            <label className="flex items-center gap-2.5 cursor-pointer group">
+              <input
+                type="checkbox"
+                checked={autoSalvar}
+                onChange={e => setAutoSalvar(e.target.checked)}
+                className="w-4 h-4 rounded accent-violet-500"
+              />
+              <div>
+                <span className="text-xs font-semibold text-white group-hover:text-violet-300 transition-colors">
+                  Salvar todos os links automaticamente
+                </span>
+                <p className="text-[0.6rem] text-slate-500 mt-0.5">
+                  Os links são mantidos salvos até serem trocados. {qtdLinksPreenchidos > 0 && `(${qtdLinksPreenchidos} link${qtdLinksPreenchidos > 1 ? "s" : ""} preenchido${qtdLinksPreenchidos > 1 ? "s" : ""})`}
+                </p>
+              </div>
+            </label>
+
+            {/* Botão Salvar Todos */}
+            <button
+              onClick={salvarTodosOsLinks}
+              disabled={salvandoTodos || qtdLinksPreenchidos === 0}
+              className={`flex items-center justify-center gap-2 w-full py-2.5 rounded-xl text-xs font-bold transition-all border ${
+                salvandoTodos
+                  ? "bg-violet-500/20 text-violet-300 border-violet-500/30 cursor-wait"
+                  : algumDirty || qtdLinksPreenchidos > 0
+                  ? "bg-violet-600 text-white border-violet-500 hover:bg-violet-500"
+                  : "bg-white/5 text-slate-500 border-white/5 cursor-not-allowed"
+              }`}
+            >
+              {salvandoTodos ? (
+                <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Salvando...</>
+              ) : (
+                <><Save className="h-3.5 w-3.5" /> Salvar todos os links ({qtdLinksPreenchidos} turmas)</>
+              )}
+            </button>
+          </div>
+        </>
+      )}
+
+      {/* ── Barra de progresso extensão ───────────────────────────────────── */}
       {ativo && (
-        <div className="mb-4">
+        <div className="mt-4">
           <div className="flex justify-between text-xs text-slate-400 mb-1.5">
             <span className="truncate pr-2">{msg}</span>
             {progTotal > 0 && <span className="shrink-0">{progAtual}/{progTotal}</span>}
@@ -984,15 +993,7 @@ function BlocoDiariosSinc({ extensaoInstalada, apiBase }: { extensaoInstalada: b
         </div>
       )}
 
-      {/* Mensagem de conclusão */}
-      {phase === "diarios-done" && !ativo && (
-        <div className="flex items-center gap-2 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-sm mb-4">
-          <Check className="h-4 w-4 shrink-0" />
-          {msg}
-        </div>
-      )}
-
-      {/* Resultados detalhados */}
+      {/* ── Resultados da extensão ────────────────────────────────────────── */}
       {resultados.length > 0 && (
         <div className="mt-3">
           <button
@@ -1009,7 +1010,7 @@ function BlocoDiariosSinc({ extensaoInstalada, apiBase }: { extensaoInstalada: b
                   {r.ok ? <Check className="h-3 w-3 shrink-0" /> : <X className="h-3 w-3 shrink-0" />}
                   <span className="font-bold">{r.turma || r.turmaNome || r.id}</span>
                   {r.ok
-                    ? <span className="text-slate-400">{r.aulasExtraidas} aulas · {r.presencasInseridas} presenças</span>
+                    ? <span className="text-slate-400">{r.aulasExtraidas || r.aulas} aulas · {r.presencasInseridas || r.presencas} presenças</span>
                     : <span className="text-red-400/70">{r.erro}</span>
                   }
                 </div>
@@ -1018,6 +1019,72 @@ function BlocoDiariosSinc({ extensaoInstalada, apiBase }: { extensaoInstalada: b
           )}
         </div>
       )}
+
+      {/* ── Dialog para configurar link de turma individual ── */}
+      <Dialog open={!!dialogTurma} onOpenChange={(open) => { if (!open) setDialogTurma(null); }}>
+        <DialogContent className="bg-[#0f172a] border-white/10 text-white max-w-lg max-h-[90vh] overflow-hidden flex flex-col rounded-3xl">
+          <DialogHeader className="border-b border-white/5 pb-4">
+            <DialogTitle className="flex items-center gap-2">
+              <Link2 className="h-5 w-5 text-violet-400" />
+              Configurar Link SUAP
+            </DialogTitle>
+            {dialogTurma && (
+              <p className="text-xs text-slate-400">
+                Defina o link do relatório diário do SUAP para a turma <span className="font-bold text-white">{dialogTurma.nomeTurma}</span>.
+              </p>
+            )}
+          </DialogHeader>
+          <div className="flex-1 p-6 space-y-4">
+            {dialogTurma && (
+              <div className="space-y-4">
+                <div>
+                  <Label className="text-white/80 text-xs font-bold uppercase tracking-wider mb-2 block">
+                    Link do Diário no SUAP
+                  </Label>
+                  <Input
+                    value={linksPerTurma[dialogTurma.id] ?? ""}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setLinksPerTurma(prev => ({ ...prev, [dialogTurma.id]: val }));
+                      setLinksDirty(prev => ({ ...prev, [dialogTurma.id]: true }));
+                    }}
+                    placeholder="https://suap.ifrn.edu.br/... ou link correspondente"
+                    className="bg-black/40 border-white/10 text-white w-full"
+                  />
+                </div>
+                <div className="text-[10px] text-slate-500 leading-relaxed bg-black/20 p-3 rounded-lg border border-white/5">
+                  <p className="font-bold text-slate-400 mb-1">Dica:</p>
+                  O link deve apontar para o diário ou relatório correspondente da turma no SUAP para que a sincronização automática de frequências funcione.
+                </div>
+              </div>
+            )}
+          </div>
+          <div className="border-t border-white/5 p-4 flex justify-end gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setDialogTurma(null)}
+              className="bg-transparent border-white/10 hover:bg-white/5 text-white"
+            >
+              Fechar
+            </Button>
+            <Button
+              onClick={async () => {
+                if (dialogTurma) {
+                  await salvarLinkTurma(dialogTurma.id);
+                  toast({
+                    title: "Link salvo com sucesso!",
+                    description: `O link da turma ${dialogTurma.nomeTurma} foi atualizado.`
+                  });
+                  setDialogTurma(null);
+                }
+              }}
+              className="bg-violet-600 hover:bg-violet-500 text-white"
+            >
+              Salvar Link
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -1069,12 +1136,6 @@ function SecaoSincronizacao() {
   const [credSalvo, setCredSalvo]         = useState(false);
   const [mostrarSenha, setMostrarSenha]   = useState(false);
 
-  // Bookmarklet
-  const [bookmarkToken, setBookmarkToken]     = useState<string | null>(null);
-  const [bookmarkHref, setBookmarkHref]       = useState<string>("");
-  const [bookmarkStatus, setBookmarkStatus]   = useState<"idle"|"gerando"|"pronto"|"erro">("idle");
-  const [bookmarkCopiado, setBookmarkCopiado] = useState(false);
-  const bookmarkLinkRef = useRef<HTMLAnchorElement>(null);
 
   // Histórico de Sincronização e Logs
   const [historicoList, setHistoricoList] = useState<any[]>([]);
@@ -1088,12 +1149,6 @@ function SecaoSincronizacao() {
       console.error("Erro ao carregar histórico:", e);
     }
   }, []);
-  // Definir href via DOM para bypass da validação do React (que bloqueia javascript: URLs)
-  useEffect(() => {
-    if (bookmarkLinkRef.current && bookmarkHref) {
-      bookmarkLinkRef.current.setAttribute("href", bookmarkHref);
-    }
-  }, [bookmarkHref]);
 
   // Detectar extensão e carregar histórico + credenciais
   useEffect(() => {
@@ -1360,132 +1415,7 @@ function SecaoSincronizacao() {
 
   const autoCor   = autoErro ? "#ef4444" : autoConcluido ? "#10b981" : "#06b6d4";
 
-  /* ── Gerar Bookmarklet ── */
-  async function gerarBookmarklet() {
-    setBookmarkStatus("gerando");
-    try {
-      const resp = await apiFetch("/sync/gerar-token", { method: "POST" });
-      const token: string = resp.token;
-      const apiUrl = `${window.location.origin}${BASE}/api/sync/bookmarklet-upload`;
 
-      // Código JavaScript do bookmarklet INTELIGENTE — tenta servidor primeiro, depois browser no SUAP
-      const code = `(async function(){
-if(document.getElementById('_sjov'))return;
-var API='${apiUrl}';var TK='${token}';
-var d=document.createElement('div');
-d.id='_sjov';
-d.style.cssText='position:fixed;top:16px;right:16px;background:#0f172a;color:#fff;padding:18px 22px;border-radius:14px;z-index:2147483647;font-size:13px;font-family:Arial,sans-serif;max-width:360px;border:2px solid #3b82f6;box-shadow:0 8px 32px rgba(0,0,0,0.7);line-height:1.7;';
-d.innerHTML='<b style="font-size:14px;display:block;margin-bottom:6px;">🏫 Sistema Escolar — Sincronização</b><span id="_sjm">Iniciando...</span>';
-document.body.appendChild(d);
-function msg(t,c){var el=document.getElementById('_sjm');if(el)el.innerHTML=t;if(c)d.style.borderColor=c;}
-function fim(ms){setTimeout(function(){var el=document.getElementById('_sjov');if(el)el.remove();},ms||10000);}
-
-var onSuap=location.host.includes('suap');
-
-if(onSuap){
-  await modoBrowser();
-}else{
-  var ok=await modoServidor();
-  if(!ok){
-    msg('Servidor indisponível — abrindo SUAP em nova aba...<br><small style="opacity:.7">Clique no favorito novamente no SUAP para sincronizar.</small>','#f59e0b');
-    setTimeout(function(){window.open('https://suap.campos.rj.gov.br/edu/relatorio/','_blank');},1200);
-    fim(18000);
-  }
-}
-
-async function modoServidor(){
-  try{
-    msg('Tentando sincronização via servidor...');
-    var r=await fetch(API.replace('/sync/bookmarklet-upload','/sync/auto'),{method:'POST',credentials:'include'});
-    if(!r.ok)return false;
-    for(var i=0;i<25;i++){
-      await new Promise(function(r){setTimeout(r,1200);});
-      var s=await fetch(API.replace('/sync/bookmarklet-upload','/sync/auto/status'),{credentials:'include'});
-      var data=await s.json();
-      msg('Sincronizando via servidor... <b>'+data.pct+'%</b>');
-      if(!data.rodando){
-        if(data.erro)return false;
-        if(data.concluido){msg('✅ '+( data.msg||'Sincronização concluída via servidor!'),'#10b981');fim(8000);return true;}
-      }
-    }
-    return false;
-  }catch(e){return false;}
-}
-
-async function modoBrowser(){
-  try{
-    msg('Modo SUAP: carregando formulário de alunos...');
-    var r1=await fetch('/edu/relatorio/',{credentials:'include'});
-    var h1=await r1.text();
-    var p=new DOMParser();var doc=p.parseFromString(h1,'text/html');
-    var csrfEl=doc.querySelector('[name="csrfmiddlewaretoken"]');
-    var csrf=csrfEl?csrfEl.value:'';
-    if(!csrf){msg('❌ CSRF do SUAP não encontrado. Faça login no SUAP primeiro.','#ef4444');fim();return;}
-    var exibicoes=Array.prototype.slice.call(doc.querySelectorAll('[name="exibicao"]')).map(function(el){return el.value;});
-    msg('Preenchendo formulário ('+exibicoes.length+' campos)...');
-    var params=new URLSearchParams();
-    params.append('csrfmiddlewaretoken',csrf);params.append('uo','205');
-    params.append('ano_letivo','9');params.append('relatorio_form','Pesquisar');
-    exibicoes.forEach(function(e){params.append('exibicao',e);});
-    var r2=await fetch('/edu/relatorio/',{method:'POST',credentials:'include',
-      headers:{'Content-Type':'application/x-www-form-urlencoded','X-CSRFToken':csrf},
-      body:params.toString()});
-    var h2=await r2.text();
-    msg('Buscando link de exportação XLS...');
-    var doc2=p.parseFromString(h2,'text/html');
-    var links=Array.prototype.slice.call(doc2.querySelectorAll('a[href]'));
-    var expLink=links.find(function(a){var h=(a.getAttribute('href')||'').toLowerCase();return(h.includes('export')&&h.includes('xls'))||h.includes('formato=xls')||h.includes('gerar_arquivo');});
-    var expUrl=expLink?(new URL(expLink.getAttribute('href'),location.origin)).href:location.origin+'/edu/relatorio/?formato=xls';
-    msg('Exportando arquivo XLS...');
-    var r3=await fetch(expUrl,{credentials:'include',headers:{'Accept':'application/vnd.ms-excel,application/octet-stream,*/*'}});
-    var ct=r3.headers.get('content-type')||'';
-    var buf;
-    if(ct.includes('spreadsheet')||ct.includes('excel')||ct.includes('octet-stream')){buf=await r3.arrayBuffer();}
-    else{
-      var taskUrl=r3.headers.get('location')||expUrl;
-      for(var i=0;i<30;i++){
-        await new Promise(function(r){setTimeout(r,2000);});
-        msg('Aguardando geração do XLS... ('+(i+1)+'/30)');
-        var rp=await fetch(taskUrl,{credentials:'include'});
-        var pt=rp.headers.get('content-type')||'';
-        if(pt.includes('spreadsheet')||pt.includes('excel')||pt.includes('octet-stream')){buf=await rp.arrayBuffer();break;}
-        var ph=await rp.text();
-        var linkDl=p.parseFromString(ph,'text/html').querySelector('a[href*=".xls"]');
-        if(linkDl){var rr=await fetch((new URL(linkDl.getAttribute('href'),location.origin)).href,{credentials:'include'});buf=await rr.arrayBuffer();break;}
-      }
-    }
-    if(!buf){msg('❌ Não foi possível obter o XLS do SUAP.','#ef4444');fim();return;}
-    msg('Enviando para o Sistema Escolar...');
-    var bytes=new Uint8Array(buf);
-    var bin='';for(var i=0;i<bytes.byteLength;i++)bin+=String.fromCharCode(bytes[i]);
-    var b64=btoa(bin);
-    var ar=await fetch(API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({arquivo:b64,token:TK})});
-    var res=await ar.json();
-    if(ar.ok){msg('✅ '+(res.mensagem||'Sincronização concluída!'),'#10b981');}
-    else{msg('❌ '+(res.mensagem||'Erro na sincronização.'),'#ef4444');}
-  }catch(e){msg('❌ Erro: '+e.message,'#ef4444');}
-  fim();
-}
-})();`;
-
-      const href = "javascript:" + encodeURIComponent(code);
-      setBookmarkHref(href);
-      setBookmarkToken(token);
-      setBookmarkStatus("pronto");
-    } catch (e: any) {
-      setBookmarkStatus("erro");
-      toast({ title: "Erro ao gerar bookmarklet", description: e.message, variant: "destructive" });
-    }
-  }
-
-  async function copiarBookmarklet() {
-    if (!bookmarkHref) return;
-    try {
-      await navigator.clipboard.writeText(bookmarkHref);
-      setBookmarkCopiado(true);
-      setTimeout(() => setBookmarkCopiado(false), 3000);
-    } catch {}
-  }
 
   return (
     <div className="space-y-5">
@@ -1536,7 +1466,7 @@ async function modoBrowser(){
             {!autoRodando && !autoErro && !autoConcluido && (
               <div className="flex items-start gap-2 mb-3 px-3 py-2.5 rounded-lg bg-orange-500/8 border border-orange-500/20 text-orange-300/80 text-xs">
                 <WifiOff className="h-3.5 w-3.5 mt-0.5 shrink-0" />
-                <span>Se aparecer erro de conexão, use o <b>Bookmarklet SUAP</b> abaixo — ele funciona sempre.</span>
+                <span>Se aparecer erro de conexão, use a <b>Extensão Chrome</b> para sincronizar via navegador.</span>
               </div>
             )}
 
@@ -1641,7 +1571,7 @@ async function modoBrowser(){
               )}
             </div>
             <p className="text-slate-400 text-sm mb-4 leading-relaxed">
-              Informe seu login e senha do SUAP para que a <b>sincronização automática via servidor</b> e o <b>Bookmarklet</b> possam funcionar sem abrir o navegador. As credenciais ficam salvas de forma segura no banco de dados do sistema.
+              Informe seu login e senha do SUAP para que a <b>sincronização automática via servidor</b> possa funcionar sem abrir o navegador. As credenciais ficam salvas de forma segura no banco de dados do sistema.
             </p>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
@@ -1697,104 +1627,7 @@ async function modoBrowser(){
         </div>
       </div>
 
-      {/* ═══════════════════════════════════════════
-          BLOCO 1.5 — Bookmarklet SUAP (Recomendado)
-      ═══════════════════════════════════════════ */}
-      <div className="bg-[#0f172a] rounded-2xl border border-emerald-500/30 p-6">
-        <div className="flex items-start gap-4">
-          {/* Ícone */}
-          <div className="w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 bg-emerald-500/10 border border-emerald-500/30">
-            <Bookmark className="h-7 w-7 text-emerald-400" />
-          </div>
 
-          <div className="flex-1">
-            <div className="flex items-center gap-2 mb-1">
-              <h2 className="text-lg font-bold text-white">Bookmarklet Inteligente</h2>
-              <span className="px-2 py-0.5 rounded-full text-[0.6rem] font-bold uppercase tracking-widest bg-emerald-500/15 text-emerald-400 border border-emerald-500/25">
-                Recomendado
-              </span>
-            </div>
-            <p className="text-slate-400 text-sm mb-4 leading-relaxed">
-              Um favorito no browser que sincroniza com o SUAP de forma automática e inteligente — tenta o servidor primeiro, e se falhar, acessa o SUAP pelo seu browser automaticamente. Gere uma vez e use sempre.
-            </p>
-
-            {/* Como funciona */}
-            <div className="flex items-start gap-2 mb-4 px-3 py-3 rounded-lg bg-blue-500/8 border border-blue-500/20 text-blue-300/80 text-xs space-y-0.5">
-              <ShieldCheck className="h-3.5 w-3.5 mt-0.5 shrink-0 text-blue-400" />
-              <div>
-                <span className="font-bold text-blue-300">Como funciona:</span>
-                <span> ao clicar, tenta sincronizar via servidor. Se o servidor não alcançar o SUAP, abre o SUAP em nova aba e sincroniza direto pelo seu browser. Token válido por 1 ano.</span>
-              </div>
-            </div>
-
-            {/* Passo a passo */}
-            {bookmarkStatus === "idle" && (
-              <div className="mb-4 space-y-1.5">
-                {["1. Clique em \"Gerar Bookmarklet\" abaixo (uma única vez)",
-                  "2. Arraste o botão verde para a barra de favoritos do browser",
-                  "3. Clique no favorito a qualquer momento para sincronizar",
-                  "4. Ele decide automaticamente o melhor método"].map((s, i) => (
-                  <div key={i} className="flex items-start gap-2 text-xs text-slate-400">
-                    <span className="text-emerald-500 font-bold mt-0.5">›</span>
-                    <span>{s}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Botão gerado (para arrastar) */}
-            {bookmarkStatus === "pronto" && bookmarkHref && (
-              <div className="mb-4 p-4 rounded-xl bg-black/40 border border-emerald-500/20">
-                <p className="text-xs text-emerald-400 font-bold mb-3 flex items-center gap-1.5">
-                  <Check className="h-3.5 w-3.5" /> Pronto! Arraste o botão abaixo para a barra de favoritos do browser:
-                </p>
-                <div className="flex flex-wrap items-center gap-3">
-                  {/* Link arrastável — href definido via ref (bypass da proteção do React contra javascript: URLs) */}
-                  <a
-                    ref={bookmarkLinkRef}
-                    draggable
-                    onClick={e => e.preventDefault()}
-                    className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-white font-bold text-sm cursor-grab active:cursor-grabbing shadow-lg shadow-emerald-500/25 select-none transition-all"
-                  >
-                    <Bookmark className="h-4 w-4" />
-                    Sincronizar com SUAP
-                  </a>
-                  <button
-                    onClick={copiarBookmarklet}
-                    className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-white transition-colors"
-                  >
-                    {bookmarkCopiado ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
-                    {bookmarkCopiado ? "Copiado!" : "Copiar link"}
-                  </button>
-                </div>
-                <div className="mt-3 text-[0.7rem] text-slate-500 space-y-0.5">
-                  <p>✓ Tenta servidor automaticamente • se falhar, abre SUAP e sincroniza pelo browser</p>
-                  <p>✓ Token válido por 1 ano — não precisa regerar</p>
-                </div>
-              </div>
-            )}
-
-            {/* Botão de gerar */}
-            <button
-              onClick={gerarBookmarklet}
-              disabled={bookmarkStatus === "gerando"}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-              style={{
-                background: "linear-gradient(135deg, #10b981, #059669)",
-                boxShadow: "0 4px 16px #10b98140",
-              }}
-            >
-              {bookmarkStatus === "gerando" ? (
-                <><Loader2 className="h-4 w-4 animate-spin" /> Gerando...</>
-              ) : bookmarkStatus === "pronto" ? (
-                <><RefreshCcw className="h-4 w-4" /> Gerar Novo</>
-              ) : (
-                <><Bookmark className="h-4 w-4" /> Gerar Bookmarklet</>
-              )}
-            </button>
-          </div>
-        </div>
-      </div>
 
       {/* ═══════════════════════════════════════════
           BLOCO 2 — Sincronização via Extensão Chrome

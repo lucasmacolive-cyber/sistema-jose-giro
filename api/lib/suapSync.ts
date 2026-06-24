@@ -290,28 +290,19 @@ export async function sincronizarSUAP(
     throw new Error(`Falha ao acessar relatório SUAP (status ${reportResp.status}).`);
   }
 
-  onProgress(35, "Relatório carregado. Procurando link de exportação XLS...");
+  onProgress(35, "Relatório carregado. Iniciando exportação para XLS via POST...");
 
-  /* ── 3. Encontrar e acessar o botão "Exportar para XLS" ── */
-  let exportPath = encontrarLinkExport(reportResp.text);
+  /* ── 3. Disparar Exportação via POST ── */
+  const reportCsrf = reportResp.text.match(/name="csrfmiddlewaretoken"\s+value="([^"]+)"/)?.[1] || jar.get("__Host-csrftoken") || jar.get("csrftoken") || "";
 
-  if (!exportPath) {
-    // Fallback: usar URL do relatório + ?formato=xls
-    exportPath = "/edu/relatorio/?formato=xls";
-    onProgress(38, "Link de exportação não encontrado, tentando URL padrão...");
-  } else {
-    onProgress(38, `Link de exportação encontrado: ${exportPath}`);
-  }
+  const exportBody = new URLSearchParams();
+  exportBody.append("csrfmiddlewaretoken", reportCsrf);
+  exportBody.append("xls", "1");
 
-  // Garantir path absoluto
-  if (exportPath.startsWith("http")) {
-    exportPath = new URL(exportPath).pathname + new URL(exportPath).search;
-  }
-
-  onProgress(40, "Solicitando geração do arquivo XLS...");
-
-  const exportResp = await request("GET", exportPath, jar, undefined, {
-    Referer: `${SUAP_BASE}/edu/relatorio/`,
+  onProgress(40, "Solicitando geração do arquivo ao servidor SUAP via POST...");
+  const exportResp = await request("POST", SUAP_RELATORIO_URL + "&xls=1", jar, exportBody.toString(), {
+    Referer: `${SUAP_BASE}${SUAP_RELATORIO_URL}`,
+    "X-CSRFToken": reportCsrf,
     Accept: "application/vnd.ms-excel,application/octet-stream,text/html,*/*",
   });
 
@@ -327,6 +318,7 @@ export async function sincronizarSUAP(
   onProgress(45, "Exportação iniciada. Identificando página de progresso...");
 
   // Determinar URL da página intermediária (onde o SUAP mostra progresso e link de download)
+  const exportPath = SUAP_RELATORIO_URL + "&xls=1";
   let progressPath = exportPath; // padrão: reusar a mesma URL
 
   if (exportResp.headers.location) {
@@ -355,8 +347,8 @@ export async function sincronizarSUAP(
   onProgress(48, "Aguardando geração do arquivo (30s mínimo)...");
   await sleep(30000);
 
-  // Polling: até 60 segundos adicionais (total ~90s)
-  for (let tentativa = 0; tentativa < 30; tentativa++) {
+  // Polling: até 10 minutos adicionais (total ~10.5m)
+  for (let tentativa = 0; tentativa < 120; tentativa++) {
     const pollResp = await request("GET", progressPath, jar, undefined, {
       Accept: "text/html,application/octet-stream,*/*",
     });
@@ -389,7 +381,7 @@ export async function sincronizarSUAP(
     // A própria página intermediária redirecionou para outra?
     if (pollResp.headers.location) {
       progressPath = resolverPath(pollResp.headers.location);
-      onProgress(50 + Math.floor((tentativa / 30) * 30), `Seguindo redirect: ${progressPath}`);
+      onProgress(50 + Math.floor((tentativa / 120) * 40), `Seguindo redirect: ${progressPath}`);
       continue;
     }
 
@@ -397,21 +389,21 @@ export async function sincronizarSUAP(
     const pollMeta = encontrarMetaRefresh(pollText);
     if (pollMeta && pollMeta !== progressPath) {
       progressPath = resolverPath(pollMeta);
-      onProgress(50 + Math.floor((tentativa / 30) * 30), `Meta-refresh para: ${progressPath}`);
+      onProgress(50 + Math.floor((tentativa / 120) * 40), `Meta-refresh para: ${progressPath}`);
     }
 
     // Extrair % de progresso se disponível
     const pctStr = pollText.match(/(\d+)\s*%/)?.[1];
     onProgress(
-      50 + Math.floor((tentativa / 30) * 30),
-      `Aguardando conclusão do XLS... ${pctStr ? pctStr + "%" : `tentativa ${tentativa + 1}/30`}`
+      50 + Math.floor((tentativa / 120) * 40),
+      `Aguardando conclusão do XLS... ${pctStr ? pctStr + "%" : `tentativa ${tentativa + 1}/120`}`
     );
 
-    await sleep(2000);
+    await sleep(5000);
   }
 
   throw new Error(
-    "Timeout: o SUAP não concluiu a exportação XLS em 90 segundos. Tente novamente em alguns minutos."
+    "Timeout: o SUAP não concluiu a exportação XLS em 10 minutos. Tente novamente em alguns minutos."
   );
 }
 

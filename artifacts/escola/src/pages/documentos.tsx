@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import html2pdf from "html2pdf.js";
+import { gerarPdfBlob } from "@/lib/pdf-utils";
 import * as XLSX from "xlsx";
 
 // ─── Constantes ──────────────────────────────────────────────────────────────
@@ -534,7 +535,7 @@ function SecaoDeclaracoes() {
         jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
       };
 
-      const pdfBlob = await html2pdf().set(opt).from(container).outputPdf('blob');
+      const pdfBlob = await gerarPdfBlob(container, opt);
       const file = new File([pdfBlob], filename, { type: "application/pdf" });
 
       const form = new FormData();
@@ -587,7 +588,7 @@ function SecaoDeclaracoes() {
         jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
       };
 
-      const pdfBlob = await html2pdf().set(opt).from(container).outputPdf('blob');
+      const pdfBlob = await gerarPdfBlob(container, opt);
       const file = new File([pdfBlob], filename, { type: "application/pdf" });
 
       const form = new FormData();
@@ -636,7 +637,7 @@ function SecaoDeclaracoes() {
         jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
       };
 
-      const pdfBlob = await html2pdf().set(opt).from(container).outputPdf('blob');
+      const pdfBlob = await gerarPdfBlob(container, opt);
       const file = new File([pdfBlob], filename, { type: "application/pdf" });
 
       const form = new FormData();
@@ -1658,7 +1659,7 @@ function SecaoPreDiario() {
         jsPDF:        { unit: 'mm', format: 'a4', orientation: 'landscape' }
       };
 
-      const pdfBlob = await html2pdf().set(opt).from(container).outputPdf('blob');
+      const pdfBlob = await gerarPdfBlob(container, opt);
       const file = new File([pdfBlob], `Pre-Diario.pdf`, { type: "application/pdf" });
 
       const form = new FormData();
@@ -1703,7 +1704,7 @@ function SecaoPreDiario() {
         jsPDF:        { unit: 'mm', format: 'a4', orientation: 'landscape' }
       };
 
-      const pdfBlob = await html2pdf().set(opt).from(container).outputPdf('blob');
+      const pdfBlob = await gerarPdfBlob(container, opt);
       const file = new File([pdfBlob], filename, { type: "application/pdf" });
 
       const form = new FormData();
@@ -1745,7 +1746,7 @@ function SecaoPreDiario() {
         jsPDF:        { unit: 'mm', format: 'a4', orientation: 'landscape' }
       };
 
-      const pdfBlob = await html2pdf().set(opt).from(container).outputPdf('blob');
+      const pdfBlob = await gerarPdfBlob(container, opt);
       const file = new File([pdfBlob], filename, { type: "application/pdf" });
 
       const form = new FormData();
@@ -2902,7 +2903,7 @@ function SecaoFicai() {
         jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
       };
 
-      const pdfBlob = await html2pdf().set(opt).from(container).outputPdf('blob');
+      const pdfBlob = await gerarPdfBlob(container, opt);
       const file = new File([pdfBlob], filename, { type: "application/pdf" });
 
       const form = new FormData();
@@ -2936,7 +2937,7 @@ function SecaoFicai() {
         jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
       };
 
-      const pdfBlob = await html2pdf().set(opt).from(container).outputPdf('blob');
+      const pdfBlob = await gerarPdfBlob(container, opt);
       const file = new File([pdfBlob], filename, { type: "application/pdf" });
 
       const form = new FormData();
@@ -3383,7 +3384,7 @@ function SecaoModelosDinamicos() {
         jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
       };
 
-      const pdfBlob = await html2pdf().set(opt).from(container).outputPdf('blob');
+      const pdfBlob = await gerarPdfBlob(container, opt);
       const file = new File([pdfBlob], filename, { type: "application/pdf" });
 
       const form = new FormData();
@@ -3419,7 +3420,7 @@ function SecaoModelosDinamicos() {
         jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
       };
 
-      const pdfBlob = await html2pdf().set(opt).from(container).outputPdf('blob');
+      const pdfBlob = await gerarPdfBlob(container, opt);
       const file = new File([pdfBlob], filename, { type: "application/pdf" });
 
       const form = new FormData();

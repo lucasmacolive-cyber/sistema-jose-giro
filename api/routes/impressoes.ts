@@ -443,7 +443,14 @@ def proc(job):
         log(f"Impressora: {target or 'Padrao'}")
         # Imprimir via SumatraPDF ou PowerShell
         ok = False
-        sumatra = os.path.join(os.path.expanduser("~"), "SistemaImpressao", "SumatraPDF.exe")
+        import glob
+        sumatra_dir = os.path.join(os.path.expanduser("~"), "SistemaImpressao")
+        sumatra = os.path.join(sumatra_dir, "SumatraPDF.exe")
+        if not os.path.exists(sumatra):
+            matches = glob.glob(os.path.join(sumatra_dir, "SumatraPDF*.exe"))
+            if matches:
+                sumatra = matches[0]
+
         if os.path.exists(sumatra):
             try:
                 cmd = [sumatra,"-print-to",target,"-print-settings","silent",print_file] if target \

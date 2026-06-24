@@ -296,18 +296,19 @@ export async function sincronizarSUAP(
 
   onProgress(35, "Relatório carregado. Iniciando exportação para XLS...");
 
-  /* ── 3. Disparar Exportação ── */
-  // No SUAP, o botão verde "Exportar para XLS" geralmente é um link GET com formato=xls
-  let exportPath = encontrarLinkExport(reportResp.text) || "/edu/relatorio/?formato=xls";
-  
-  if (exportPath.startsWith("http")) {
-    exportPath = new URL(exportPath).pathname + new URL(exportPath).search;
-  }
+  /* ── 3. Disparar Exportação via POST ── */
+  const reportCsrf = reportResp.text.match(/name="csrfmiddlewaretoken"\s+value="([^"]+)"/)?.[1] || jar.get("__Host-csrftoken") || jar.get("csrftoken") || "";
 
-  onProgress(40, "Solicitando geração do arquivo ao servidor SUAP...");
-  let currentResp = await request("GET", exportPath, jar, undefined, {
-    Referer: `${SUAP_BASE}/edu/relatorio/`,
+  const exportBody = new URLSearchParams();
+  exportBody.append("csrfmiddlewaretoken", reportCsrf);
+  exportBody.append("xls", "1");
+
+  onProgress(40, "Solicitando geração do arquivo ao servidor SUAP via POST...");
+  let currentResp = await request("POST", SUAP_RELATORIO_URL + "&xls=1", jar, exportBody.toString(), {
+    Referer: `${SUAP_BASE}${SUAP_RELATORIO_URL}`,
+    "X-CSRFToken": reportCsrf,
   });
+  const exportPath = SUAP_RELATORIO_URL + "&xls=1";
 
   /* ── 4. Loop de Monitoramento da Tarefa (O "Humano" esperando a barra) ── */
   let attempts = 0;

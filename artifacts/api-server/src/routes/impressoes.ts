@@ -492,11 +492,17 @@ def proc(job):
 
         log(f"Impressora selecionada: {target_printer or 'Padrao'}")
         success = False
-        sumatra = os.path.join(os.path.expanduser("~"), "SistemaImpressao", "SumatraPDF.exe")
+        import glob
+        sumatra_dir = os.path.join(os.path.expanduser("~"), "SistemaImpressao")
+        sumatra = os.path.join(sumatra_dir, "SumatraPDF.exe")
+        if not os.path.exists(sumatra):
+            matches = glob.glob(os.path.join(sumatra_dir, "SumatraPDF*.exe"))
+            if matches:
+                sumatra = matches[0]
         
         if os.path.exists(sumatra):
             try:
-                log("Usando SumatraPDF...")
+                log(f"Usando SumatraPDF em: {sumatra}...")
                 cmd = [sumatra, "-print-to", target_printer, "-print-settings", "silent", print_file] if target_printer else [sumatra, "-print-default", "-print-settings", "silent", print_file]
                 res = subprocess.run(cmd, capture_output=True, text=True, timeout=30, creationflags=0x08000000)
                 if res.returncode == 0:

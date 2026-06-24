@@ -17,12 +17,12 @@ async function main() {
 
     // EPSON IP
     await db.insert(configuracoesTable)
-      .values({ chave: "impressora_epson_ip", valor: "192.168.18.90", atualizadoEm: new Date() })
+      .values({ chave: "impressora_epson_ip", valor: "192.168.18.75", atualizadoEm: new Date() })
       .onConflictDoUpdate({
         target: configuracoesTable.chave,
-        set: { valor: "192.168.18.90", atualizadoEm: new Date() }
+        set: { valor: "192.168.18.75", atualizadoEm: new Date() }
       });
-    console.log("IP EPSON (192.168.18.90) salvo!");
+    console.log("IP EPSON (192.168.18.75) salvo!");
 
     // Consultar para verificar
     const rows = await db.select().from(configuracoesTable);

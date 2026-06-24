@@ -142,7 +142,25 @@ export default function DiariosPage() {
         jsPDF:        { unit: 'mm', format: 'a4', orientation: 'landscape' }
       };
 
-      const pdfBlob = await html2pdf().set(opt).from(container).outputPdf('blob');
+      const pdfBlob: Blob = await (() => {
+        // FIX: html2canvas precisa que o elemento esteja no DOM para renderizar.
+        container.style.position = 'fixed';
+        container.style.left = '-9999px';
+        container.style.top = '0';
+        container.style.zIndex = '-9999';
+        container.style.width = '1400px';
+        container.style.background = '#fff';
+        document.body.appendChild(container);
+        return new Promise<Blob>((resolve, reject) => {
+          setTimeout(async () => {
+            try {
+              const blob = await html2pdf().set(opt).from(container).outputPdf('blob');
+              resolve(blob);
+            } catch (e) { reject(e); }
+            finally { if (container.parentNode) document.body.removeChild(container); }
+          }, 150);
+        });
+      })();
       const file = new File([pdfBlob], filename, { type: "application/pdf" });
 
       const form = new FormData();
@@ -191,7 +209,25 @@ export default function DiariosPage() {
         jsPDF:        { unit: 'mm', format: 'a4', orientation: 'landscape' }
       };
 
-      const pdfBlob = await html2pdf().set(opt).from(container).outputPdf('blob');
+      const pdfBlob: Blob = await (() => {
+        // FIX: html2canvas precisa que o elemento esteja no DOM para renderizar.
+        container.style.position = 'fixed';
+        container.style.left = '-9999px';
+        container.style.top = '0';
+        container.style.zIndex = '-9999';
+        container.style.width = '1400px';
+        container.style.background = '#fff';
+        document.body.appendChild(container);
+        return new Promise<Blob>((resolve, reject) => {
+          setTimeout(async () => {
+            try {
+              const blob = await html2pdf().set(opt).from(container).outputPdf('blob');
+              resolve(blob);
+            } catch (e) { reject(e); }
+            finally { if (container.parentNode) document.body.removeChild(container); }
+          }, 150);
+        });
+      })();
       const file = new File([pdfBlob], filename, { type: "application/pdf" });
 
       const form = new FormData();
@@ -227,7 +263,25 @@ export default function DiariosPage() {
         jsPDF:        { unit: 'mm', format: 'a4', orientation: 'landscape' }
       };
 
-      const pdfBlob = await html2pdf().set(opt).from(container).outputPdf('blob');
+      const pdfBlob: Blob = await (() => {
+        // FIX: html2canvas precisa que o elemento esteja no DOM para renderizar.
+        container.style.position = 'fixed';
+        container.style.left = '-9999px';
+        container.style.top = '0';
+        container.style.zIndex = '-9999';
+        container.style.width = '1400px';
+        container.style.background = '#fff';
+        document.body.appendChild(container);
+        return new Promise<Blob>((resolve, reject) => {
+          setTimeout(async () => {
+            try {
+              const blob = await html2pdf().set(opt).from(container).outputPdf('blob');
+              resolve(blob);
+            } catch (e) { reject(e); }
+            finally { if (container.parentNode) document.body.removeChild(container); }
+          }, 150);
+        });
+      })();
       const file = new File([pdfBlob], filename, { type: "application/pdf" });
 
       const form = new FormData();

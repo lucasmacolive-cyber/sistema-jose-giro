@@ -5,6 +5,7 @@ import { CabecalhoTimbrado } from "@/components/CabecalhoTimbrado";
 import { WhatsAppSendModal } from "@/components/WhatsAppSendModal";
 import { EmailSendModal } from "@/components/EmailSendModal";
 import html2pdf from "html2pdf.js";
+import { gerarPdfBlob } from "@/lib/pdf-utils";
 
 export default function CompensacaoAusenciaPage() {
   const [params, setParams] = useState<Record<string, string>>({});
@@ -77,7 +78,7 @@ export default function CompensacaoAusenciaPage() {
         jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
       };
 
-      const pdfBlob = await html2pdf().set(opt).from(element).outputPdf('blob');
+      const pdfBlob = await gerarPdfBlob(element, opt);
       const file = new File([pdfBlob], filename, { type: "application/pdf" });
 
       const form = new FormData();
@@ -109,7 +110,7 @@ export default function CompensacaoAusenciaPage() {
         jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
       };
 
-      const pdfBlob = await html2pdf().set(opt).from(element).outputPdf('blob');
+      const pdfBlob = await gerarPdfBlob(element, opt);
       const file = new File([pdfBlob], filename, { type: "application/pdf" });
 
       const form = new FormData();
