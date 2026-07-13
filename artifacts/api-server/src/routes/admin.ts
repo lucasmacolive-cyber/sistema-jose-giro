@@ -19,15 +19,13 @@ function requireMaster(req: any, res: any, next: any) {
   next();
 }
 
-// GET /api/admin/turmas (Custom handler to include student counts and dynamic professors)
+// GET /api/admin/turmas (Custom handler to include student counts, prioritizing saved professor names and returning snake_case)
 router.get("/admin/turmas", requireMaster, async (req, res) => {
   try {
-    const { db, turmasTable, alunosTable } = await import("../lib/db/index.js");
+    const { db, turmasTable, alunosTable, professoresTable } = await import("../lib/db/index.js");
     const { eq, and, or, sql } = await import("drizzle-orm");
     
     const turmas = await db.select().from(turmasTable).orderBy(turmasTable.nomeTurma);
-    
-    const { professoresTable } = await import("../lib/db/index.js");
 
     const turmasComContagem = await Promise.all(
       turmas.map(async (turma) => {
@@ -44,14 +42,21 @@ router.get("/admin/turmas", requireMaster, async (req, res) => {
               eq(professoresTable.turmaTarde, turma.nomeTurma)
             )
           );
-        const professorResponsavel = profs.length > 0 
-          ? profs.map(p => p.nome).join(", ") 
-          : turma.professorResponsavel;
+
+        // Prioriza o professor responsavel salvo na tabela de turmas; fallback para a tabela de professores
+        const professorResponsavel = turma.professorResponsavel || (profs.length > 0 ? profs.map(p => p.nome).join(", ") : null);
 
         return { 
-          ...turma, 
-          professorResponsavel,
-          totalAlunos: Number(result[0]?.count ?? 0) 
+          id: turma.id,
+          nome_turma: turma.nomeTurma,
+          turno: turma.turno,
+          professor_responsavel: professorResponsavel,
+          prof_complementador: turma.profComplementador,
+          prof_educacao_fisica: turma.profEducacaoFisica,
+          auxiliar_turma: turma.auxiliarTurma,
+          cor: turma.cor,
+          link_suap: turma.linkSuap,
+          qtd_alunos: Number(result[0]?.count ?? 0) 
         };
       })
     );

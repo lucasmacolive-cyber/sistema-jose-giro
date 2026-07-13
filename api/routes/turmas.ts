@@ -25,9 +25,7 @@ router.get("/turmas", async (req, res) => {
             eq(professoresTable.turmaTarde, turma.nomeTurma)
           )
         );
-      const professorResponsavel = profs.length > 0 
-        ? profs.map(p => p.nome).join(", ") 
-        : turma.professorResponsavel;
+      const professorResponsavel = turma.professorResponsavel || (profs.length > 0 ? profs.map(p => p.nome).join(", ") : null);
 
       return { 
         ...turma, 
@@ -37,11 +35,7 @@ router.get("/turmas", async (req, res) => {
     })
   );
 
-  if (req.query.all === "true") {
-    res.json(turmasComCount);
-  } else {
-    res.json(turmasComCount.filter(t => t.totalAlunos > 0));
-  }
+  res.json(turmasComCount);
 });
 
 router.get("/turmas/:id", async (req, res) => {

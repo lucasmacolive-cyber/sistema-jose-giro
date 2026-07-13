@@ -612,12 +612,6 @@ export default function TurmasPage() {
             <h1 className="text-4xl font-extrabold text-white" style={{ letterSpacing: "-1px" }}>
               Turmas
             </h1>
-            <button
-              onClick={() => setCriandoTurma(true)}
-              className="px-4 py-2.5 rounded-xl text-xs font-black bg-blue-600 hover:bg-blue-500 text-white shadow-lg transition-all hover:scale-[1.02] active:scale-[0.98]"
-            >
-              + Nova Turma
-            </button>
           </div>
           {!isLoading && (
             <span className="text-sm text-muted-foreground">

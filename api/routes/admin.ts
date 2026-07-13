@@ -19,6 +19,53 @@ function requireMaster(req: any, res: any, next: any) {
   next();
 }
 
+// GET /api/admin/turmas (Custom handler to include student counts, prioritizing saved professor names and returning snake_case)
+router.get("/admin/turmas", requireMaster, async (req, res) => {
+  try {
+    const { db, turmasTable, alunosTable, professoresTable } = await import("../lib/db/index.ts");
+    const { eq, and, or, sql } = await import("drizzle-orm");
+    
+    const turmas = await db.select().from(turmasTable).orderBy(turmasTable.nomeTurma);
+
+    const turmasComContagem = await Promise.all(
+      turmas.map(async (turma) => {
+        const result = await db
+          .select({ count: sql<number>`count(*)` })
+          .from(alunosTable)
+          .where(and(eq(alunosTable.turmaAtual, turma.nomeTurma), eq(alunosTable.arquivoMorto, 0)));
+        
+        const profs = await db.select({ nome: professoresTable.nome })
+          .from(professoresTable)
+          .where(
+            or(
+              eq(professoresTable.turmaManha, turma.nomeTurma),
+              eq(professoresTable.turmaTarde, turma.nomeTurma)
+            )
+          );
+
+        // Prioriza o professor responsavel salvo na tabela de turmas; fallback para a tabela de professores
+        const professorResponsavel = turma.professorResponsavel || (profs.length > 0 ? profs.map(p => p.nome).join(", ") : null);
+
+        return { 
+          id: turma.id,
+          nome_turma: turma.nomeTurma,
+          turno: turma.turno,
+          professor_responsavel: professorResponsavel,
+          prof_complementador: turma.profComplementador,
+          prof_educacao_fisica: turma.profEducacaoFisica,
+          auxiliar_turma: turma.auxiliarTurma,
+          cor: turma.cor,
+          link_suap: turma.linkSuap,
+          qtd_alunos: Number(result[0]?.count ?? 0) 
+        };
+      })
+    );
+    res.json({ rows: turmasComContagem, total: turmasComContagem.length, page: 1, limit: 100 });
+  } catch (error: any) {
+    res.status(500).json({ erro: "erro_consulta", mensagem: error.message });
+  }
+});
+
 // GET /api/admin/:tabela
 router.get("/admin/:tabela", requireMaster, async (req, res) => {
   const { tabela } = req.params;
@@ -51,42 +98,14 @@ router.get("/admin/:tabela", requireMaster, async (req, res) => {
       }
     }
 
-    let whereQuery = whereClause;
-    if (tabela === "turmas") {
-      const activeCondition = `(SELECT COUNT(*)::int FROM alunos a WHERE a.turma_atual = turmas.nome_turma AND COALESCE(a.arquivo_morto, 0) = 0) > 0`;
-      if (whereQuery) {
-        whereQuery = `${whereQuery} AND ${activeCondition}`;
-      } else {
-        whereQuery = `WHERE ${activeCondition}`;
-      }
-    }
-
-    const selectQuery = tabela === "turmas"
-      ? `SELECT *, 
-           (SELECT COUNT(*)::int FROM alunos a WHERE a.turma_atual = turmas.nome_turma AND COALESCE(a.arquivo_morto, 0) = 0) AS qtd_alunos,
-           COALESCE(
-             (SELECT string_agg(nome, ', ') FROM professores p WHERE p.turma_manha = turmas.nome_turma OR p.turma_tarde = turmas.nome_turma),
-             professor_responsavel
-           ) AS professor_responsavel
-         FROM turmas`
-      : `SELECT * FROM ${tabela}`;
+    const selectQuery = `SELECT * FROM ${tabela}`;
 
     const dataRes = await pool.query(
-      `${selectQuery} ${whereQuery} ORDER BY id LIMIT $1 OFFSET $2`,
+      `${selectQuery} ${whereClause} ORDER BY id LIMIT $1 OFFSET $2`,
       params
     );
 
-    let countQuery = `SELECT COUNT(*) FROM ${tabela} ${whereClause.replace(/\$\d+/g, search ? `$1` : "")}`;
-    if (tabela === "turmas") {
-      let countWhere = whereClause.replace(/\$\d+/g, search ? `$1` : "");
-      const activeCondition = `(SELECT COUNT(*)::int FROM alunos a WHERE a.turma_atual = turmas.nome_turma AND COALESCE(a.arquivo_morto, 0) = 0) > 0`;
-      if (countWhere) {
-        countWhere = `${countWhere} AND ${activeCondition}`;
-      } else {
-        countWhere = `WHERE ${activeCondition}`;
-      }
-      countQuery = `SELECT COUNT(*) FROM turmas ${countWhere}`;
-    }
+    const countQuery = `SELECT COUNT(*) FROM ${tabela} ${whereClause.replace(/\$\d+/g, search ? `$1` : "")}`;
 
     const countParams = search ? [params[params.length - 1]] : [];
     const countRes = await pool.query(countQuery, countParams);
