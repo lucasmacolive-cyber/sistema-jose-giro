@@ -165,55 +165,60 @@ boot();
 
 // Loop de Fila e Comandos
 setInterval(async () => {
+  let guiMode = false;
   try {
     const resGui = await pool.query("SELECT valor FROM configuracoes WHERE chave = 'whatsapp_gui_mode'");
-    const guiMode = resGui.rows[0]?.valor === "true";
-
-    if (!guiMode) {
-      const cmdRes = await pool.query("SELECT valor FROM configuracoes WHERE chave = 'whatsapp_command'");
-    if (cmdRes.rows.length > 0) {
-      const cmd = cmdRes.rows[0].valor;
-      
-      if (cmd === "logout") {
-        await appendWhatsAppLog("[Bot] Comando recebido: Desconectar dispositivo.");
-        await updateConfig("whatsapp_command", "");
-        if (sock) {
-          try { await sock.logout(); } catch(err){}
-        } else {
-          fs.rmSync("baileys_auth", { recursive: true, force: true });
-        }
-        await updateConfig("whatsapp_ready", "false");
-      } 
-      else if (cmd === "generate") {
-        await appendWhatsAppLog("[Bot] Comando recebido: Gerar pareamento...");
-        await updateConfig("whatsapp_command", "");
-        
-        // Remove sessão antiga
-        if (sock) {
-          try { await sock.logout(); } catch(err){}
-        }
-        fs.rmSync("baileys_auth", { recursive: true, force: true });
-        sock = null;
-        isReady = false;
-        
-        // Obter número alvo
-        const numRes = await pool.query("SELECT valor FROM configuracoes WHERE chave = 'whatsapp_target_number'");
-        const targetNum = numRes.rows[0]?.valor || "";
-        
-        if (targetNum) {
-          await startWhatsApp(targetNum);
-        } else {
-          console.error("[WhatsApp] Nenhum numero fornecido para gerar código!");
-        }
-      }
-    }
+    guiMode = resGui.rows[0]?.valor === "true";
   } catch (err) {
-    console.error("[Loop] Erro checando comandos:", err.message);
+    console.error("[Loop] Erro lendo gui_mode:", err.message);
   }
 
-  // Se estiver conectado, envia mensagens da fila
-  if (isReady && sock) {
+  if (!guiMode) {
     try {
+      const cmdRes = await pool.query("SELECT valor FROM configuracoes WHERE chave = 'whatsapp_command'");
+      if (cmdRes.rows.length > 0) {
+        const cmd = cmdRes.rows[0].valor;
+        
+        if (cmd === "logout") {
+          await appendWhatsAppLog("[Bot] Comando recebido: Desconectar dispositivo.");
+          await updateConfig("whatsapp_command", "");
+          if (sock) {
+            try { await sock.logout(); } catch(err){}
+          } else {
+            fs.rmSync("baileys_auth", { recursive: true, force: true });
+          }
+          await updateConfig("whatsapp_ready", "false");
+        } 
+        else if (cmd === "generate") {
+          await appendWhatsAppLog("[Bot] Comando recebido: Gerar pareamento...");
+          await updateConfig("whatsapp_command", "");
+          
+          // Remove sessão antiga
+          if (sock) {
+            try { await sock.logout(); } catch(err){}
+          }
+          fs.rmSync("baileys_auth", { recursive: true, force: true });
+          sock = null;
+          isReady = false;
+          
+          // Obter número alvo
+          const numRes = await pool.query("SELECT valor FROM configuracoes WHERE chave = 'whatsapp_target_number'");
+          const targetNum = numRes.rows[0]?.valor || "";
+          
+          if (targetNum) {
+            await startWhatsApp(targetNum);
+          } else {
+            console.error("[WhatsApp] Nenhum numero fornecido para gerar código!");
+          }
+        }
+      }
+    } catch (err) {
+      console.error("[Loop] Erro checando comandos:", err.message);
+    }
+
+    // Se estiver conectado, envia mensagens da fila
+    if (isReady && sock) {
+      try {
       const resFila = await pool.query(`
         SELECT id, numero, mensagem, arquivo_base64, mimetype, nome_arquivo 
         FROM fila_whatsapp 

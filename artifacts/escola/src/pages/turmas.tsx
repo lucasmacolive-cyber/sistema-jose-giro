@@ -68,6 +68,10 @@ function ModalAlunosTurma({ turma, onClose, onUpdated }: { turma: TurmaInfo; onC
   const { data: todosAlunos, isLoading } = useListarAlunos();
   const [mostrarTransferidos, setMostrarTransferidos] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
+  const [editNome, setEditNome] = useState(turma.nomeTurma);
+  const [editTurno, setEditTurno] = useState(turma.turno || "Manhã");
+  const [editProfessor, setEditProfessor] = useState(turma.professorResponsavel || "");
+  const [editCor, setEditCor] = useState(turma.cor || COR_PADRAO);
   const [editLinkSuap, setEditLinkSuap] = useState(turma.linkSuap || "");
 
   async function salvarEdicao() {
@@ -75,13 +79,41 @@ function ModalAlunosTurma({ turma, onClose, onUpdated }: { turma: TurmaInfo; onC
       const res = await fetch(`${BASE}/api/turmas/${turma.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ linkSuap: editLinkSuap })
+        body: JSON.stringify({
+          nomeTurma: editNome,
+          turno: editTurno,
+          professorResponsavel: editProfessor || null,
+          cor: editCor,
+          linkSuap: editLinkSuap || null
+        })
       });
       if (res.ok) {
         setIsEditing(false);
         onUpdated();
+      } else {
+        const err = await res.json();
+        alert(err.mensagem || "Erro ao salvar alterações.");
       }
-    } catch {}
+    } catch {
+      alert("Erro de conexão ao salvar.");
+    }
+  }
+
+  async function excluirTurma() {
+    if (!confirm(`Tem certeza de que deseja excluir a turma ${turma.nomeTurma}? Esta ação não pode ser desfeita e removerá a turma do sistema.`)) return;
+    try {
+      const res = await fetch(`${BASE}/api/turmas/${turma.id}`, {
+        method: "DELETE"
+      });
+      if (res.ok) {
+        onUpdated();
+      } else {
+        const err = await res.json();
+        alert(err.mensagem || "Erro ao excluir turma.");
+      }
+    } catch {
+      alert("Erro de conexão ao excluir.");
+    }
   }
 
   const alunosDaTurma = (todosAlunos ?? []).filter(a => a.turmaAtual === turma.nomeTurma);
@@ -260,7 +292,66 @@ function ModalAlunosTurma({ turma, onClose, onUpdated }: { turma: TurmaInfo; onC
           </div>
 
           {isEditing && (
-            <div className="mt-4 p-3 rounded-xl bg-black/20 border border-white/10 space-y-3">
+            <div className="mt-4 p-4 rounded-xl bg-black/40 border border-white/10 space-y-3.5 max-h-[50vh] overflow-y-auto">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-black uppercase text-white/50 mb-1 block">Nome da Turma</label>
+                  <Input 
+                    value={editNome} 
+                    onChange={e => setEditNome(e.target.value)} 
+                    placeholder="Ex: P2T02"
+                    className="h-8 text-xs bg-white/5 border-white/10 text-white"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-black uppercase text-white/50 mb-1 block">Turno</label>
+                  <select
+                    value={editTurno}
+                    onChange={e => setEditTurno(e.target.value)}
+                    className="w-full h-8 px-2 rounded-lg bg-[#0f172a] text-white border border-white/10 text-xs focus:outline-none"
+                  >
+                    <option value="Manhã">Manhã</option>
+                    <option value="Tarde">Tarde</option>
+                    <option value="Noite">Noite</option>
+                    <option value="Integral">Integral</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-black uppercase text-white/50 mb-1 block">Professor Responsável</label>
+                <Input 
+                  value={editProfessor} 
+                  onChange={e => setEditProfessor(e.target.value)} 
+                  placeholder="Nome do Professor"
+                  className="h-8 text-xs bg-white/5 border-white/10 text-white"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[10px] font-black uppercase text-white/50 mb-1 block">Cor de Exibição</label>
+                  <div className="flex gap-2 items-center">
+                    <input 
+                      type="color"
+                      value={editCor}
+                      onChange={e => setEditCor(e.target.value)}
+                      className="w-8 h-8 rounded cursor-pointer bg-transparent border-0"
+                    />
+                    <span className="text-xs text-white/70 font-mono">{editCor}</span>
+                  </div>
+                </div>
+                <div>
+                  <label className="text-[10px] font-black uppercase text-white/50 mb-1 block">Excluir Turma</label>
+                  <button 
+                    onClick={excluirTurma} 
+                    className="w-full h-8 rounded-lg bg-red-600/20 border border-red-500/30 hover:bg-red-600/40 text-red-300 font-bold text-xs transition-colors"
+                  >
+                    Excluir
+                  </button>
+                </div>
+              </div>
+
               <div>
                 <label className="text-[10px] font-black uppercase text-white/50 mb-1 block">Link do Diário no SUAP (PDF)</label>
                 <Input 
@@ -270,9 +361,10 @@ function ModalAlunosTurma({ turma, onClose, onUpdated }: { turma: TurmaInfo; onC
                   className="h-8 text-xs bg-white/5 border-white/10 text-white"
                 />
               </div>
-              <div className="flex justify-end gap-2">
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-white/10">
                 <button onClick={() => setIsEditing(false)} className="px-3 py-1.5 rounded-lg text-xs font-bold text-white/50 hover:bg-white/10">Cancelar</button>
-                <button onClick={salvarEdicao} className="px-3 py-1.5 rounded-lg text-xs font-bold bg-blue-500 hover:bg-blue-600 text-white shadow-lg">Salvar</button>
+                <button onClick={salvarEdicao} className="px-3.5 py-1.5 rounded-lg text-xs font-bold bg-blue-500 hover:bg-blue-600 text-white shadow-lg shadow-blue-500/20">Salvar</button>
               </div>
             </div>
           )}
@@ -476,6 +568,7 @@ export default function TurmasPage() {
   const [search, setSearch] = useState("");
   const [turmaAberta, setTurmaAberta] = useState<TurmaInfo | null>(null);
   const [freqPorTurma, setFreqPorTurma] = useState<Record<string, number | null>>({});
+  const [criandoTurma, setCriandoTurma] = useState(false);
 
   const contagemPorTurma = (todosAlunos ?? []).reduce<Record<string, number>>((acc, a) => {
     if (a.turmaAtual && a.situacao?.toLowerCase() === "matriculado") {
@@ -515,9 +608,17 @@ export default function TurmasPage() {
     <AppLayout>
       <div className="space-y-8 pb-8">
         <div className="flex items-center justify-between">
-          <h1 className="text-4xl font-extrabold text-white" style={{ letterSpacing: "-1px" }}>
-            Turmas
-          </h1>
+          <div className="flex items-center gap-4">
+            <h1 className="text-4xl font-extrabold text-white" style={{ letterSpacing: "-1px" }}>
+              Turmas
+            </h1>
+            <button
+              onClick={() => setCriandoTurma(true)}
+              className="px-4 py-2.5 rounded-xl text-xs font-black bg-blue-600 hover:bg-blue-500 text-white shadow-lg transition-all hover:scale-[1.02] active:scale-[0.98]"
+            >
+              + Nova Turma
+            </button>
+          </div>
           {!isLoading && (
             <span className="text-sm text-muted-foreground">
               {filtered.length} turma{filtered.length !== 1 ? "s" : ""}
@@ -614,7 +715,155 @@ export default function TurmasPage() {
             }} 
           />
         )}
+        {criandoTurma && (
+          <ModalAdicionarTurma
+            onClose={() => setCriandoTurma(false)}
+            onCreated={() => {
+              mutateTurmas();
+              setCriandoTurma(false);
+            }}
+          />
+        )}
       </AnimatePresence>
     </AppLayout>
+  );
+}
+
+function ModalAdicionarTurma({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
+  const [nomeTurma, setNomeTurma] = useState("");
+  const [turno, setTurno] = useState("Manhã");
+  const [professor, setProfessor] = useState("");
+  const [cor, setCor] = useState("#3b82f6");
+  const [linkSuap, setLinkSuap] = useState("");
+  const [salvando, setSalvando] = useState(false);
+
+  async function salvar() {
+    if (!nomeTurma.trim()) {
+      alert("Nome da turma é obrigatório.");
+      return;
+    }
+    setSalvando(true);
+    try {
+      const res = await fetch(`${BASE}/api/turmas`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          nomeTurma: nomeTurma.trim(),
+          turno,
+          professorResponsavel: professor.trim() || null,
+          cor,
+          linkSuap: linkSuap.trim() || null
+        })
+      });
+      if (res.ok) {
+        onCreated();
+      } else {
+        const err = await res.json();
+        alert(err.mensagem || "Erro ao criar turma.");
+      }
+    } catch {
+      alert("Erro ao conectar ao servidor.");
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+        onClick={onClose}
+      />
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95, y: 16 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.95, y: 16 }}
+        className="relative w-full max-w-md bg-[#0f172a] border border-white/10 rounded-2xl p-6 shadow-2xl space-y-4 text-white"
+      >
+        <div className="flex items-center justify-between pb-2 border-b border-white/10">
+          <h2 className="text-xl font-bold">Adicionar Nova Turma</h2>
+          <button onClick={onClose} className="p-1 rounded-lg hover:bg-white/10 text-white/50 hover:text-white">
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-[10px] font-black uppercase text-white/50 mb-1 block">Nome da Turma</label>
+              <Input
+                value={nomeTurma}
+                onChange={e => setNomeTurma(e.target.value)}
+                placeholder="Ex: 1AM01"
+                className="h-9 text-xs bg-white/5 border-white/10 text-white"
+              />
+            </div>
+            <div>
+              <label className="text-[10px] font-black uppercase text-white/50 mb-1 block">Turno</label>
+              <select
+                value={turno}
+                onChange={e => setTurno(e.target.value)}
+                className="w-full h-9 px-2 rounded-lg bg-[#0f172a] text-white border border-white/10 text-xs focus:outline-none"
+              >
+                <option value="Manhã">Manhã</option>
+                <option value="Tarde">Tarde</option>
+                <option value="Noite">Noite</option>
+                <option value="Integral">Integral</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label className="text-[10px] font-black uppercase text-white/50 mb-1 block">Professor Responsável</label>
+            <Input
+              value={professor}
+              onChange={e => setProfessor(e.target.value)}
+              placeholder="Ex: Maria Souza"
+              className="h-9 text-xs bg-white/5 border-white/10 text-white"
+            />
+          </div>
+
+          <div>
+            <label className="text-[10px] font-black uppercase text-white/50 mb-1 block">Cor de Exibição</label>
+            <div className="flex gap-3 items-center">
+              <input
+                type="color"
+                value={cor}
+                onChange={e => setCor(e.target.value)}
+                className="w-8 h-8 rounded cursor-pointer bg-transparent border-0"
+              />
+              <span className="text-xs text-white/70 font-mono">{cor}</span>
+            </div>
+          </div>
+
+          <div>
+            <label className="text-[10px] font-black uppercase text-white/50 mb-1 block">Link do Diário no SUAP (PDF)</label>
+            <Input
+              value={linkSuap}
+              onChange={e => setLinkSuap(e.target.value)}
+              placeholder="Ex: https://suap.campos.rj.gov.br/..."
+              className="h-9 text-xs bg-white/5 border-white/10 text-white"
+            />
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-2 pt-2 border-t border-white/10">
+          <button onClick={onClose} className="px-4 py-2 rounded-xl text-xs font-bold text-white/50 hover:bg-white/10">
+            Cancelar
+          </button>
+          <button
+            onClick={salvar}
+            disabled={salvando}
+            className="px-4 py-2 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white shadow-lg flex items-center gap-1.5"
+          >
+            {salvando && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            Criar Turma
+          </button>
+        </div>
+      </motion.div>
+    </div>
   );
 }

@@ -1164,9 +1164,24 @@ export default function ListagensPage() {
           Listagens Flexíveis
         </h1>
 
-        <div className="bg-[#1e293b] p-6 rounded-2xl border border-white/10 shadow-[0_10px_30px_rgba(0,0,0,0.3)] space-y-6">
+        <div className="bg-[#1e293b] p-6 rounded-2xl border border-blue-500/20 shadow-[0_10px_30px_rgba(0,0,0,0.3)] space-y-6">
 
-          {/* ── Seletor de turma + botão gerar ── */}
+          {/* título */}
+          <div className="flex items-center gap-3 pb-3 border-b border-blue-500/20">
+            <div className="w-10 h-10 rounded-xl bg-blue-500/20 flex items-center justify-center shrink-0">
+              <Users className="h-5 w-5 text-blue-400" />
+            </div>
+            <div>
+              <h2 className="text-xl font-extrabold text-white" style={{ letterSpacing: "-0.5px" }}>
+                Listagem de Alunos
+              </h2>
+              <p className="text-white/40 text-xs mt-0.5">
+                Gere e exporte listagens personalizadas de alunos por turma
+              </p>
+            </div>
+          </div>
+
+          {/* ── Seletor de turma ── */}
           <div className="flex gap-4">
             <select
               className="flex-1 px-4 py-3 rounded-xl bg-[#0f172a] text-white border border-[#334155] text-base focus:border-blue-500 focus:outline-none"
@@ -1189,17 +1204,20 @@ export default function ListagensPage() {
                 </option>
               ))}
             </select>
+          </div>
 
+          {/* ── Botões de ação ── */}
+          <div className="flex gap-3 flex-wrap">
             <Button
               onClick={gerarListagem}
               disabled={gerando || baixando || exportando || !turmaSelecionada}
-              className="px-6 bg-blue-500 hover:bg-blue-400 text-white font-bold uppercase tracking-wider text-base rounded-xl shadow-lg shadow-blue-500/25 transition-all hover:scale-[1.02]"
+              className="px-6 bg-blue-600 hover:bg-blue-500 text-white font-bold uppercase tracking-wider text-sm rounded-xl shadow-lg shadow-blue-500/20 transition-all hover:scale-[1.02]"
             >
               {gerando ? (
-                <Loader2 className="h-5 w-5 animate-spin" />
+                <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
                 <span className="flex items-center gap-2">
-                  <FileSpreadsheet className="h-5 w-5" />
+                  <Users className="h-4 w-4" />
                   Gerar
                 </span>
               )}
@@ -1208,13 +1226,13 @@ export default function ListagensPage() {
             <Button
               onClick={baixarPdf}
               disabled={gerando || baixando || exportando || !turmaSelecionada}
-              className="px-6 bg-emerald-600 hover:bg-emerald-500 text-white font-bold uppercase tracking-wider text-base rounded-xl shadow-lg shadow-emerald-500/20 transition-all hover:scale-[1.02]"
+              className="px-6 bg-emerald-600 hover:bg-emerald-500 text-white font-bold uppercase tracking-wider text-sm rounded-xl shadow-lg shadow-emerald-500/20 transition-all hover:scale-[1.02]"
             >
               {baixando ? (
-                <Loader2 className="h-5 w-5 animate-spin" />
+                <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
                 <span className="flex items-center gap-2">
-                  <Download className="h-5 w-5" />
+                  <Download className="h-4 w-4" />
                   PDF
                 </span>
               )}
@@ -1223,44 +1241,43 @@ export default function ListagensPage() {
             <Button
               onClick={() => { setModalType("alunos"); setShowWhatsAppModal(true); }}
               disabled={gerando || baixando || exportando || !turmaSelecionada}
-              className="px-6 bg-[#25d366] hover:bg-[#20ba5a] text-white font-bold uppercase tracking-wider text-base rounded-xl shadow-lg transition-all hover:scale-[1.02]"
+              className="px-6 bg-[#25d366] hover:bg-[#20ba5a] text-white font-bold uppercase tracking-wider text-sm rounded-xl shadow-lg transition-all hover:scale-[1.02]"
               title="Enviar via WhatsApp"
             >
-              <Send className="h-5 w-5" />
+              <Send className="h-4 w-4" />
             </Button>
 
             <Button
               onClick={() => { setModalType("alunos"); setShowEmailModal(true); }}
               disabled={gerando || baixando || exportando || !turmaSelecionada}
-              className="px-6 bg-orange-600 hover:bg-orange-500 text-white font-bold uppercase tracking-wider text-base rounded-xl shadow-lg transition-all hover:scale-[1.02]"
+              className="px-6 bg-orange-600 hover:bg-orange-500 text-white font-bold uppercase tracking-wider text-sm rounded-xl shadow-lg transition-all hover:scale-[1.02]"
               title="Enviar por E-mail"
             >
-              <Mail className="h-5 w-5" />
+              <Mail className="h-4 w-4" />
             </Button>
 
             <Button
               onClick={baixarExcel}
               disabled={gerando || baixando || exportando || !turmaSelecionada}
-              className="px-6 bg-violet-600 hover:bg-violet-500 text-white font-bold uppercase tracking-wider text-base rounded-xl shadow-lg shadow-violet-500/20 transition-all hover:scale-[1.02]"
+              className="px-6 bg-violet-700 hover:bg-violet-600 text-white font-bold uppercase tracking-wider text-sm rounded-xl shadow-lg shadow-violet-500/20 transition-all hover:scale-[1.02]"
             >
               {exportando ? (
-                <Loader2 className="h-5 w-5 animate-spin" />
+                <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
                 <span className="flex items-center gap-2">
-                  <FileSpreadsheet className="h-5 w-5" />
+                  <FileSpreadsheet className="h-4 w-4" />
                   Excel
                 </span>
               )}
             </Button>
 
-            
             {isMaster && (
               <Button
                 onClick={imprimirListaNaRicoh}
                 disabled={imprimindoRicoh || !turmaSelecionada}
                 className="px-6 bg-slate-700 hover:bg-slate-600 text-white font-black uppercase tracking-wider text-sm rounded-xl shadow-lg transition-all hover:scale-[1.02] border-2 border-primary/20"
               >
-                {imprimindoRicoh ? <Loader2 className="h-5 w-5 animate-spin" /> : <Printer className="h-5 w-5 mr-2" />}
+                {imprimindoRicoh ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4 mr-2" />}
                 RICOH
               </Button>
             )}

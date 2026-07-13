@@ -22,22 +22,25 @@ export async function processarImportacaoAlunos(rows: AlunoRow[], options: Impor
   if (rows.length === 0) return { sucesso: true, adicionados: 0, atualizados: 0, detalhes: { adicionados: [], atualizados: [], transferidos: [] } };
 
   const colunas = Object.keys(rows[0]);
-  const mapearColuna = (chaves: string[]): string | undefined => {
+  const mapearColuna = (chaves: string[], fallbackIdx?: number): string | undefined => {
     for (const k of chaves) {
       const match = colunas.find(c => c.toLowerCase().includes(k.toLowerCase()));
       if (match) return match;
+    }
+    if (fallbackIdx !== undefined && fallbackIdx >= 0 && fallbackIdx < colunas.length) {
+      return colunas[fallbackIdx];
     }
     return undefined;
   };
 
   // Mapeamento de colunas (baseado na estrutura do SUAP)
-  const colMatricula    = mapearColuna(["matrícula", "matricula", "mat."]);
-  const colNome         = mapearColuna(["nome completo", "nome do aluno", "nome"]);
-  const colTurma        = mapearColuna(["turma", "turma/série"]);
+  const colMatricula    = mapearColuna(["matrícula", "matricula", "mat."], 1);
+  const colNome         = mapearColuna(["nome completo", "nome do aluno", "nome"], 2);
+  const colTurma        = mapearColuna(["turma", "turma/série"], colunas.length > 74 ? 74 : 71);
   const colTurno        = mapearColuna(["turno"]);
   const colSituacao     = mapearColuna(["situação no curso", "situacao no curso", "situação no per", "situação", "situacao", "status"]);
   const colNascimento   = mapearColuna(["data de nascimento", "nascimento", "data nasc", "nascimento_data"]);
-  const colCPF          = mapearColuna(["cpf"]);
+  const colCPF          = mapearColuna(["cpf"], 7);
   const colRG           = mapearColuna(["rg"]);
   const colMae          = mapearColuna(["nome da mãe", "nome da mae", "mãe", "mae", "nome_mae"]);
   const colPai          = mapearColuna(["nome do pai", "pai", "nome_pai"]);
@@ -80,12 +83,10 @@ export async function processarImportacaoAlunos(rows: AlunoRow[], options: Impor
     const m = raw.match(/\(([^)]+)\)/);
     if (m) return m[1].trim();
     
-    // Se não tem parênteses, verificamos se é um código curto (ex: 5AM02)
-    // Se for o código longo (cheio de pontos e longo), ignoramos.
     const clean = raw.trim();
     if (clean.length <= 10 && !clean.includes(".")) return clean;
     
-    return null; // Ignora códigos longos sem parênteses
+    return null;
   };
 
   let adicionados = 0;
@@ -97,19 +98,15 @@ export async function processarImportacaoAlunos(rows: AlunoRow[], options: Impor
   
   const matriculasNoArquivo = new Set<string>();
   const nomesNoArquivo = new Set<string>();
-  const turmasEncontradas = new Set<string>();
+  const turmasExistentes = await db.select().from(turmasTable);
+  const setTurmasExistentes = new Set(turmasExistentes.map(t => t.nomeTurma.toLowerCase().trim()));
 
-  // Pré-carregar dados para matching inteligente (Evita duplicados)
-  const existentes = await db.select({
+  let existentes = await db.select({
     id: alunos.id,
     matricula: alunos.matricula,
     nomeCompleto: alunos.nomeCompleto,
     cpf: alunos.cpf,
   }).from(alunos);
-  
-  const mapMatricula = new Map(existentes.filter(a => a.matricula).map(a => [a.matricula, a.id]));
-  const mapNome = new Map(existentes.map(a => [a.nomeCompleto.toLowerCase().trim(), a.id]));
-  const mapCPF = new Map(existentes.filter(a => a.cpf).map(a => [a.cpf!.replace(/\D/g, ""), a.id]));
 
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
@@ -118,6 +115,13 @@ export async function processarImportacaoAlunos(rows: AlunoRow[], options: Impor
       const nomeCompleto = val(row, colNome);
       if (!nomeCompleto) continue;
 
+      const turmaAtual = extrairTurma(val(row, colTurma));
+      const turmaAtualClean = turmaAtual ? turmaAtual.toLowerCase().trim() : "";
+
+      if (turmaAtual && !setTurmasExistentes.has(turmaAtualClean)) {
+        continue;
+      }
+
       if (matricula) matriculasNoArquivo.add(matricula);
       nomesNoArquivo.add(nomeCompleto.toLowerCase());
 
@@ -125,9 +129,6 @@ export async function processarImportacaoAlunos(rows: AlunoRow[], options: Impor
       const situacaoNormalized = String(rawSituacao).toLowerCase().includes("matriculado") 
         ? "Matriculado" 
         : (rawSituacao || "Matriculado");
-
-      const turmaAtual = extrairTurma(val(row, colTurma));
-      if (turmaAtual) turmasEncontradas.add(turmaAtual);
 
       const alunoData: any = {
         nomeCompleto,
@@ -154,28 +155,66 @@ export async function processarImportacaoAlunos(rows: AlunoRow[], options: Impor
         cpf: val(row, colCPF) || null,
         rg: val(row, colRG) || null,
         naturalidade: val(row, colNaturalidade) || null,
-        arquivoMorto: 0, // Garante que volta ao arquivo ativo se estiver no XLS
+        arquivoMorto: 0,
       };
 
       const cpfLimpo = alunoData.cpf ? alunoData.cpf.replace(/\D/g, "") : "";
-      
-      // Lógica de matching prioritária (Evita duplicados)
       let existingId: number | undefined = undefined;
 
-      if (cpfLimpo && mapCPF.has(cpfLimpo)) {
-        existingId = mapCPF.get(cpfLimpo);
-      } else if (matricula && mapMatricula.has(matricula)) {
-        existingId = mapMatricula.get(matricula);
-      } else if (mapNome.has(nomeCompleto.toLowerCase().trim())) {
-        existingId = mapNome.get(nomeCompleto.toLowerCase().trim());
+      if (cpfLimpo) {
+        const matchingByCpf = existentes.filter(a => a.cpf && a.cpf.replace(/\D/g, "") === cpfLimpo);
+        if (matchingByCpf.length > 0) {
+          matchingByCpf.sort((a, b) => b.id - a.id);
+          existingId = matchingByCpf[0].id;
+          for (let idx = 1; idx < matchingByCpf.length; idx++) {
+            const dupId = matchingByCpf[idx].id;
+            await db.delete(alunos).where(eq(alunos.id, dupId));
+            const idxExistente = existentes.findIndex(e => e.id === dupId);
+            if (idxExistente !== -1) existentes.splice(idxExistente, 1);
+          }
+        }
+      }
+
+      if (!existingId && matricula) {
+        const matchingByMatricula = existentes.filter(a => a.matricula === matricula);
+        if (matchingByMatricula.length > 0) {
+          matchingByMatricula.sort((a, b) => b.id - a.id);
+          existingId = matchingByMatricula[0].id;
+          for (let idx = 1; idx < matchingByMatricula.length; idx++) {
+            const dupId = matchingByMatricula[idx].id;
+            await db.delete(alunos).where(eq(alunos.id, dupId));
+            const idxExistente = existentes.findIndex(e => e.id === dupId);
+            if (idxExistente !== -1) existentes.splice(idxExistente, 1);
+          }
+        }
+      }
+
+      if (!existingId) {
+        const nomeClean = nomeCompleto.toLowerCase().trim();
+        const matchingByName = existentes.filter(a => a.nomeCompleto.toLowerCase().trim() === nomeClean);
+        if (matchingByName.length > 0) {
+          matchingByName.sort((a, b) => b.id - a.id);
+          existingId = matchingByName[0].id;
+          for (let idx = 1; idx < matchingByName.length; idx++) {
+            const dupId = matchingByName[idx].id;
+            await db.delete(alunos).where(eq(alunos.id, dupId));
+            const idxExistente = existentes.findIndex(e => e.id === dupId);
+            if (idxExistente !== -1) existentes.splice(idxExistente, 1);
+          }
+        }
       }
 
       if (existingId) {
         await db.update(alunos).set(alunoData).where(eq(alunos.id, existingId));
+        const idx = existentes.findIndex(e => e.id === existingId);
+        if (idx !== -1) {
+          existentes[idx] = { id: existingId, matricula: alunoData.matricula, nomeCompleto: alunoData.nomeCompleto, cpf: alunoData.cpf };
+        }
         atualizados++;
         nomesAtualizados.push(nomeCompleto);
       } else {
-        await db.insert(alunos).values(alunoData);
+        const [inserted] = await db.insert(alunos).values(alunoData).returning({ id: alunos.id });
+        existentes.push({ id: inserted.id, matricula: alunoData.matricula, nomeCompleto: alunoData.nomeCompleto, cpf: alunoData.cpf });
         adicionados++;
         nomesAdicionados.push(nomeCompleto);
       }
@@ -189,12 +228,9 @@ export async function processarImportacaoAlunos(rows: AlunoRow[], options: Impor
     }
   }
 
-  // Lógica de "Substituir Tudo" / Transferidos
   let totalTransferidos = 0;
   if (substituirTudo) {
     const dataHoje = new Date().toLocaleDateString("pt-BR");
-    
-    // Alunos que estão no BD mas não no arquivo e não estão marcados como saída
     const paraMarcarSaida = existentes.filter(a => {
       const matriculaMatch = a.matricula && matriculasNoArquivo.has(a.matricula);
       const nomeMatch = nomesNoArquivo.has(a.nomeCompleto.toLowerCase());
@@ -211,16 +247,6 @@ export async function processarImportacaoAlunos(rows: AlunoRow[], options: Impor
       }).where(eq(alunos.id, a.id));
       totalTransferidos++;
       nomesTransferidos.push(a.nomeCompleto);
-    }
-  }
-
-  // Sincronizar turmas
-  for (const nomeTurma of turmasEncontradas) {
-    const existing = await db.select().from(turmasTable).where(eq(turmasTable.nomeTurma, nomeTurma)).limit(1);
-    if (existing.length === 0) {
-      const upper = nomeTurma.toUpperCase();
-      const turnoInferido = (upper.includes(" M") || upper.endsWith("M") || upper.includes("AM") || upper.includes("1M")) ? "Manhã" : "Tarde";
-      await db.insert(turmasTable).values({ nomeTurma, turno: turnoInferido });
     }
   }
 

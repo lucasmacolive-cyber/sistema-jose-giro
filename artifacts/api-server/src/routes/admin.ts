@@ -132,6 +132,27 @@ router.get("/admin/:tabela/colunas", requireMaster, async (req, res) => {
   }
 });
 
+const toSnakeCase = (str: string) => str.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
+
+async function filtrarCamposTabela(tabela: string, dados: any) {
+  const colRes = await pool.query(
+    `SELECT column_name FROM information_schema.columns WHERE table_name = $1`,
+    [tabela]
+  );
+  const dbColumns = colRes.rows.map((r: any) => r.column_name);
+
+  const dadosFiltrados: any = {};
+  for (const key of Object.keys(dados)) {
+    const snakeKey = toSnakeCase(key);
+    if (dbColumns.includes(snakeKey)) {
+      dadosFiltrados[snakeKey] = dados[key];
+    } else if (dbColumns.includes(key)) {
+      dadosFiltrados[key] = dados[key];
+    }
+  }
+  return dadosFiltrados;
+}
+
 // POST /api/admin/:tabela
 router.post("/admin/:tabela", requireMaster, async (req, res) => {
   const { tabela } = req.params;
@@ -140,19 +161,20 @@ router.post("/admin/:tabela", requireMaster, async (req, res) => {
     return;
   }
 
-  const dados = { ...req.body };
-  delete dados.id;
-
-  const campos = Object.keys(dados).filter((k) => dados[k] !== "" && dados[k] !== null && dados[k] !== undefined);
-  if (campos.length === 0) {
-    res.status(400).json({ erro: "sem_dados" });
-    return;
-  }
-
-  const placeholders = campos.map((_, i) => `$${i + 1}`).join(", ");
-  const valores = campos.map((c) => dados[c] ?? null);
-
   try {
+    const dadosBody = { ...req.body };
+    delete dadosBody.id;
+    const dados = await filtrarCamposTabela(tabela, dadosBody);
+
+    const campos = Object.keys(dados).filter((k) => dados[k] !== "" && dados[k] !== null && dados[k] !== undefined);
+    if (campos.length === 0) {
+      res.status(400).json({ erro: "sem_dados" });
+      return;
+    }
+
+    const placeholders = campos.map((_, i) => `$${i + 1}`).join(", ");
+    const valores = campos.map((c) => dados[c] ?? null);
+
     const result = await pool.query(
       `INSERT INTO ${tabela} (${campos.join(", ")}) VALUES (${placeholders}) RETURNING *`,
       valores
@@ -171,20 +193,21 @@ router.put("/admin/:tabela/:id", requireMaster, async (req, res) => {
     return;
   }
 
-  const dados = { ...req.body };
-  delete dados.id;
-
-  const campos = Object.keys(dados);
-  if (campos.length === 0) {
-    res.status(400).json({ erro: "sem_dados" });
-    return;
-  }
-
-  const sets = campos.map((c, i) => `${c} = $${i + 1}`).join(", ");
-  const valores: any[] = campos.map((c) => (dados[c] === "" ? null : dados[c]));
-  valores.push(id);
-
   try {
+    const dadosBody = { ...req.body };
+    delete dadosBody.id;
+    const dados = await filtrarCamposTabela(tabela, dadosBody);
+
+    const campos = Object.keys(dados);
+    if (campos.length === 0) {
+      res.status(400).json({ erro: "sem_dados" });
+      return;
+    }
+
+    const sets = campos.map((c, i) => `${c} = $${i + 1}`).join(", ");
+    const valores: any[] = campos.map((c) => (dados[c] === "" ? null : dados[c]));
+    valores.push(id);
+
     await pool.query(`UPDATE ${tabela} SET ${sets} WHERE id = $${valores.length}`, valores);
     res.json({ ok: true });
   } catch (e: any) {
