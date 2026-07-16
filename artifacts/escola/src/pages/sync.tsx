@@ -8,7 +8,7 @@ import {
   RefreshCcw, Check, Settings2, Eye, EyeOff,
   Globe, Copy, ExternalLink, Upload, FileSpreadsheet,
   Zap, ServerCrash, Camera, ImagePlus, Bookmark, ShieldCheck, WifiOff, MessageCircle, PlayCircle,
-  Mail, Phone, FileText, Link2, Sun, Sunset, GraduationCap
+  Mail, Phone, FileText, Link2, Sun, Sunset, GraduationCap, Printer, Wifi
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
@@ -84,6 +84,119 @@ async function apiFetch(path: string, opts?: RequestInit) {
   if (!r.ok) throw new Error((await r.json().catch(() => ({}))).mensagem ?? `Erro ${r.status}`);
   return r.json();
 }
+
+const obterHtmlLogSinc = (log: any) => {
+  let html = `<p><strong>Data:</strong> ${new Date(log.ultimaSync).toLocaleString("pt-BR")}</p>`;
+  html += `<p><strong>Resumo:</strong> ${log.mensagem}</p>`;
+  if (log.detalhes) {
+    if (log.detalhes.adicionados?.length > 0) {
+      html += `<h2>Novos Alunos (${log.detalhes.adicionados.length})</h2><ul>`;
+      log.detalhes.adicionados.forEach((nome: string) => { html += `<li>${nome}</li>`; });
+      html += `</ul>`;
+    }
+    if (log.detalhes.atualizados?.length > 0) {
+      html += `<h2>Dados Atualizados (${log.detalhes.atualizados.length})</h2><ul>`;
+      log.detalhes.atualizados.forEach((nome: string) => { html += `<li>${nome}</li>`; });
+      html += `</ul>`;
+    }
+    if (log.detalhes.transferidos?.length > 0) {
+      html += `<h2>Saídas/Transferidos (${log.detalhes.transferidos.length})</h2><ul>`;
+      log.detalhes.transferidos.forEach((nome: string) => { html += `<li>${nome}</li>`; });
+      html += `</ul>`;
+    }
+  }
+  return html;
+};
+
+const obterHtmlLogWhatsApp = (logsArr: string[]) => {
+  return `<h2>Logs de Fluxo do Bot</h2><pre style="background: #f5f5f5; padding: 10px; border-radius: 5px; font-family: monospace; font-size: 11px; white-space: pre-wrap; word-break: break-all;">${logsArr.join("\n")}</pre>`;
+};
+
+const imprimirLogOnline = async (impressora: "RICOH" | "EPSON", titulo: string, htmlConteudo: string, toast: any) => {
+  try {
+    const fullHtml = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <title>${titulo}</title>
+        <style>
+          body { font-family: Arial, sans-serif; padding: 20px; color: #333; line-height: 1.4; }
+          h1 { font-size: 18px; border-bottom: 2px solid #ccc; padding-bottom: 8px; margin-bottom: 12px; }
+          h2 { font-size: 14px; margin-top: 20px; color: #1e3a8a; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+          ul { padding-left: 20px; margin-top: 6px; }
+          li { font-size: 12px; margin-bottom: 3px; }
+          p { font-size: 13px; margin: 4px 0; }
+          pre { background: #f5f5f5; padding: 10px; border-radius: 5px; font-family: monospace; font-size: 11px; white-space: pre-wrap; word-break: break-all; }
+        </style>
+      </head>
+      <body>
+        <h1>${titulo}</h1>
+        ${htmlConteudo}
+      </body>
+      </html>
+    `;
+    const blob = new Blob([fullHtml], { type: "text/html" });
+    const file = new File([blob], `Log_${titulo.replace(/\s+/g, "_")}.html`, { type: "text/html" });
+
+    const form = new FormData();
+    form.append("professorSolicitante", "Sistema (Log)");
+    form.append("quantidadeCopias", "1");
+    form.append("impressoraNome", impressora);
+    form.append("colorida", impressora === "EPSON" ? "true" : "false");
+    form.append("arquivo", file);
+
+    const res = await fetch(API("/impressoes"), { method: "POST", body: form });
+    if (!res.ok) throw new Error("Erro ao enviar");
+    toast({ title: `Enviado para ${impressora} (Online) com sucesso!` });
+  } catch (err) {
+    console.error(err);
+    toast({ title: "Erro ao tentar imprimir online.", variant: "destructive" });
+  }
+};
+
+const imprimirLogLocal = (titulo: string, htmlConteudo: string, toast: any) => {
+  const printWindow = window.open("", "_blank");
+  if (!printWindow) {
+    toast({ title: "Bloqueador de popup ativo", description: "Permita popups para imprimir.", variant: "destructive" });
+    return;
+  }
+  const fullHtml = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="utf-8">
+      <title>${titulo}</title>
+      <style>
+        body { font-family: Arial, sans-serif; padding: 20px; color: #333; line-height: 1.4; }
+        h1 { font-size: 18px; border-bottom: 2px solid #ccc; padding-bottom: 8px; margin-bottom: 12px; }
+        h2 { font-size: 14px; margin-top: 20px; color: #1e3a8a; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+        ul { padding-left: 20px; margin-top: 6px; }
+        li { font-size: 12px; margin-bottom: 3px; }
+        p { font-size: 13px; margin: 4px 0; }
+        pre { background: #f5f5f5; padding: 10px; border-radius: 5px; font-family: monospace; font-size: 11px; white-space: pre-wrap; word-break: break-all; }
+        @media print {
+          .no-print { display: none !important; }
+        }
+      </style>
+    </head>
+    <body>
+      <div class="no-print" style="margin-bottom: 20px; padding: 10px; background: #f0f0f0; border-radius: 5px; display: flex; gap: 10px;">
+        <button onclick="window.print()" style="padding: 6px 12px; cursor: pointer; background: #2563eb; color: white; border: none; border-radius: 4px; font-weight: bold; font-size: 12px;">Imprimir (Ctrl+P)</button>
+        <button onclick="window.close()" style="padding: 6px 12px; cursor: pointer; background: #e2e8f0; color: #334155; border: none; border-radius: 4px; font-size: 12px;">Fechar</button>
+      </div>
+      <h1>${titulo}</h1>
+      ${htmlConteudo}
+    </body>
+    </html>
+  `;
+  printWindow.document.write(fullHtml);
+  printWindow.document.close();
+  printWindow.focus();
+  setTimeout(() => {
+    printWindow.print();
+  }, 500);
+};
 
 /* ══════════════════════════════════════════
    SEÇÃO: Sincronização com SUAP via extensão Chrome
@@ -713,57 +826,57 @@ function BlocoDiariosSinc({ extensaoInstalada, apiBase }: { extensaoInstalada: b
     const ultimaSync = getUltimaSync(t.id);
     const turnoEmoji = t.turno?.toLowerCase().includes("manh") ? "🌅" : t.turno?.toLowerCase().includes("tard") ? "🌇" : "🎓";
 
+    const handleClearLink = async () => {
+      setLinksPerTurma(prev => ({ ...prev, [t.id]: "" }));
+      try {
+        await fetch(`${apiBase}/api/diario/turmas/${t.id}/link-suap`, {
+          method: "PATCH",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ linkSuap: "" }),
+        });
+        setLinksDirty(prev => ({ ...prev, [t.id]: false }));
+        carregarLinksMeta();
+        toast({ title: "Link removido", description: `Link da turma ${t.nomeTurma} foi removido.` });
+      } catch (err: any) {
+        toast({ title: "Erro ao remover link", description: err.message, variant: "destructive" });
+      }
+    };
+
     return (
-      <div className="flex items-center justify-between gap-3 p-3 rounded-2xl bg-black/25 border border-white/6 hover:border-white/10 transition-all">
-        {/* Lado Esquerdo: info da turma */}
-        <div className="flex items-center gap-3 min-w-0 flex-1">
-          <span className="text-lg leading-none shrink-0">{turnoEmoji}</span>
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <p className="text-xs font-bold text-white truncate">{t.nomeTurma}</p>
-              {link ? (
-                <span className="text-[0.55rem] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-medium shrink-0">Com Link</span>
-              ) : (
-                <span className="text-[0.55rem] px-1.5 py-0.5 rounded bg-red-500/10 text-red-400 border border-red-500/20 font-medium shrink-0">Sem Link</span>
-              )}
-            </div>
-            <div className="flex flex-col sm:flex-row sm:items-center sm:gap-2 mt-0.5">
-              {t.professorResponsavel && (
-                <p className="text-[0.62rem] text-slate-400 truncate">{t.professorResponsavel}</p>
-              )}
-              {ultimaSync && (
-                <p className="text-[0.58rem] text-slate-500 truncate">
-                  • Sync: {new Date(ultimaSync).toLocaleDateString("pt-BR")} {new Date(ultimaSync).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
-                </p>
-              )}
+      <div className="flex flex-col gap-3 p-3.5 rounded-2xl bg-black/25 border border-white/6 hover:border-white/10 transition-all">
+        {/* Lado Esquerdo: info da turma + Botão Sincronizar */}
+        <div className="flex items-center justify-between gap-3 min-w-0">
+          <div className="flex items-center gap-3 min-w-0 flex-1">
+            <span className="text-lg leading-none shrink-0">{turnoEmoji}</span>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <p className="text-xs font-bold text-white truncate">{t.nomeTurma}</p>
+                {link ? (
+                  <span className="text-[0.55rem] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-medium shrink-0">Com Link</span>
+                ) : (
+                  <span className="text-[0.55rem] px-1.5 py-0.5 rounded bg-red-500/10 text-red-400 border border-red-500/20 font-medium shrink-0">Sem Link</span>
+                )}
+              </div>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:gap-2 mt-0.5">
+                {t.professorResponsavel && (
+                  <p className="text-[0.62rem] text-slate-400 truncate">{t.professorResponsavel}</p>
+                )}
+                {ultimaSync && (
+                  <p className="text-[0.58rem] text-slate-500 truncate">
+                    • Sync: {new Date(ultimaSync).toLocaleDateString("pt-BR")} {new Date(ultimaSync).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                  </p>
+                )}
+              </div>
             </div>
           </div>
-        </div>
-
-        {/* Lado Direito: Ações */}
-        <div className="flex items-center gap-2 shrink-0">
-          {/* Botão Configurar Link (Pencil) */}
-          <button
-            onClick={() => setDialogTurma(t)}
-            title="Configurar Link SUAP"
-            className={cn(
-              "flex items-center justify-center p-2 rounded-xl border text-xs transition-all",
-              dirty 
-                ? "bg-amber-500/15 border-amber-500/30 text-amber-300 hover:bg-amber-500/25"
-                : link 
-                ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20" 
-                : "bg-white/5 border-white/6 text-slate-400 hover:bg-white/10"
-            )}
-          >
-            <Link2 className="h-3.5 w-3.5" />
-          </button>
 
           {/* Botão Sincronizar individual */}
           <button
             onClick={() => baixarDiario(t.id)}
             disabled={fase === "baixando" || !link}
             title={!link ? "Configure o link SUAP antes de atualizar" : "Atualizar este diário agora"}
-            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-[0.68rem] font-black transition-all border ${
+            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-[0.68rem] font-black transition-all border shrink-0 ${
               fase === "baixando"
                 ? "bg-amber-500/15 text-amber-300 border-amber-500/40 cursor-wait"
                 : fase === "done"
@@ -785,6 +898,33 @@ function BlocoDiariosSinc({ extensaoInstalada, apiBase }: { extensaoInstalada: b
               <><RefreshCcw className="h-3 w-3" /> Sincronizar</>
             )}
           </button>
+        </div>
+
+        {/* Linha do Input do Link */}
+        <div className="flex items-center gap-2">
+          <Input
+            value={link}
+            onChange={(e) => setLink(t.id, e.target.value)}
+            placeholder="Cole o link do Diário SUAP (PDF)..."
+            className="h-8 text-xs bg-black/40 border-white/10 text-white flex-1"
+          />
+          {link && (
+            <button
+              onClick={handleClearLink}
+              title="Apagar link"
+              className="flex items-center justify-center h-8 w-8 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 transition-all shrink-0"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          )}
+          {dirty && (
+            <button
+              onClick={() => salvarLinkTurma(t.id)}
+              className="h-8 px-3 rounded-lg bg-violet-600 hover:bg-violet-500 text-white text-xs font-bold transition-all shrink-0"
+            >
+              Salvar
+            </button>
+          )}
         </div>
       </div>
     );
@@ -1097,6 +1237,7 @@ function SecaoSincronizacao() {
   const [uploadMsg, setUploadMsg] = useState("");
   const [uploadDetalhes, setUploadDetalhes] = useState<{ adicionados: number; atualizados: number; transferidos: number; marcadosSaida: number; erros: number; total: number } | null>(null);
   const [substituirTudo, setSubstituirTudo] = useState(false);
+  const [selectedXlsFile, setSelectedXlsFile] = useState<File | null>(null);
   const [uploadProf, setUploadProf] = useState<"idle" | "loading" | "ok" | "error">("idle");
   const [uploadProfMsg, setUploadProfMsg] = useState("");
   const [uploadProfDetalhes, setUploadProfDetalhes] = useState<{ adicionados: number; atualizados: number; ignorados: number; total: number } | null>(null);
@@ -1123,6 +1264,20 @@ function SecaoSincronizacao() {
   const [diariosErro, setDiariosErro] = useState<string | null>(null);
   const [diariosConcluido, setDiariosConcluido] = useState(false);
   const [limpando, setLimpando] = useState(false);
+
+  // Sync automático de turmas (server-side)
+  const [autoTurmasRodando, setAutoTurmasRodando] = useState(false);
+  const [autoTurmasPct, setAutoTurmasPct] = useState(0);
+  const [autoTurmasMsg, setAutoTurmasMsg] = useState("");
+  const [autoTurmasErro, setAutoTurmasErro] = useState<string | null>(null);
+  const [autoTurmasConcluido, setAutoTurmasConcluido] = useState(false);
+  const [autoTurmasAdicionadas, setAutoTurmasAdicionadas] = useState(0);
+
+  // Upload manual de turmas
+  const [uploadTurmas, setUploadTurmas] = useState<"idle" | "loading" | "ok" | "error">("idle");
+  const [uploadTurmasMsg, setUploadTurmasMsg] = useState("");
+  const [uploadTurmasDetalhes, setUploadTurmasDetalhes] = useState<{ adicionadas: number } | null>(null);
+  const [dragOverTurmas, setDragOverTurmas] = useState(false);
 
   const [historico, setHistorico] = useState<{
     status: string; ultimaSync?: string; mensagem?: string; totalAlunos?: number;
@@ -1152,7 +1307,25 @@ function SecaoSincronizacao() {
 
   // Detectar extensão e carregar histórico + credenciais
   useEffect(() => {
-    setExtensaoInstalada(document.documentElement.hasAttribute("data-suap-sync"));
+    if (document.documentElement.hasAttribute("data-suap-sync")) {
+      setExtensaoInstalada(true);
+    } else {
+      let checks = 0;
+      const interval = setInterval(() => {
+        checks++;
+        if (document.documentElement.hasAttribute("data-suap-sync")) {
+          setExtensaoInstalada(true);
+          clearInterval(interval);
+        } else if (checks >= 6) {
+          setExtensaoInstalada(false);
+          clearInterval(interval);
+        }
+      }, 500);
+      return () => clearInterval(interval);
+    }
+  }, []);
+
+  useEffect(() => {
     apiFetch("/sync/status").then(setHistorico).catch(() => {});
     carregarHistorico();
     apiFetch("/sync/credenciais").then((d) => {
@@ -1218,6 +1391,79 @@ function SecaoSincronizacao() {
     }, 1500);
     return () => clearInterval(interval);
   }, [diariosRodando, toast]);
+
+  const iniciarSyncTurmasAuto = async () => {
+    if (autoTurmasRodando) return;
+    setAutoTurmasRodando(true);
+    setAutoTurmasPct(0);
+    setAutoTurmasMsg("Iniciando sincronização automática...");
+    setAutoTurmasErro(null);
+    setAutoTurmasConcluido(false);
+    try {
+      const resp = await apiFetch("/sync/auto-turmas", { method: "POST" });
+      if (!resp.ok) {
+        setAutoTurmasRodando(false);
+        setAutoTurmasErro(resp.mensagem || "Falha ao iniciar.");
+      }
+    } catch (e: any) {
+      setAutoTurmasRodando(false);
+      setAutoTurmasErro(e.message || "Erro ao iniciar sincronização de turmas.");
+    }
+  };
+
+  // Polling de turmas automático
+  useEffect(() => {
+    if (!autoTurmasRodando) return;
+    const interval = setInterval(async () => {
+      try {
+        const s = await apiFetch("/sync/auto-turmas/status");
+        setAutoTurmasPct(s.pct ?? 0);
+        setAutoTurmasMsg(s.msg ?? "");
+        if (!s.rodando) {
+          setAutoTurmasRodando(false);
+          clearInterval(interval);
+          if (s.erro) {
+            setAutoTurmasErro(s.erro);
+            toast({ title: "Erro na sincronização", description: s.erro, variant: "destructive" });
+          } else if (s.concluido) {
+            setAutoTurmasConcluido(true);
+            setAutoTurmasAdicionadas(s.adicionadas ?? 0);
+            toast({ title: "Turmas sincronizadas!", description: s.msg });
+            apiFetch("/sync/status").then(setHistorico).catch(() => {});
+          }
+        }
+      } catch (e) {}
+    }, 1500);
+    return () => clearInterval(interval);
+  }, [autoTurmasRodando, toast]);
+
+  const importarTurmasManual = async (file: File) => {
+    if (uploadTurmas === "loading") return;
+    setUploadTurmas("loading");
+    setUploadTurmasMsg("Lendo arquivo...");
+    const reader = new FileReader();
+    reader.onload = async () => {
+      try {
+        const base64 = reader.result as string;
+        const resp = await apiFetch("/sync/upload-turmas", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ arquivo: base64 }),
+        });
+        setUploadTurmasDetalhes({
+          adicionadas: resp.adicionados ?? resp.adicionadas ?? 0
+        });
+        setUploadTurmas("ok");
+        setUploadTurmasMsg(resp.mensagem || "Turmas importadas com sucesso!");
+        toast({ title: "Importação concluída!", description: resp.mensagem });
+      } catch (e: any) {
+        setUploadTurmas("error");
+        setUploadTurmasMsg(e.message || "Erro ao processar o arquivo.");
+        toast({ title: "Erro na importação", description: e.message || "Erro desconhecido", variant: "destructive" });
+      }
+    };
+    reader.readAsDataURL(file);
+  };
 
   async function iniciarSyncDiarios() {
     setDiariosRodando(true);
@@ -1341,6 +1587,7 @@ function SecaoSincronizacao() {
         });
         setUploadManual("ok");
         setUploadMsg("Planilha importada com sucesso!");
+        setSelectedXlsFile(null);
         apiFetch("/sync/status").then(setHistorico).catch(() => {});
       } catch (e: any) {
         setUploadManual("error");
@@ -1420,212 +1667,7 @@ function SecaoSincronizacao() {
   return (
     <div className="space-y-5">
 
-      {/* ═══════════════════════════════════════════
-          BLOCO 1 — Sincronização Automática (servidor)
-      ═══════════════════════════════════════════ */}
-      <div
-        className="bg-[#0f172a] rounded-2xl border p-6 transition-all duration-500"
-        style={{ borderColor: autoRodando ? `${autoCor}55` : autoConcluido ? "#10b98155" : "rgba(255,255,255,0.07)" }}
-      >
-        <div className="flex flex-col md:flex-row items-center gap-6">
-          {/* Ícone */}
-          <div
-            className="w-20 h-20 rounded-3xl flex items-center justify-center shrink-0 transition-all duration-500"
-            style={{
-              background: `${autoCor}18`,
-              border: `1px solid ${autoCor}40`,
-              boxShadow: autoRodando ? `0 0 28px ${autoCor}40` : "none",
-            }}
-          >
-            {autoErro ? (
-              <ServerCrash className="h-10 w-10" style={{ color: autoCor }} />
-            ) : (
-              <Zap
-                className="h-10 w-10 transition-all duration-300"
-                style={{ color: autoCor, filter: autoRodando ? `drop-shadow(0 0 8px ${autoCor})` : "none" }}
-              />
-            )}
-          </div>
 
-          <div className="flex-1 w-full text-center md:text-left">
-            <div className="flex items-center gap-2 justify-center md:justify-start mb-1">
-              <h2 className="text-xl font-bold text-white">Sincronização Automática</h2>
-              <span className="px-2 py-0.5 rounded-full text-[0.6rem] font-bold uppercase tracking-widest bg-orange-500/15 text-orange-400 border border-orange-500/25">
-                Pode falhar
-              </span>
-            </div>
-            <p className="text-muted-foreground text-sm mb-3 leading-relaxed">
-              {autoRodando
-                ? autoMsg || "Sincronizando..."
-                : autoErro
-                  ? autoErro
-                  : autoConcluido
-                    ? autoMsg
-                    : "O servidor tenta acessar o SUAP diretamente. Pode não funcionar se o SUAP bloquear conexões externas (redes da prefeitura)."}
-            </p>
-            {!autoRodando && !autoErro && !autoConcluido && (
-              <div className="flex items-start gap-2 mb-3 px-3 py-2.5 rounded-lg bg-orange-500/8 border border-orange-500/20 text-orange-300/80 text-xs">
-                <WifiOff className="h-3.5 w-3.5 mt-0.5 shrink-0" />
-                <span>Se aparecer erro de conexão, use a <b>Extensão Chrome</b> para sincronizar via navegador.</span>
-              </div>
-            )}
-
-            {/* Barra de progresso auto */}
-            {(autoRodando || autoConcluido) && (
-              <div className="mb-4">
-                <div className="h-2.5 rounded-full bg-white/10 overflow-hidden">
-                  <div
-                    className="h-full rounded-full transition-all duration-700"
-                    style={{
-                      width: `${autoPct}%`,
-                      background: `linear-gradient(90deg, ${autoCor}99, ${autoCor})`,
-                    }}
-                  />
-                </div>
-                <div className="flex justify-between mt-1.5">
-                  <span className="text-xs" style={{ color: autoCor }}>
-                    {autoConcluido ? "Concluído!" : autoRodando ? "Sincronizando..." : ""}
-                  </span>
-                  <span className="text-xs text-muted-foreground">{autoPct}%</span>
-                </div>
-              </div>
-            )}
-
-            {/* Erro */}
-            {autoErro && !autoRodando && (
-              <div className="mb-4 px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
-                {autoErro}
-              </div>
-            )}
-
-            {/* Progresso dos diários (modo completo) */}
-            {(diariosRodando || diariosConcluido || diariosErro) && (
-              <div className="mb-4">
-                <p className="text-xs font-bold text-purple-400 mb-1.5 flex items-center gap-1.5">
-                  <BookOpen className="h-3.5 w-3.5" />
-                  {diariosErro ? "Erro nos diários" : diariosConcluido ? "Diários sincronizados!" : "Sincronizando diários..."}
-                </p>
-                {!diariosErro && (
-                  <div className="h-2 rounded-full bg-white/10 overflow-hidden mb-1">
-                    <div
-                      className="h-full rounded-full transition-all duration-700 bg-gradient-to-r from-purple-500 to-violet-500"
-                      style={{ width: `${diariosPct}%` }}
-                    />
-                  </div>
-                )}
-                {diariosErro && (
-                  <p className="text-xs text-red-400">{diariosErro}</p>
-                )}
-                {!diariosErro && (
-                  <p className="text-xs text-purple-300/70">{diariosMsg}</p>
-                )}
-              </div>
-            )}
-
-            <div className="flex flex-wrap gap-2">
-              {/* Botão de Sincronização */}
-              <button
-                onClick={autoRodando || diariosRodando ? undefined : () => {
-                  setAutoErro(null); setAutoConcluido(false);
-                  setModoCompleto(true);
-                  setDiariosErro(null); setDiariosConcluido(false);
-                  iniciarSyncAuto();
-                }}
-                disabled={autoRodando || diariosRodando}
-                className="flex items-center gap-3 px-8 py-3.5 rounded-2xl font-black text-base text-white transition-all disabled:opacity-50 group"
-                style={{
-                  background: autoRodando ? "#1e293b" : `linear-gradient(135deg, #10b981, #059669)`,
-                }}
-              >
-                {autoRodando ? "Sincronizando..." : autoConcluido ? "Concluído!" : "Sincronizar Dados"}
-              </button>
-
-              {/* Botão de Limpeza */}
-              <button
-                onClick={limparDuplicados}
-                disabled={limpando || autoRodando}
-                className="flex items-center gap-2 px-6 py-3 rounded-2xl font-bold text-sm text-amber-400 border border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20 transition-all"
-              >
-                {limpando ? "Limpando..." : "Limpar Alunos Duplicados"}
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* ═══════════════════════════════════════════
-          BLOCO 1.3 — Credenciais SUAP no Servidor
-      ═══════════════════════════════════════════ */}
-      <div className="bg-[#0f172a] rounded-2xl border border-white/[0.07] p-6">
-        <div className="flex items-start gap-4">
-          <div className="w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 bg-blue-500/10 border border-blue-500/30">
-            <KeyRound className="h-6 w-6 text-blue-400" />
-          </div>
-          <div className="flex-1">
-            <div className="flex items-center gap-2 mb-1">
-              <h2 className="text-base font-bold text-white">Credenciais SUAP no Sistema</h2>
-              {credTemSenha && (
-                <span className="px-2 py-0.5 rounded-full text-[0.6rem] font-bold uppercase tracking-widest bg-green-500/15 text-green-400 border border-green-500/25">
-                  Configurado
-                </span>
-              )}
-            </div>
-            <p className="text-slate-400 text-sm mb-4 leading-relaxed">
-              Informe seu login e senha do SUAP para que a <b>sincronização automática via servidor</b> possa funcionar sem abrir o navegador. As credenciais ficam salvas de forma segura no banco de dados do sistema.
-            </p>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
-              <div>
-                <label className="text-xs font-semibold text-slate-400 uppercase tracking-widest block mb-1.5">
-                  Login do SUAP
-                </label>
-                <Input
-                  value={credUsuario}
-                  onChange={e => setCredUsuario(e.target.value)}
-                  placeholder="Ex: 21501"
-                  className="bg-white/5 border-white/10 text-white"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-semibold text-slate-400 uppercase tracking-widest block mb-1.5">
-                  Senha do SUAP{credTemSenha && !credSenha && <span className="ml-1.5 text-green-400 font-normal normal-case tracking-normal">✓ salva</span>}
-                </label>
-                <div className="relative">
-                  <Input
-                    type={mostrarSenha ? "text" : "password"}
-                    value={credSenha}
-                    onChange={e => setCredSenha(e.target.value)}
-                    placeholder={credTemSenha ? "Deixe em branco para manter" : "Sua senha do SUAP"}
-                    className="bg-white/5 border-white/10 text-white pr-10"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setMostrarSenha(v => !v)}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white transition-colors"
-                  >
-                    {mostrarSenha ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {credSalvo && (
-              <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-lg bg-green-500/10 border border-green-500/20 text-green-400 text-sm">
-                <Check className="h-4 w-4" /> Credenciais salvas com sucesso!
-              </div>
-            )}
-
-            <button
-              onClick={salvarCredenciais}
-              disabled={credSalvando || !credUsuario}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-              style={{ background: "linear-gradient(135deg, #3b82f6, #2563eb)", boxShadow: "0 4px 16px #3b82f640" }}
-            >
-              {credSalvando ? <><Loader2 className="h-4 w-4 animate-spin" /> Salvando...</> : <><Save className="h-4 w-4" /> Salvar Credenciais</>}
-            </button>
-          </div>
-        </div>
-      </div>
 
 
 
@@ -1723,9 +1765,11 @@ function SecaoSincronizacao() {
             e.preventDefault();
             setDragOver(false);
             const file = e.dataTransfer.files[0];
-            if (file) processarArquivoXLS(file);
+            if (file) setSelectedXlsFile(file);
           }}
-          onClick={() => document.getElementById("xls-upload-input")?.click()}
+          onClick={() => {
+            if (!selectedXlsFile) document.getElementById("xls-upload-input")?.click();
+          }}
         >
           <input
             id="xls-upload-input"
@@ -1734,7 +1778,7 @@ function SecaoSincronizacao() {
             className="hidden"
             onChange={e => {
               const file = e.target.files?.[0];
-              if (file) processarArquivoXLS(file);
+              if (file) setSelectedXlsFile(file);
               e.target.value = "";
             }}
           />
@@ -1796,6 +1840,18 @@ function SecaoSincronizacao() {
                 onClick={e => { e.stopPropagation(); setUploadManual("idle"); setUploadMsg(""); }}
               >Tentar novamente</button>
             </div>
+          ) : selectedXlsFile ? (
+            <div className="flex flex-col items-center gap-2 text-cyan-400" onClick={e => e.stopPropagation()}>
+              <FileSpreadsheet className="h-8 w-8 mb-1" />
+              <span className="text-sm font-bold text-white truncate max-w-xs">{selectedXlsFile.name}</span>
+              <span className="text-xs text-slate-400">({(selectedXlsFile.size / 1024).toFixed(1)} KB)</span>
+              <button
+                className="mt-2 text-xs text-red-400 underline underline-offset-2 hover:text-red-300"
+                onClick={() => setSelectedXlsFile(null)}
+              >
+                Remover arquivo
+              </button>
+            </div>
           ) : (
             <div className="flex flex-col items-center gap-2 text-slate-400">
               <Upload className="h-8 w-8 mb-1" />
@@ -1804,6 +1860,25 @@ function SecaoSincronizacao() {
             </div>
           )}
         </div>
+
+        {uploadManual === "idle" && (
+          <div className="mt-4 flex justify-end">
+            <Button
+              onClick={() => {
+                if (selectedXlsFile) processarArquivoXLS(selectedXlsFile);
+              }}
+              disabled={!selectedXlsFile}
+              className={cn(
+                "px-6 py-2.5 font-bold uppercase tracking-wider text-xs rounded-xl shadow-lg transition-all",
+                selectedXlsFile
+                  ? "bg-cyan-600 hover:bg-cyan-500 text-white shadow-cyan-500/25 hover:scale-[1.02]"
+                  : "bg-slate-800 text-slate-500 cursor-not-allowed opacity-50"
+              )}
+            >
+              Atualizar Alunos
+            </Button>
+          </div>
+        )}
       </div>
 
       {/* ── Upload de Professores ── */}
@@ -1875,6 +1950,129 @@ function SecaoSincronizacao() {
             <div className="flex flex-col items-center gap-2 text-slate-400">
               <Upload className="h-8 w-8 mb-1" />
               <span className="text-sm font-medium text-slate-300">Arraste o relatório XLS de professores</span>
+              <span className="text-xs">ou clique para selecionar</span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ═══════════════════════════════════════════
+          BLOCO: Sincronizar Turmas do SUAP
+      ═══════════════════════════════════════════ */}
+      <div className="bg-[#0f172a] rounded-2xl border border-blue-500/20 p-5">
+        <h3 className="text-sm font-bold text-blue-400 mb-1 flex items-center gap-2">
+          <BookOpen className="h-4 w-4" /> Sincronizar Turmas do SUAP
+        </h3>
+        <p className="text-xs text-slate-400 mb-4">
+          Importe as siglas das turmas do SUAP para o sistema. Você pode sincronizar automaticamente (usando o robô) ou fazer upload do arquivo XLS exportado do SUAP.
+        </p>
+
+        {/* Sync automático de turmas */}
+        <div className="mb-4 p-4 rounded-xl border border-white/8 bg-white/3 flex flex-col gap-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-semibold text-white/80">Sincronização Direta pelo Servidor (Robô)</p>
+              <p className="text-[11px] text-slate-500 mt-0.5">O servidor faz o login no SUAP e extrai as turmas do ano letivo atual.</p>
+            </div>
+            <Button
+              onClick={iniciarSyncTurmasAuto}
+              disabled={autoTurmasRodando}
+              className="bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs"
+            >
+              {autoTurmasRodando ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <RefreshCcw className="h-3.5 w-3.5 mr-1" />}
+              {autoTurmasRodando ? "Sincronizando..." : "Sincronizar Turmas"}
+            </Button>
+          </div>
+
+          {autoTurmasRodando && (
+            <div className="mt-2">
+              <div className="h-1.5 rounded-full bg-white/10 overflow-hidden">
+                <div
+                  className="h-full rounded-full bg-blue-500 transition-all duration-500"
+                  style={{ width: `${autoTurmasPct}%` }}
+                />
+              </div>
+              <div className="flex justify-between mt-1 text-[11px]">
+                <span className="text-blue-400">{autoTurmasMsg}</span>
+                <span className="text-slate-500">{autoTurmasPct}%</span>
+              </div>
+            </div>
+          )}
+
+          {autoTurmasConcluido && (
+            <div className="text-xs text-emerald-400 font-medium">
+              Sincronização de turmas concluída com sucesso! {autoTurmasAdicionadas} novas turmas adicionadas.
+            </div>
+          )}
+
+          {autoTurmasErro && (
+            <div className="text-xs text-red-400 font-medium">
+              Erro na sincronização: {autoTurmasErro}
+            </div>
+          )}
+        </div>
+
+        {/* Upload manual de turmas */}
+        <div
+          className="relative border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all"
+          style={{
+            borderColor: dragOverTurmas ? "#3b82f6" : "rgba(255,255,255,0.1)",
+            background: dragOverTurmas ? "rgba(59,130,246,0.07)" : "rgba(255,255,255,0.02)",
+          }}
+          onDragOver={e => { e.preventDefault(); setDragOverTurmas(true); }}
+          onDragLeave={() => setDragOverTurmas(false)}
+          onDrop={e => {
+            e.preventDefault();
+            setDragOverTurmas(false);
+            const file = e.dataTransfer.files[0];
+            if (file) importarTurmasManual(file);
+          }}
+          onClick={() => {
+            if (uploadTurmas !== "loading") {
+              const inp = document.createElement("input");
+              inp.type = "file";
+              inp.accept = ".xls,.xlsx";
+              inp.onchange = (e: any) => {
+                const file = e.target.files?.[0];
+                if (file) importarTurmasManual(file);
+              };
+              inp.click();
+            }
+          }}
+        >
+          {uploadTurmas === "loading" ? (
+            <div className="flex flex-col items-center gap-2 text-blue-400">
+              <Loader2 className="h-8 w-8 animate-spin" />
+              <span className="text-sm font-medium">{uploadTurmasMsg}</span>
+            </div>
+          ) : uploadTurmas === "ok" ? (
+            <div className="flex flex-col items-center gap-2">
+              <div className="flex items-center gap-1.5 text-emerald-400 font-bold text-sm">
+                <Check className="h-5 w-5" /> {uploadTurmasMsg}
+              </div>
+              {uploadTurmasDetalhes && (
+                <div className="text-[11px] text-slate-400">
+                  {uploadTurmasDetalhes.adicionadas} novas turmas adicionadas no banco de dados.
+                </div>
+              )}
+              <button
+                className="text-xs text-slate-400 underline underline-offset-2 hover:text-slate-300 mt-1"
+                onClick={e => { e.stopPropagation(); setUploadTurmas("idle"); setUploadTurmasMsg(""); setUploadTurmasDetalhes(null); }}
+              >Importar outro arquivo</button>
+            </div>
+          ) : uploadTurmas === "error" ? (
+            <div className="flex flex-col items-center gap-2 text-red-400">
+              <AlertTriangle className="h-8 w-8" />
+              <span className="text-sm font-semibold">{uploadTurmasMsg}</span>
+              <button
+                className="mt-1 text-xs text-slate-400 underline underline-offset-2"
+                onClick={e => { e.stopPropagation(); setUploadTurmas("idle"); setUploadTurmasMsg(""); }}
+              >Tentar novamente</button>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center gap-2 text-slate-400">
+              <Upload className="h-8 w-8 mb-1" />
+              <span className="text-sm font-medium text-slate-300">Arraste o arquivo XLS de turmas aqui</span>
               <span className="text-xs">ou clique para selecionar</span>
             </div>
           )}
@@ -2037,8 +2235,43 @@ function SecaoSincronizacao() {
             )}
           </div>
 
-          <div className="flex justify-end pt-4 border-t border-white/5">
-            <Button onClick={() => setLogAberto(null)} className="bg-white/5 hover:bg-white/10 text-white">
+          <div className="flex flex-wrap gap-2 justify-between items-center pt-4 border-t border-white/5">
+            <div className="flex gap-2">
+              <Button
+                onClick={() => {
+                  if (logAberto) {
+                    const html = obterHtmlLogSinc(logAberto);
+                    imprimirLogOnline("RICOH", "Relatório de Sincronização", html, toast);
+                  }
+                }}
+                className="bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/30 border border-emerald-500/20 text-xs font-bold"
+              >
+                <Printer className="h-3.5 w-3.5 mr-1.5" /> Ricoh (Online)
+              </Button>
+              <Button
+                onClick={() => {
+                  if (logAberto) {
+                    const html = obterHtmlLogSinc(logAberto);
+                    imprimirLogOnline("EPSON", "Relatório de Sincronização", html, toast);
+                  }
+                }}
+                className="bg-sky-600/20 text-sky-400 hover:bg-sky-600/30 border border-sky-500/20 text-xs font-bold"
+              >
+                <Printer className="h-3.5 w-3.5 mr-1.5" /> Epson (Online)
+              </Button>
+              <Button
+                onClick={() => {
+                  if (logAberto) {
+                    const html = obterHtmlLogSinc(logAberto);
+                    imprimirLogLocal("Relatório de Sincronização", html, toast);
+                  }
+                }}
+                className="bg-slate-700/50 hover:bg-slate-700 text-slate-300 border border-white/10 text-xs font-bold"
+              >
+                <Wifi className="h-3.5 w-3.5 mr-1.5" /> Imprimir (Rede Local)
+              </Button>
+            </div>
+            <Button onClick={() => setLogAberto(null)} className="bg-white/5 hover:bg-white/10 text-white text-xs font-bold">
               Fechar Relatório
             </Button>
           </div>
@@ -4467,6 +4700,7 @@ function SecaoWhatsAppAutomacoes() {
 function SecaoWhatsAppLogs() {
   const [logs, setLogs] = useState<string[]>([]);
   const [carregando, setCarregando] = useState(true);
+  const { toast } = useToast();
 
   const carregarLogs = async () => {
     try {
@@ -4488,11 +4722,58 @@ function SecaoWhatsAppLogs() {
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-wrap justify-between items-center gap-2">
         <h4 className="text-md font-bold text-white uppercase tracking-wider">Histórico de Fluxo do Bot</h4>
-        <Button onClick={carregarLogs} variant="outline" size="sm" className="gap-2 text-white border-white/10 hover:bg-white/5 h-8">
-          <RefreshCcw className="w-3.5 h-3.5" /> Atualizar
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            onClick={() => {
+              if (logs.length > 0) {
+                const html = obterHtmlLogWhatsApp(logs);
+                imprimirLogOnline("RICOH", "Histórico de Fluxo do Bot", html, toast);
+              } else {
+                toast({ title: "Sem logs", description: "Não há logs para imprimir.", variant: "destructive" });
+              }
+            }}
+            variant="outline"
+            size="sm"
+            className="bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/30 border border-emerald-500/20 text-xs font-bold h-8"
+          >
+            <Printer className="h-3.5 w-3.5 mr-1.5" /> Ricoh (Online)
+          </Button>
+          <Button
+            onClick={() => {
+              if (logs.length > 0) {
+                const html = obterHtmlLogWhatsApp(logs);
+                imprimirLogOnline("EPSON", "Histórico de Fluxo do Bot", html, toast);
+              } else {
+                toast({ title: "Sem logs", description: "Não há logs para imprimir.", variant: "destructive" });
+              }
+            }}
+            variant="outline"
+            size="sm"
+            className="bg-sky-600/20 text-sky-400 hover:bg-sky-600/30 border border-sky-500/20 text-xs font-bold h-8"
+          >
+            <Printer className="h-3.5 w-3.5 mr-1.5" /> Epson (Online)
+          </Button>
+          <Button
+            onClick={() => {
+              if (logs.length > 0) {
+                const html = obterHtmlLogWhatsApp(logs);
+                imprimirLogLocal("Histórico de Fluxo do Bot", html, toast);
+              } else {
+                toast({ title: "Sem logs", description: "Não há logs para imprimir.", variant: "destructive" });
+              }
+            }}
+            variant="outline"
+            size="sm"
+            className="bg-slate-700/50 hover:bg-slate-700 text-slate-300 border border-white/10 text-xs font-bold h-8"
+          >
+            <Wifi className="h-3.5 w-3.5 mr-1.5" /> Imprimir (Rede Local)
+          </Button>
+          <Button onClick={carregarLogs} variant="outline" size="sm" className="gap-2 text-white border-white/10 hover:bg-white/5 h-8">
+            <RefreshCcw className="w-3.5 h-3.5" /> Atualizar
+          </Button>
+        </div>
       </div>
       
       <div className="bg-black/40 border border-white/5 rounded-2xl p-4 font-mono text-xs text-green-400 overflow-y-auto max-h-[400px] space-y-1 h-[400px]">

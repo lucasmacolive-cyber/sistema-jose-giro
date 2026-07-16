@@ -7,7 +7,7 @@ import * as XLSX from "xlsx";
 import archiver from "archiver";
 import path from "path";
 import fs from "fs";
-import { sincronizarSUAP, sincronizarDiariosSUAP, baixarDiarioPorLink, identificarDiarioPorLinks, type SecaoDiario } from "../lib/suapSync.js";
+import { sincronizarSUAP, sincronizarDiariosSUAP, baixarDiarioPorLink, identificarDiarioPorLinks, type SecaoDiario, sincronizarTurmasSUAP } from "../lib/suapSync.js";
 import { parseDiarioPDF, normNome } from "../lib/parseDiario.js";
 import { processarImportacaoAlunos } from "../services/importService.js";
 
@@ -19,6 +19,15 @@ let autoSyncState: {
   erro: string | null;
   concluido: boolean;
 } = { rodando: false, pct: 0, msg: "", erro: null, concluido: false };
+
+let autoSyncTurmasState: {
+  rodando: boolean;
+  pct: number;
+  msg: string;
+  erro: string | null;
+  concluido: boolean;
+  adicionadas: number;
+} = { rodando: false, pct: 0, msg: "", erro: null, concluido: false, adicionadas: 0 };
 
 /* Estado em memória do download em lote de diários */
 let batchSyncState: {
@@ -712,6 +721,179 @@ router.post("/sync/upload-alunos", async (req, res) => {
     }).catch(() => {});
 
     res.status(500).json({ mensagem: "Erro ao processar o arquivo: " + e.message });
+  }
+});
+
+/* ═══════════════════════════════════════════════════════════
+   GET /api/sync/auto-turmas/status — progresso do sync automático de turmas
+════════════════════════════════════════════════════════════ */
+router.get("/sync/auto-turmas/status", (_req, res) => {
+  res.json(autoSyncTurmasState);
+});
+
+/* ═══════════════════════════════════════════════════════════
+   POST /api/sync/auto-turmas — sincroniza turmas direto do SUAP
+════════════════════════════════════════════════════════════ */
+router.post("/sync/auto-turmas", async (req, res) => {
+  if (autoSyncTurmasState.rodando) {
+    res.json({ ok: false, mensagem: "Já existe uma sincronização de turmas em andamento." });
+    return;
+  }
+
+  let usuario = process.env.SUAP_USUARIO ?? "";
+  let senha   = process.env.SUAP_SENHA   ?? "";
+
+  if (!usuario || !senha) {
+    const [uRow] = await db.select().from(configuracoesTable).where(eq(configuracoesTable.chave, "suap_usuario"));
+    const [sRow] = await db.select().from(configuracoesTable).where(eq(configuracoesTable.chave, "suap_senha"));
+    usuario = usuario || (uRow?.valor ?? "");
+    senha   = senha   || (sRow?.valor ?? "");
+  }
+
+  if (!usuario || !senha) {
+    res.status(400).json({ ok: false, mensagem: "Credenciais do SUAP não configuradas. Cadastre seu login e senha do SUAP em Sincronização." });
+    return;
+  }
+
+  autoSyncTurmasState = { rodando: true, pct: 0, msg: "Iniciando sincronização de turmas...", erro: null, concluido: false, adicionadas: 0 };
+  res.json({ ok: true, mensagem: "Sincronização de turmas iniciada. Acompanhe o progresso." });
+
+  (async () => {
+    try {
+      const onProgress = (pct: number, msg: string) => {
+        autoSyncTurmasState.pct = pct;
+        autoSyncTurmasState.msg = msg;
+        console.log(`[AutoSyncTurmas] ${pct}% — ${msg}`);
+      };
+
+      const xlsBuffer = await sincronizarTurmasSUAP(usuario, senha, onProgress);
+
+      onProgress(88, "Lendo dados das turmas...");
+
+      const workbook = XLSX.read(xlsBuffer, { type: "buffer", cellDates: true });
+      const sheetName = workbook.SheetNames[0];
+      const sheet = workbook.Sheets[sheetName];
+      const rows: Record<string, any>[] = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+
+      if (rows.length === 0) {
+        throw new Error("Planilha de turmas do SUAP está vazia ou formato inválido.");
+      }
+
+      onProgress(90, `${rows.length} registros de turmas encontrados. Importando...`);
+
+      let countAdded = 0;
+      for (const row of rows) {
+        const siglaKey = Object.keys(row).find(k => k.toUpperCase().includes("SIGLA"));
+        const sigla = siglaKey ? String(row[siglaKey]).trim() : "";
+
+        if (sigla) {
+          const [existing] = await db
+            .select()
+            .from(turmasTable)
+            .where(eq(turmasTable.nomeTurma, sigla));
+
+          if (!existing) {
+            await db.insert(turmasTable).values({
+              nomeTurma: sigla,
+              cor: "#3b82f6"
+            });
+            countAdded++;
+          }
+        }
+      }
+
+      autoSyncTurmasState = {
+        rodando: false,
+        pct: 100,
+        msg: `Sincronização concluída! ${countAdded} novas turmas adicionadas.`,
+        erro: null,
+        concluido: true,
+        adicionadas: countAdded,
+      };
+
+      await db.insert(syncStatusTable).values({
+        status: "success",
+        mensagem: `Turmas: Sincronização automática concluída. ${countAdded} novas turmas adicionadas.`,
+        detalhes: JSON.stringify({ adicionadas: countAdded }),
+        ultimaSync: new Date()
+      }).catch(() => {});
+
+    } catch (e: any) {
+      console.error("Erro na sincronização automática de turmas:", e);
+      autoSyncTurmasState = {
+        rodando: false,
+        pct: 0,
+        msg: "Falha na sincronização.",
+        erro: e.message || "Erro desconhecido.",
+        concluido: false,
+        adicionadas: 0,
+      };
+
+      await db.insert(syncStatusTable).values({
+        status: "error",
+        mensagem: "Erro ao sincronizar turmas automaticamente: " + e.message,
+        ultimaSync: new Date()
+      }).catch(() => {});
+    }
+  })();
+});
+
+/* ═══════════════════════════════════════════════════════════
+   POST /api/sync/upload-turmas
+   Importa/atualiza turmas a partir de um XLS do SUAP (via JSON/Base64)
+═══════════════════════════════════════════════════════════ */
+router.post("/sync/upload-turmas", async (req, res) => {
+  try {
+    const { arquivo } = req.body as { arquivo?: string };
+    if (!arquivo) {
+      res.status(400).json({ mensagem: "Arquivo XLS não enviado." });
+      return;
+    }
+
+    const base64 = arquivo.includes(",") ? arquivo.split(",")[1] : arquivo;
+    const buffer = Buffer.from(base64, "base64");
+
+    const workbook = XLSX.read(buffer, { type: "buffer", cellDates: true });
+    const sheetName = workbook.SheetNames[0];
+    const sheet = workbook.Sheets[sheetName];
+    const rows: Record<string, any>[] = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+
+    if (rows.length === 0) {
+      res.status(400).json({ mensagem: "Planilha vazia ou formato inválido." });
+      return;
+    }
+
+    let countAdded = 0;
+    for (const row of rows) {
+      const siglaKey = Object.keys(row).find(k => k.toUpperCase().includes("SIGLA"));
+      const sigla = siglaKey ? String(row[siglaKey]).trim() : "";
+
+      if (sigla) {
+        const [existing] = await db
+          .select()
+          .from(turmasTable)
+          .where(eq(turmasTable.nomeTurma, sigla));
+
+        if (!existing) {
+          await db.insert(turmasTable).values({
+            nomeTurma: sigla,
+            cor: "#3b82f6"
+          });
+          countAdded++;
+        }
+      }
+    }
+
+    await db.insert(syncStatusTable).values({
+      status: "success",
+      mensagem: `Turmas: ${countAdded} novas turmas adicionadas via upload manual de XLS.`,
+      detalhes: JSON.stringify({ adicionadas: countAdded }),
+      ultimaSync: new Date()
+    }).catch(() => {});
+
+    res.json({ ok: true, mensagem: `Upload processado com sucesso. ${countAdded} novas turmas adicionadas.` });
+  } catch (err: any) {
+    res.status(500).json({ mensagem: err.message || "Erro ao processar arquivo." });
   }
 });
 

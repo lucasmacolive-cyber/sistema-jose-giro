@@ -2,17 +2,30 @@
 import { useState } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { useListarAlunos, useListarTurmas } from "@workspace/api-client-react";
-import { Search, Loader2 } from "lucide-react";
+import { Search, Loader2, AlertTriangle, AlertCircle } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { useLocation } from "wouter";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 
 const COR_PADRAO = "#3b82f6";
 
 export default function AlunosPage() {
   const [search, setSearch] = useState("");
+  const [showNaoAlocadosModal, setShowNaoAlocadosModal] = useState(false);
   const [, navigate] = useLocation();
   const { data: alunos, isLoading } = useListarAlunos();
   const { data: turmas } = useListarTurmas();
+
+  const nomesTurmasExistentes = new Set(
+    (turmas ?? []).map((t: any) => t.nomeTurma?.toLowerCase().trim())
+  );
+
+  const naoAlocados = (alunos ?? []).filter((a) => {
+    if (a.situacao?.toLowerCase().startsWith("transferido")) return false;
+    const turmaClean = a.turmaAtual ? a.turmaAtual.toLowerCase().trim() : "";
+    return !turmaClean || !nomesTurmasExistentes.has(turmaClean);
+  });
 
   // Mapa turmaName -> cor
   const corPorTurma: Record<string, string> = {};
@@ -69,14 +82,25 @@ export default function AlunosPage() {
           )}
         </div>
 
-        <div className="relative max-w-md">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Buscar por nome, matrícula ou turma..."
-            className="pl-11 h-12 bg-card/50 border-white/10 focus-visible:ring-primary/30 rounded-xl"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="relative max-w-md flex-1">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Buscar por nome, matrícula ou turma..."
+              className="pl-11 h-12 bg-card/50 border-white/10 focus-visible:ring-primary/30 rounded-xl"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+          {naoAlocados.length > 0 && (
+            <button
+              onClick={() => setShowNaoAlocadosModal(true)}
+              className="flex items-center gap-2 px-5 py-3 bg-red-500/10 border border-red-500/30 hover:bg-red-500/20 text-red-400 font-bold uppercase tracking-wider text-xs rounded-xl shadow-lg transition-all hover:scale-[1.02] shrink-0 animate-pulse"
+            >
+              <AlertTriangle className="h-4 w-4 shrink-0" />
+              <span>{naoAlocados.length} Aluno(s) Não Alocado{naoAlocados.length !== 1 ? "s" : ""}</span>
+            </button>
+          )}
         </div>
 
         {isLoading ? (
@@ -123,6 +147,57 @@ export default function AlunosPage() {
           </div>
         )}
       </div>
+
+      <Dialog open={showNaoAlocadosModal} onOpenChange={setShowNaoAlocadosModal}>
+        <DialogContent className="max-w-2xl bg-[#0f172a] border-white/10 text-white rounded-2xl p-6 shadow-2xl shadow-black/80">
+          <DialogHeader className="mb-4">
+            <DialogTitle className="text-xl font-bold flex items-center gap-2 text-white">
+              <AlertCircle className="w-5 h-5 text-red-400" />
+              Alunos Não Alocados
+            </DialogTitle>
+          </DialogHeader>
+
+          <p className="text-xs text-slate-400 mb-4 leading-relaxed">
+            Estes alunos foram importados do SUAP com uma turma que não está cadastrada no sistema.
+            Clique no aluno para abrir seu perfil e associá-lo à turma correta.
+          </p>
+
+          <div className="max-h-[350px] overflow-y-auto space-y-2 pr-1 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-white/10">
+            {naoAlocados.map((aluno) => (
+              <div
+                key={aluno.id}
+                onClick={() => {
+                  setShowNaoAlocadosModal(false);
+                  navigate(`/alunos/${aluno.id}`);
+                }}
+                className="flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/5 hover:bg-white/10 hover:border-white/10 transition-all cursor-pointer group"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-bold text-white group-hover:text-cyan-400 transition-colors truncate">
+                    {aluno.nomeCompleto}
+                  </p>
+                  <div className="flex items-center gap-3 mt-1 text-[10px] text-slate-400">
+                    <span>Matrícula: {aluno.matricula || "—"}</span>
+                    <span>•</span>
+                    <span>CPF: {aluno.cpf || "—"}</span>
+                  </div>
+                </div>
+                <div className="text-right shrink-0">
+                  <span className="text-[10px] font-bold px-2 py-1 rounded bg-red-500/10 text-red-400 border border-red-500/20">
+                    Turma: {aluno.turmaAtual || "Não definida"}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="flex justify-end pt-4 border-t border-white/5">
+            <Button onClick={() => setShowNaoAlocadosModal(false)} className="bg-white/5 hover:bg-white/10 text-white">
+              Fechar
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </AppLayout>
   );
 }

@@ -464,24 +464,26 @@ export default function DiariosPage() {
             <Check className="w-4 h-4 text-emerald-400" />
             <span className="text-sm font-bold text-white">Relatório da última sincronização</span>
           </div>
-          <div className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-            {relatorio.resultados.map(r => (
-              <div key={r.turma} className={`flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-medium border ${
-                r.erro
-                  ? "bg-red-950/40 border-red-700/30 text-red-300"
-                  : "bg-emerald-950/40 border-emerald-700/30 text-emerald-300"
-              }`}>
-                {r.erro
-                  ? <XCircle className="w-3.5 h-3.5 shrink-0" />
-                  : <Check className="w-3.5 h-3.5 shrink-0" />
-                }
-                <span className="font-bold">{r.turma}</span>
-                {r.erro
-                  ? <span className="truncate opacity-70" title={r.erro}>Erro</span>
-                  : <span className="opacity-70">{r.aulas} aulas · {r.presencas} presenças</span>
-                }
-              </div>
-            ))}
+          <div className="p-4 max-h-56 overflow-y-auto scrollbar-thin scrollbar-track-transparent scrollbar-thumb-white/10">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+              {relatorio.resultados.map(r => (
+                <div key={r.turma} className={`flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-medium border ${
+                  r.erro
+                    ? "bg-red-950/40 border-red-700/30 text-red-300"
+                    : "bg-emerald-950/40 border-emerald-700/30 text-emerald-300"
+                }`}>
+                  {r.erro
+                    ? <XCircle className="w-3.5 h-3.5 shrink-0" />
+                    : <Check className="w-3.5 h-3.5 shrink-0" />
+                  }
+                  <span className="font-bold">{r.turma}</span>
+                  {r.erro
+                    ? <span className="truncate opacity-70" title={r.erro}>Erro</span>
+                    : <span className="opacity-70">{r.aulas} aulas · {r.presencas} presenças</span>
+                  }
+                </div>
+              ))}
+            </div>
           </div>
           {relatorio.turmasSemLink.length > 0 && (
             <div className="px-5 py-3 border-t border-white/10">

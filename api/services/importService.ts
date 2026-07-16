@@ -112,11 +112,6 @@ export async function processarImportacaoAlunos(rows: AlunoRow[], options: Impor
       const turmaAtual = extrairTurma(val(row, colTurma));
       const turmaAtualClean = turmaAtual.toLowerCase().trim();
 
-      // Se a turma do aluno no SUAP não existir nas turmas cadastradas na escola, pula o registro
-      if (turmaAtual && !setTurmasExistentes.has(turmaAtualClean)) {
-        continue;
-      }
-
       if (matricula) matriculasNoArquivo.add(matricula);
       nomesNoArquivo.add(nomeCompleto.toLowerCase());
 

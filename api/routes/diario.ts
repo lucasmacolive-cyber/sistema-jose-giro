@@ -583,7 +583,7 @@ router.get("/diario/turmas", requireAuth, async (req, res) => {
       ...t,
       professorResponsavel: profsMap[t.nomeTurma] || t.professorResponsavel,
       totalAlunos: countMap[t.nomeTurma] ?? 0,
-    })).filter(t => t.totalAlunos > 0);
+    }));
 
     res.json(result);
   } catch (e: any) {

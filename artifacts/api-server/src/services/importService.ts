@@ -118,10 +118,6 @@ export async function processarImportacaoAlunos(rows: AlunoRow[], options: Impor
       const turmaAtual = extrairTurma(val(row, colTurma));
       const turmaAtualClean = turmaAtual ? turmaAtual.toLowerCase().trim() : "";
 
-      if (turmaAtual && !setTurmasExistentes.has(turmaAtualClean)) {
-        continue;
-      }
-
       if (matricula) matriculasNoArquivo.add(matricula);
       nomesNoArquivo.add(nomeCompleto.toLowerCase());
 

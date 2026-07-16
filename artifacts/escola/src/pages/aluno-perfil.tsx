@@ -3,6 +3,7 @@ import { useState } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { useGetAluno, useListarAlunos, useListarTurmas, useGetMe } from "@workspace/api-client-react";
 import { useParams, useLocation } from "wouter";
+import { useToast } from "@/hooks/use-toast";
 import {
   ArrowLeft, ArrowRight, Camera, GraduationCap,
   User, Phone, MapPin, Loader2, ChevronLeft, ChevronRight,
@@ -62,15 +63,36 @@ export default function AlunoPerfilPage() {
   const params = useParams<{ id: string }>();
   const [, navigate] = useLocation();
   const id = parseInt(params.id ?? "0");
+  const { toast } = useToast();
   const { data: me } = useGetMe({ query: { retry: false } } as any);
   const isMaster = me?.perfil === "Master";
   const [imprimindo, setImprimindo] = useState(false);
   const [showWhatsAppModal, setShowWhatsAppModal] = useState(false);
   const [showEmailModal, setShowEmailModal] = useState(false);
+  const [salvandoTurma, setSalvandoTurma] = useState(false);
 
-  const { data: aluno, isLoading, isError } = useGetAluno(id, {
+  const { data: aluno, isLoading, isError, refetch } = useGetAluno(id, {
     query: { enabled: !!id && !isNaN(id) },
   } as any);
+
+  const handleMudarTurma = async (novaTurma: string) => {
+    setSalvandoTurma(true);
+    try {
+      const BASE_URL = (import.meta.env.BASE_URL ?? "/").replace(/\/$/, "") + "/";
+      const res = await fetch(`${BASE_URL}api/admin/alunos/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ turmaAtual: novaTurma || null }),
+      });
+      if (!res.ok) throw new Error("Erro ao salvar nova turma");
+      await refetch();
+      toast({ title: "Turma atualizada", description: `O aluno foi realocado na turma ${novaTurma || "Sem Turma"}.` });
+    } catch (err: any) {
+      toast({ title: "Erro ao atualizar", description: err.message, variant: "destructive" });
+    } finally {
+      setSalvandoTurma(false);
+    }
+  };
 
   const { data: todosAlunos } = useListarAlunos();
   const { data: turmas } = useListarTurmas();
@@ -488,7 +510,38 @@ export default function AlunoPerfilPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
               <Card titulo="Dados Escolares" icone={GraduationCap} cor="#3b82f6">
                 <InfoItem icon={Hash} label="Matrícula" value={aluno.matricula} />
-                <InfoItem icon={Users} label="Turma" value={aluno.turmaAtual} />
+                <div className="flex items-start gap-3 py-3 border-b border-white/5 last:border-0">
+                  <div className="mt-0.5 w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center shrink-0">
+                    <Users className="h-4 w-4 text-primary" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[0.65rem] font-bold uppercase tracking-widest text-slate-400 mb-0.5">Turma</p>
+                    {isMaster ? (
+                      <div className="relative mt-1">
+                        <select
+                          disabled={salvandoTurma}
+                          value={aluno.turmaAtual || ""}
+                          onChange={(e) => handleMudarTurma(e.target.value)}
+                          className="w-full bg-[#1e293b] border border-white/10 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-white cursor-pointer focus:outline-none focus:border-blue-500 appearance-none pr-8 disabled:opacity-50"
+                        >
+                          <option value="" className="bg-[#0f172a] text-slate-400">Sem Turma / Não Alocado</option>
+                          {(turmas ?? []).map((t: any) => (
+                            <option key={t.id} value={t.nomeTurma} className="bg-[#0f172a]">
+                              {t.nomeTurma}
+                            </option>
+                          ))}
+                        </select>
+                        {salvandoTurma ? (
+                          <Loader2 className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-white/30 animate-spin" />
+                        ) : (
+                          <Chevron className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-white/30 pointer-events-none" />
+                        )}
+                      </div>
+                    ) : (
+                      <p className="text-sm font-medium text-white truncate">{aluno.turmaAtual || "—"}</p>
+                    )}
+                  </div>
+                </div>
                 <InfoItem icon={GraduationCap} label="Turno" value={aluno.turno} />
                 <InfoItem icon={FileText} label="Situação" value={aluno.situacao} />
               </Card>

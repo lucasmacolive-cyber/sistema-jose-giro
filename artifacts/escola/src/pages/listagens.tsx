@@ -1271,6 +1271,14 @@ export default function ListagensPage() {
               )}
             </Button>
 
+            <Button
+              onClick={baixarDoc}
+              disabled={gerando || baixando || exportando || !turmaSelecionada}
+              className="px-6 bg-blue-700 hover:bg-blue-600 text-white font-bold uppercase tracking-wider text-sm rounded-xl shadow-lg shadow-blue-500/20 transition-all hover:scale-[1.02]"
+            >
+              <span className="flex items-center gap-2"><FileSpreadsheet className="h-4 w-4" />DOC</span>
+            </Button>
+
             {isMaster && (
               <Button
                 onClick={imprimirListaNaRicoh}
