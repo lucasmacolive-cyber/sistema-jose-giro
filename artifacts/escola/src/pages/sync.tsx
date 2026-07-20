@@ -1401,13 +1401,22 @@ function SecaoSincronizacao() {
     setAutoTurmasConcluido(false);
     try {
       const resp = await apiFetch("/sync/auto-turmas", { method: "POST" });
-      if (!resp.ok) {
-        setAutoTurmasRodando(false);
-        setAutoTurmasErro(resp.mensagem || "Falha ao iniciar.");
+      setAutoTurmasRodando(false);
+      if (resp.ok) {
+        setAutoTurmasPct(100);
+        setAutoTurmasMsg(resp.mensagem || "Sincronização de turmas concluída!");
+        setAutoTurmasConcluido(true);
+        setAutoTurmasAdicionadas(resp.adicionadas ?? 0);
+        toast({ title: "Turmas sincronizadas!", description: resp.mensagem });
+        apiFetch("/sync/status").then(setHistorico).catch(() => {});
+      } else {
+        setAutoTurmasErro(resp.mensagem || "Falha ao sincronizar turmas.");
+        toast({ title: "Erro na sincronização de turmas", description: resp.mensagem, variant: "destructive" });
       }
     } catch (e: any) {
       setAutoTurmasRodando(false);
       setAutoTurmasErro(e.message || "Erro ao iniciar sincronização de turmas.");
+      toast({ title: "Erro na sincronização de turmas", description: e.message, variant: "destructive" });
     }
   };
 
@@ -1524,13 +1533,21 @@ function SecaoSincronizacao() {
     setAutoConcluido(false);
     try {
       const resp = await apiFetch("/sync/auto", { method: "POST" });
-      if (!resp.ok) {
-        setAutoRodando(false);
-        setAutoErro(resp.mensagem || "Falha ao iniciar.");
+      setAutoRodando(false);
+      if (resp.ok) {
+        setAutoPct(100);
+        setAutoMsg(resp.mensagem || "Sincronização concluída!");
+        setAutoConcluido(true);
+        toast({ title: "Dados sincronizados!", description: resp.mensagem });
+        apiFetch("/sync/status").then(setHistorico).catch(() => {});
+      } else {
+        setAutoErro(resp.mensagem || "Falha na sincronização.");
+        toast({ title: "Erro na sincronização", description: resp.mensagem, variant: "destructive" });
       }
     } catch (e: any) {
       setAutoRodando(false);
       setAutoErro(e.message || "Erro ao iniciar sincronização.");
+      toast({ title: "Erro na sincronização", description: e.message, variant: "destructive" });
     }
   };
 

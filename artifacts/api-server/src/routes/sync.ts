@@ -449,93 +449,78 @@ router.post("/sync/auto", async (req, res) => {
     return;
   }
 
-  // Iniciar sync em background
   autoSyncState = { rodando: true, pct: 0, msg: "Iniciando sincronização...", erro: null, concluido: false };
-  res.json({ ok: true, mensagem: "Sincronização iniciada. Acompanhe o progresso." });
 
-  // Executar de forma assíncrona (não bloqueia a resposta)
-  (async () => {
-    try {
-      const onProgress = (pct: number, msg: string) => {
-        autoSyncState.pct = pct;
-        autoSyncState.msg = msg;
-        console.log(`[AutoSync] ${pct}% — ${msg}`);
-      };
+  try {
+    const onProgress = (pct: number, msg: string) => {
+      autoSyncState.pct = pct;
+      autoSyncState.msg = msg;
+      console.log(`[AutoSync] ${pct}% — ${msg}`);
+    };
 
-      // Baixar XLS do SUAP
-      const xlsBuffer = await sincronizarSUAP(usuario, senha, onProgress);
+    // Baixar XLS do SUAP
+    const xlsBuffer = await sincronizarSUAP(usuario, senha, onProgress);
 
-      onProgress(88, "Processando dados dos alunos...");
+    onProgress(88, "Processando dados dos alunos...");
 
-      // Parsear XLS
-      const workbook = XLSX.read(xlsBuffer, { type: "buffer", cellDates: true });
-      const sheetName = workbook.SheetNames[0];
-      const sheet = workbook.Sheets[sheetName];
-      const rows: Record<string, any>[] = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+    // Parsear XLS
+    const workbook = XLSX.read(xlsBuffer, { type: "buffer", cellDates: true });
+    const sheetName = workbook.SheetNames[0];
+    const sheet = workbook.Sheets[sheetName];
+    const rows: Record<string, any>[] = XLSX.utils.sheet_to_json(sheet, { defval: "" });
 
-      if (rows.length === 0) {
-        throw new Error("Planilha do SUAP está vazia ou formato inválido.");
-      }
-
-      onProgress(90, `${rows.length} alunos encontrados. Importando...`);
-
-      onProgress(90, `${rows.length} alunos encontrados. Importando...`);
-
-      // Importar alunos usando o serviço centralizado
-      const result = await processarImportacaoAlunos(rows, { 
-        substituirTudo: true, // AutoSync sempre sincroniza o estado atual do SUAP
-        onProgress: (pct, msg) => onProgress(pct, msg)
-      });
-
-      // Registrar no histórico
-      await db.insert(syncStatusTable).values({
-        status: "success",
-        mensagem: `${result.adicionados} novos, ${result.atualizados} atualizados, ${result.transferidos} transferidos do SUAP.`,
-        totalAlunos: String(result.adicionados + result.atualizados),
-        ultimaSync: new Date(),
-        detalhes: JSON.stringify(result.detalhes),
-      });
-
-      autoSyncState = {
-        rodando: false,
-        pct: 100,
-        msg: `✓ Sincronização concluída: ${result.adicionados} novos, ${result.atualizados} atualizados.`,
-        erro: null,
-        concluido: true,
-      };
-
-      // Registrar no histórico
-      await db.insert(syncStatusTable).values({
-        status: "success",
-        mensagem: `${importados} alunos importados automaticamente do SUAP (${erros} erros).`,
-        totalAlunos: String(importados),
-        ultimaSync: new Date(),
-      });
-
-      autoSyncState = {
-        rodando: false,
-        pct: 100,
-        msg: `✓ ${importados} alunos sincronizados com sucesso!`,
-        erro: null,
-        concluido: true,
-      };
-
-    } catch (e: any) {
-      console.error("[AutoSync] Erro:", e.message);
-      autoSyncState = {
-        rodando: false,
-        pct: 0,
-        msg: "",
-        erro: e.message || "Erro desconhecido durante a sincronização.",
-        concluido: false,
-      };
-      await db.insert(syncStatusTable).values({
-        status: "error",
-        mensagem: `Erro na sincronização automática: ${e.message}`,
-        ultimaSync: new Date(),
-      });
+    if (rows.length === 0) {
+      throw new Error("Planilha do SUAP está vazia ou formato inválido.");
     }
-  })();
+
+    onProgress(90, `${rows.length} alunos encontrados. Importando...`);
+
+    // Importar alunos usando o serviço centralizado
+    const result = await processarImportacaoAlunos(rows, { 
+      substituirTudo: true, // AutoSync sempre sincroniza o estado atual do SUAP
+      onProgress: (pct, msg) => onProgress(pct, msg)
+    });
+
+    // Registrar no histórico
+    await db.insert(syncStatusTable).values({
+      status: "success",
+      mensagem: `${result.adicionados} novos, ${result.atualizados} atualizados, ${result.transferidos} transferidos do SUAP.`,
+      totalAlunos: String(result.adicionados + result.atualizados),
+      ultimaSync: new Date(),
+      detalhes: JSON.stringify(result.detalhes),
+    });
+
+    autoSyncState = {
+      rodando: false,
+      pct: 100,
+      msg: `✓ Sincronização concluída: ${result.adicionados} novos, ${result.atualizados} atualizados.`,
+      erro: null,
+      concluido: true,
+    };
+
+    res.json({
+      ok: true,
+      mensagem: `Sincronização concluída com sucesso! ${result.adicionados} novos alunos adicionados, ${result.atualizados} atualizados e ${result.transferidos} transferidos do SUAP.`,
+      adicionados: result.adicionados,
+      atualizados: result.atualizados,
+    });
+
+  } catch (e: any) {
+    console.error("[AutoSync] Erro:", e.message);
+    autoSyncState = {
+      rodando: false,
+      pct: 0,
+      msg: "",
+      erro: e.message || "Erro desconhecido durante a sincronização.",
+      concluido: false,
+    };
+    await db.insert(syncStatusTable).values({
+      status: "error",
+      mensagem: `Erro na sincronização automática: ${e.message}`,
+      ultimaSync: new Date(),
+    });
+    res.status(500).json({ ok: false, mensagem: e.message || "Erro durante a sincronização." });
+  }
 });
 
 /* ═══════════════════════════════════════════════════════════
@@ -713,86 +698,91 @@ router.post("/sync/auto-turmas", async (req, res) => {
   }
 
   autoSyncTurmasState = { rodando: true, pct: 0, msg: "Iniciando sincronização de turmas...", erro: null, concluido: false, adicionadas: 0 };
-  res.json({ ok: true, mensagem: "Sincronização de turmas iniciada. Acompanhe o progresso." });
 
-  (async () => {
-    try {
-      const onProgress = (pct: number, msg: string) => {
-        autoSyncTurmasState.pct = pct;
-        autoSyncTurmasState.msg = msg;
-        console.log(`[AutoSyncTurmas] ${pct}% — ${msg}`);
-      };
+  try {
+    const onProgress = (pct: number, msg: string) => {
+      autoSyncTurmasState.pct = pct;
+      autoSyncTurmasState.msg = msg;
+      console.log(`[AutoSyncTurmas] ${pct}% — ${msg}`);
+    };
 
-      const xlsBuffer = await sincronizarTurmasSUAP(usuario, senha, onProgress);
+    const xlsBuffer = await sincronizarTurmasSUAP(usuario, senha, onProgress);
 
-      onProgress(88, "Lendo dados das turmas...");
+    onProgress(88, "Lendo dados das turmas...");
 
-      const workbook = XLSX.read(xlsBuffer, { type: "buffer", cellDates: true });
-      const sheetName = workbook.SheetNames[0];
-      const sheet = workbook.Sheets[sheetName];
-      const rows: Record<string, any>[] = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+    const workbook = XLSX.read(xlsBuffer, { type: "buffer", cellDates: true });
+    const sheetName = workbook.SheetNames[0];
+    const sheet = workbook.Sheets[sheetName];
+    const rows: Record<string, any>[] = XLSX.utils.sheet_to_json(sheet, { defval: "" });
 
-      if (rows.length === 0) {
-        throw new Error("Planilha de turmas do SUAP está vazia ou formato inválido.");
-      }
+    if (rows.length === 0) {
+      throw new Error("Planilha de turmas do SUAP está vazia ou formato inválido.");
+    }
 
-      onProgress(90, `${rows.length} registros de turmas encontrados. Importando...`);
+    onProgress(90, `${rows.length} registros de turmas encontrados. Importando...`);
 
-      let countAdded = 0;
-      for (const row of rows) {
-        const siglaKey = Object.keys(row).find(k => k.toUpperCase().includes("SIGLA"));
-        const sigla = siglaKey ? String(row[siglaKey]).trim() : "";
+    let countAdded = 0;
+    for (const row of rows) {
+      const siglaKey = Object.keys(row).find(k => k.toUpperCase().includes("SIGLA"));
+      const sigla = siglaKey ? String(row[siglaKey]).trim() : "";
 
-        if (sigla) {
-          const [existing] = await db
-            .select()
-            .from(turmasTable)
-            .where(eq(turmasTable.nomeTurma, sigla));
+      if (sigla) {
+        const [existing] = await db
+          .select()
+          .from(turmasTable)
+          .where(eq(turmasTable.nomeTurma, sigla));
 
-          if (!existing) {
-            await db.insert(turmasTable).values({
-              nomeTurma: sigla,
-              cor: "#3b82f6"
-            });
-            countAdded++;
-          }
+        if (!existing) {
+          await db.insert(turmasTable).values({
+            nomeTurma: sigla,
+            cor: "#3b82f6"
+          });
+          countAdded++;
         }
       }
-
-      autoSyncTurmasState = {
-        rodando: false,
-        pct: 100,
-        msg: `Sincronização concluída! ${countAdded} novas turmas adicionadas.`,
-        erro: null,
-        concluido: true,
-        adicionadas: countAdded,
-      };
-
-      await db.insert(syncStatusTable).values({
-        status: "success",
-        mensagem: `Turmas: Sincronização automática concluída. ${countAdded} novas turmas adicionadas.`,
-        detalhes: JSON.stringify({ adicionadas: countAdded }),
-        ultimaSync: new Date()
-      }).catch(() => {});
-
-    } catch (e: any) {
-      console.error("Erro na sincronização automática de turmas:", e);
-      autoSyncTurmasState = {
-        rodando: false,
-        pct: 0,
-        msg: "Falha na sincronização.",
-        erro: e.message || "Erro desconhecido.",
-        concluido: false,
-        adicionadas: 0,
-      };
-
-      await db.insert(syncStatusTable).values({
-        status: "error",
-        mensagem: "Erro ao sincronizar turmas automaticamente: " + e.message,
-        ultimaSync: new Date()
-      }).catch(() => {});
     }
-  })();
+
+    autoSyncTurmasState = {
+      rodando: false,
+      pct: 100,
+      msg: `Sincronização concluída! ${countAdded} novas turmas adicionadas.`,
+      erro: null,
+      concluido: true,
+      adicionadas: countAdded,
+    };
+
+    await db.insert(syncStatusTable).values({
+      status: "success",
+      mensagem: `Turmas: Sincronização automática concluída. ${countAdded} novas turmas adicionadas.`,
+      detalhes: JSON.stringify({ adicionadas: countAdded }),
+      ultimaSync: new Date()
+    }).catch(() => {});
+
+    res.json({
+      ok: true,
+      mensagem: `Sincronização de turmas concluída com sucesso! ${countAdded} novas turmas adicionadas.`,
+      adicionadas: countAdded,
+    });
+
+  } catch (e: any) {
+    console.error("Erro na sincronização automática de turmas:", e);
+    autoSyncTurmasState = {
+      rodando: false,
+      pct: 0,
+      msg: "Falha na sincronização.",
+      erro: e.message || "Erro desconhecido.",
+      concluido: false,
+      adicionadas: 0,
+    };
+
+    await db.insert(syncStatusTable).values({
+      status: "error",
+      mensagem: "Erro ao sincronizar turmas automaticamente: " + e.message,
+      ultimaSync: new Date()
+    }).catch(() => {});
+
+    res.status(500).json({ ok: false, mensagem: e.message || "Erro durante a sincronização das turmas." });
+  }
 });
 
 /* ═══════════════════════════════════════════════════════════
