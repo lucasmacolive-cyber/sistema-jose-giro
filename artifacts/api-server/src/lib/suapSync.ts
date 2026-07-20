@@ -856,3 +856,72 @@ export async function identificarDiarioPorLinks(
   }
   return resultado;
 }
+
+export async function sincronizarTurmasSUAP(
+  usuario: string,
+  senha: string,
+  onProgress: ProgressCallback
+): Promise<Buffer> {
+  const jar = await suapLogin(usuario, senha, onProgress);
+
+  onProgress(30, "Acessando painel de turmas...");
+  const listResp = await request("GET", "/admin/edu/turma/?ano_letivo__id__exact=9", jar);
+  if (listResp.status !== 200) {
+    throw new Error(`Falha ao acessar lista de turmas (status ${listResp.status})`);
+  }
+
+  onProgress(50, "Buscando link de exportação...");
+  const exportPath = encontrarLinkExport(listResp.text);
+  if (!exportPath) {
+    throw new Error("Não foi possível encontrar o botão 'Exportar para XLS' na página.");
+  }
+
+  const exportUrl = resolverPath(exportPath);
+  console.log(`[SyncTurmas] Link de exportação: ${exportUrl}`);
+  onProgress(65, "Iniciando exportação das turmas...");
+  const confirmResp = await request("GET", exportUrl, jar);
+
+  if (isXlsBuffer(confirmResp.body, confirmResp.headers["content-type"] || "")) {
+    onProgress(90, "Download do arquivo XLS concluído!");
+    return confirmResp.body;
+  }
+
+  onProgress(75, "Processando formato de arquivo (XLS)...");
+  const csrf = extractCsrf(confirmResp.text, jar);
+  
+  let formatValue = "1"; // Default django-import-export XLS
+  const formatMatches = [...confirmResp.text.matchAll(/<option[^>]+value="([^"]+)"[^>]*>([^<]+)/g)];
+  const xlsOption = formatMatches.find(m => m[2].toLowerCase().includes("xls"));
+  if (xlsOption) {
+    formatValue = xlsOption[1];
+  }
+
+  const postBody = new URLSearchParams({
+    csrfmiddlewaretoken: csrf,
+    file_format: formatValue
+  }).toString();
+
+  onProgress(85, "Baixando planilha de turmas...");
+  const downloadResp = await request("POST", exportUrl, jar, postBody, {
+    Referer: `${SUAP_BASE}${exportUrl}`,
+    "Content-Type": "application/x-www-form-urlencoded"
+  });
+
+  const ct = downloadResp.headers["content-type"] || "";
+  let finalBody = downloadResp.body;
+  let finalCt = ct;
+
+  if (downloadResp.status === 302 && downloadResp.headers.location) {
+    const redirectUrl = resolverPath(downloadResp.headers.location);
+    const redirectResp = await request("GET", redirectUrl, jar);
+    finalBody = redirectResp.body;
+    finalCt = redirectResp.headers["content-type"] || "";
+  }
+
+  if (isXlsBuffer(finalBody, finalCt)) {
+    onProgress(95, "Planilha recebida com sucesso!");
+    return finalBody;
+  }
+
+  throw new Error("O SUAP não retornou um arquivo de planilha XLS válido.");
+}
