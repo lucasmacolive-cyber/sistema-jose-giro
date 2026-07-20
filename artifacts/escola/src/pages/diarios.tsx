@@ -79,6 +79,12 @@ export default function DiariosPage() {
       fetch(`${BASE}/api/sync/diario-links-meta`, { credentials: "include" }).then((r) => r.json()),
   });
 
+  const { data: freqStats } = useQuery({
+    queryKey: ["diario-frequencia-stats"],
+    queryFn: () =>
+      fetch(`${BASE}/api/diario/frequencia-stats`, { credentials: "include" }).then((r) => r.json()),
+  });
+
   const { fase, progresso, ultimaSyncGlob, relatorio, iniciarSincronizacaoGlobal } = useSyncGlobal();
   const ultimaSync = ultimaSyncGlob;
 
@@ -442,13 +448,13 @@ export default function DiariosPage() {
       </div>
 
       {manha.length > 0 && (
-        <Section titulo="Turno da Manhã" icon={<Sun className="w-4 h-4" />} turmas={manha} linksMeta={linksMeta} />
+        <Section titulo="Turno da Manhã" icon={<Sun className="w-4 h-4" />} turmas={manha} linksMeta={linksMeta} freqStats={freqStats} />
       )}
       {tarde.length > 0 && (
-        <Section titulo="Turno da Tarde" icon={<Sunset className="w-4 h-4" />} turmas={tarde} linksMeta={linksMeta} />
+        <Section titulo="Turno da Tarde" icon={<Sunset className="w-4 h-4" />} turmas={tarde} linksMeta={linksMeta} freqStats={freqStats} />
       )}
       {outros.length > 0 && (
-        <Section titulo="Outros Turnos" icon={<GraduationCap className="w-4 h-4" />} turmas={outros} linksMeta={linksMeta} />
+        <Section titulo="Outros Turnos" icon={<GraduationCap className="w-4 h-4" />} turmas={outros} linksMeta={linksMeta} freqStats={freqStats} />
       )}
 
       {turmas?.length === 0 && (
@@ -698,7 +704,31 @@ export default function DiariosPage() {
   );
 }
 
-function Section({ titulo, icon, turmas, linksMeta }: { titulo: string; icon: React.ReactNode; turmas: TurmaInfo[]; linksMeta: any }) {
+/* ─── Anel de frequência (inline) ─── */
+function FreqRing({ pct, size = 44 }: { pct: number | null; size?: number }) {
+  const cor = pct === null ? "#64748b" : pct >= 75 ? "#10b981" : pct >= 50 ? "#f59e0b" : "#ef4444";
+  const r = (size - 8) / 2;
+  const circ = 2 * Math.PI * r;
+  const filled = pct !== null ? (pct / 100) * circ : 0;
+  return (
+    <svg width={size} height={size} className="shrink-0">
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth={5} />
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={cor}
+        strokeWidth={5} strokeLinecap="round"
+        strokeDasharray={`${filled} ${circ}`}
+        strokeDashoffset={circ / 4}
+        style={{ transition: "stroke-dasharray 0.6s ease", filter: `drop-shadow(0 0 5px ${cor}88)` }}
+      />
+      <text x="50%" y="50%" textAnchor="middle" dominantBaseline="middle"
+        fill="#fff" fontSize={pct !== null ? 10 : 8} fontWeight="bold"
+      >
+        {pct !== null ? `${pct}%` : "—"}
+      </text>
+    </svg>
+  );
+}
+
+function Section({ titulo, icon, turmas, linksMeta, freqStats }: { titulo: string; icon: React.ReactNode; turmas: TurmaInfo[]; linksMeta: any; freqStats: any }) {
   return (
     <div className="mb-8">
       <div className="flex items-center gap-2 mb-4">
@@ -712,14 +742,17 @@ function Section({ titulo, icon, turmas, linksMeta }: { titulo: string; icon: Re
           const syncInfo = linksMeta?.links?.find(
             (l: any) => l.turma?.toUpperCase() === t.nomeTurma.toUpperCase()
           );
-          return <TurmaCard key={t.id} turma={t} ultimaSync={syncInfo?.ultimaSync} />;
+          const classFreq = freqStats?.turmas?.find(
+            (tf: any) => tf.turma?.toUpperCase() === t.nomeTurma.toUpperCase()
+          );
+          return <TurmaCard key={t.id} turma={t} ultimaSync={syncInfo?.ultimaSync} pct={classFreq?.pct ?? null} />;
         })}
       </div>
     </div>
   );
 }
 
-function TurmaCard({ turma, ultimaSync }: { turma: TurmaInfo; ultimaSync?: string | null }) {
+function TurmaCard({ turma, ultimaSync, pct }: { turma: TurmaInfo; ultimaSync?: string | null; pct: number | null }) {
   const cor = turma.cor || "#3b82f6";
   const textColor = contrastColor(cor);
   const hoje = new Date();
@@ -742,11 +775,8 @@ function TurmaCard({ turma, ultimaSync }: { turma: TurmaInfo; ultimaSync?: strin
               <div className="text-2xl font-black tracking-tight">{turma.nomeTurma}</div>
               <div className="text-xs font-medium mt-0.5 opacity-70">{turma.turno}</div>
             </div>
-            <div
-              className="w-9 h-9 rounded-xl flex items-center justify-center transition-transform group-hover:translate-x-1"
-              style={{ background: "rgba(0,0,0,0.18)" }}
-            >
-              <ChevronRight className="w-5 h-5" />
+            <div className="transition-transform group-hover:scale-105">
+              <FreqRing pct={pct} size={44} />
             </div>
           </div>
 
