@@ -1725,14 +1725,59 @@ function SecaoSincronizacao() {
         </div>
       </div>
 
-      {/* ── Upload Manual de XLS ── */}
+      {/* ── Sincronizar Alunos do SUAP ── */}
       <div className="bg-[#0f172a] rounded-2xl border border-cyan-500/20 p-5">
         <h3 className="text-sm font-bold text-cyan-400 mb-1 flex items-center gap-2">
-          <FileSpreadsheet className="h-4 w-4" /> Importar XLS Manualmente
+          <Users className="h-4 w-4" /> Sincronizar Alunos do SUAP
         </h3>
         <p className="text-xs text-slate-400 mb-4">
-          Baixou o arquivo XLS do SUAP manualmente? Arraste-o aqui para importar os alunos direto, sem precisar da extensão.
+          Importe a lista de alunos do SUAP para o sistema. Você pode sincronizar automaticamente (usando o robô) ou fazer upload do arquivo XLS exportado do SUAP.
         </p>
+
+        {/* Sincronização automática via servidor */}
+        <div className="mb-4 p-4 rounded-xl border border-white/8 bg-white/3 flex flex-col gap-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-semibold text-white/80">Sincronização Direta pelo Servidor (Robô)</p>
+              <p className="text-[11px] text-slate-500 mt-0.5">O servidor faz o login no SUAP e atualiza a listagem de todos os alunos.</p>
+            </div>
+            <Button
+              onClick={iniciarSyncAuto}
+              disabled={autoRodando}
+              className="bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs"
+            >
+              {autoRodando ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <RefreshCcw className="h-3.5 w-3.5 mr-1" />}
+              {autoRodando ? "Sincronizando..." : "Sincronizar Alunos"}
+            </Button>
+          </div>
+
+          {autoRodando && (
+            <div className="mt-2">
+              <div className="h-1.5 rounded-full bg-white/10 overflow-hidden">
+                <div
+                  className="h-full rounded-full bg-cyan-500 transition-all duration-500"
+                  style={{ width: `${autoPct}%` }}
+                />
+              </div>
+              <div className="flex justify-between mt-1 text-[11px]">
+                <span className="text-cyan-400">{autoMsg}</span>
+                <span className="text-slate-500">{autoPct}%</span>
+              </div>
+            </div>
+          )}
+
+          {autoConcluido && (
+            <div className="text-xs text-emerald-400 font-medium">
+              Sincronização de alunos concluída com sucesso!
+            </div>
+          )}
+
+          {autoErro && (
+            <div className="text-xs text-red-400 font-medium">
+              Erro na sincronização: {autoErro}
+            </div>
+          )}
+        </div>
 
         {/* Toggle substituirTudo */}
         <label className="flex items-start gap-3 cursor-pointer mb-4 p-3 rounded-xl border border-white/8 bg-white/3 hover:bg-white/5 transition-colors group">
@@ -1744,7 +1789,7 @@ function SecaoSincronizacao() {
           />
           <div>
             <p className="text-sm font-semibold text-white/80 group-hover:text-white transition-colors">
-              Atualizar toda a lista de alunos
+              Atualizar toda a lista de alunos (para upload manual)
             </p>
             <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">
               Alunos que não aparecem na nova planilha serão marcados automaticamente como <span className="text-amber-400/80">Transferido/Saída</span>.
