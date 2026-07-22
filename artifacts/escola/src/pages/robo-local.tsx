@@ -6,6 +6,7 @@ import {
   Bot, Play, Settings, Check, XCircle, Loader2, Clock,
   CalendarDays, Cpu, Wifi, WifiOff, Zap, RefreshCcw,
   Trash2, Plus, Save, Power, BookOpen, Users,
+  History, CheckCircle2, AlertTriangle, Info, Search, Filter, FileText,
 } from "lucide-react";
 
 const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -267,6 +268,235 @@ function ProximasExecucoes({ lista }: { lista: any[] }) {
   );
 }
 
+/* ─── Histórico de Atualizações / Log ──────────────────────────────────── */
+function HistoricoAtualizacoes({
+  logs,
+  loading,
+  onRefresh,
+  onClear,
+}: {
+  logs: any[];
+  loading: boolean;
+  onRefresh: () => void;
+  onClear: () => void;
+}) {
+  const [filterStatus, setFilterStatus] = useState<string>("todos");
+  const [searchQuery, setSearchQuery] = useState<string>("");
+  const [clearing, setClearing] = useState(false);
+
+  async function handleClear() {
+    if (!confirm("Deseja realmente limpar todo o histórico de atualizações?")) return;
+    setClearing(true);
+    await onClear();
+    setClearing(false);
+  }
+
+  // Filtragem dos registros
+  const filtered = logs.filter((item) => {
+    if (filterStatus === "sucesso" && item.status !== "sucesso") return false;
+    if (filterStatus === "erro" && item.status !== "erro") return false;
+    if (filterStatus === "info" && item.status !== "info" && item.status !== "em_andamento") return false;
+
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      const ev = (item.evento || "").toLowerCase();
+      const det = (item.detalhes || "").toLowerCase();
+      const tp = (item.tipo || "").toLowerCase();
+      const dh = (item.dataHora || "").toLowerCase();
+      return ev.includes(q) || det.includes(q) || tp.includes(q) || dh.includes(q);
+    }
+    return true;
+  });
+
+  return (
+    <div className="bg-white/5 border border-white/10 rounded-2xl p-6 flex flex-col gap-5 shadow-xl backdrop-blur-md">
+      {/* Topo do Log */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-white/10 pb-4">
+        <div className="flex items-center gap-3">
+          <div className="p-2.5 rounded-xl bg-violet-500/10 border border-violet-500/20 text-violet-400">
+            <History className="h-5 w-5" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="text-base font-bold text-white tracking-tight">Histórico de Atualizações</h2>
+              <span className="px-2 py-0.5 rounded-full bg-white/10 text-xs font-semibold text-slate-300">
+                {filtered.length} {filtered.length === 1 ? "registro" : "registros"}
+              </span>
+            </div>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Log detalhado das sincronizações, status de erros e comandos executados pelo Robô Escolar.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            onClick={onRefresh}
+            disabled={loading}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-xs font-medium text-slate-300 hover:text-white transition-all disabled:opacity-50"
+            title="Atualizar Logs"
+          >
+            <RefreshCcw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
+            Atualizar
+          </button>
+          {logs.length > 0 && (
+            <button
+              onClick={handleClear}
+              disabled={clearing}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-red-500/10 border border-red-500/20 hover:bg-red-500/20 text-xs font-medium text-red-300 transition-all disabled:opacity-50"
+              title="Limpar Histórico"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              Limpar Log
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Barra de Filtro e Busca */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+        {/* Input de Busca */}
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Buscar por evento, erro, turma ou data..."
+            className="w-full bg-black/30 border border-white/10 rounded-xl pl-9 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-violet-500/50"
+          />
+        </div>
+
+        {/* Abas de Filtro de Status */}
+        <div className="flex items-center gap-1 bg-black/30 p-1 rounded-xl border border-white/5">
+          {[
+            { id: "todos", label: "Todos" },
+            { id: "sucesso", label: "Sem Erros" },
+            { id: "erro", label: "Com Erros" },
+            { id: "info", label: "Informações" },
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setFilterStatus(tab.id)}
+              className={`px-3 py-1 rounded-lg text-xs font-medium transition-all ${
+                filterStatus === tab.id
+                  ? "bg-white/10 text-white shadow-sm font-semibold"
+                  : "text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Lista de Registros */}
+      {loading && logs.length === 0 ? (
+        <div className="flex items-center justify-center gap-2 py-8 text-slate-400 text-xs">
+          <Loader2 className="h-4 w-4 animate-spin text-violet-400" />
+          Carregando histórico de atualizações...
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="text-center py-8 text-slate-400 text-xs bg-black/20 rounded-xl border border-white/5 space-y-1">
+          <FileText className="h-6 w-6 text-slate-500 mx-auto mb-2 opacity-50" />
+          <p className="font-semibold text-slate-300">Nenhum registro encontrado</p>
+          <p className="text-slate-500">
+            {searchQuery || filterStatus !== "todos"
+              ? "Tente ajustar a busca ou o filtro de status."
+              : "Nenhuma atualização foi registrada no histórico ainda."}
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-2.5 max-h-[500px] overflow-y-auto pr-1">
+          {filtered.map((item, idx) => {
+            const isSucesso = item.status === "sucesso";
+            const isErro = item.status === "erro";
+            const isInfo = item.status === "info" || item.status === "em_andamento";
+
+            let TipoIcon = Cpu;
+            let tipoLabel = "Robô";
+            let tipoBadgeClass = "bg-purple-500/10 text-purple-300 border-purple-500/20";
+
+            if (item.tipo === "diarios") {
+              TipoIcon = BookOpen;
+              tipoLabel = "Diários";
+              tipoBadgeClass = "bg-emerald-500/10 text-emerald-300 border-emerald-500/20";
+            } else if (item.tipo === "alunos") {
+              TipoIcon = Users;
+              tipoLabel = "Alunos";
+              tipoBadgeClass = "bg-blue-500/10 text-blue-300 border-blue-500/20";
+            } else if (item.tipo === "agenda") {
+              TipoIcon = Settings;
+              tipoLabel = "Agenda";
+              tipoBadgeClass = "bg-amber-500/10 text-amber-300 border-amber-500/20";
+            }
+
+            return (
+              <div
+                key={item.id || idx}
+                className={`p-4 rounded-xl border transition-all ${
+                  isErro
+                    ? "bg-red-500/5 border-red-500/20 hover:border-red-500/30"
+                    : isSucesso
+                    ? "bg-emerald-500/5 border-emerald-500/20 hover:border-emerald-500/30"
+                    : "bg-white/5 border-white/10 hover:border-white/20"
+                }`}
+              >
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div className="flex items-start sm:items-center gap-2.5">
+                    {/* Icone de Status */}
+                    {isSucesso && <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5 sm:mt-0" />}
+                    {isErro && <XCircle className="h-4 w-4 text-red-400 shrink-0 mt-0.5 sm:mt-0" />}
+                    {isInfo && <Info className="h-4 w-4 text-blue-400 shrink-0 mt-0.5 sm:mt-0" />}
+
+                    {/* Título do Evento */}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm font-bold text-white">{item.evento}</span>
+                      <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold border flex items-center gap-1 ${tipoBadgeClass}`}>
+                        <TipoIcon className="h-3 w-3" />
+                        {tipoLabel}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Badges de Status & Timestamp */}
+                  <div className="flex items-center gap-3 shrink-0 self-end sm:self-auto">
+                    <span className="flex items-center gap-1 text-[11px] text-slate-400">
+                      <Clock className="h-3 w-3 text-slate-500" />
+                      {item.dataHora}
+                    </span>
+
+                    <span
+                      className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${
+                        isSucesso
+                          ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
+                          : isErro
+                          ? "bg-red-500/10 border-red-500/30 text-red-400"
+                          : "bg-blue-500/10 border-blue-500/30 text-blue-400"
+                      }`}
+                    >
+                      {isSucesso ? "Sem Erros" : isErro ? "Com Erro" : "Informação"}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Detalhes / Diagnóstico de erro */}
+                {item.detalhes && (
+                  <div className="mt-2.5 pt-2 border-t border-white/5 text-xs">
+                    <p className={`font-sans leading-relaxed ${isErro ? "text-red-300/90 font-medium" : "text-slate-300"}`}>
+                      {item.detalhes}
+                    </p>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ─── Página principal ─────────────────────────────────────────────────── */
 export default function RoboLocalPage() {
   const { data: me } = useGetMe();
@@ -274,7 +504,9 @@ export default function RoboLocalPage() {
   const [online, setOnline] = useState<boolean | null>(null);
   const [status, setStatus] = useState<any>(null);
   const [config, setConfig] = useState<any>(null);
+  const [logs, setLogs] = useState<any[]>([]);
   const [loadingConfig, setLoadingConfig] = useState(false);
+  const [loadingLogs, setLoadingLogs] = useState(false);
   const [salvando, setSalvando] = useState(false);
   const [savedOk, setSavedOk] = useState(false);
   const [syncingDiarios, setSyncingDiarios] = useState(false);
@@ -292,6 +524,9 @@ export default function RoboLocalPage() {
       if (res.ok) {
         setOnline(res.online);
         setStatus(res.status || null);
+        if (res.logs && Array.isArray(res.logs)) {
+          setLogs(res.logs);
+        }
         // Só sobrescreve a config local se ainda não foi carregada OU se for explicitamente forçado
         if ((!hasLoadedConfig || forceConfig) && !salvando) {
           setConfig(res.config || {
@@ -310,7 +545,7 @@ export default function RoboLocalPage() {
     }
   }, [salvando, hasLoadedConfig]);
 
-  // ── Polling mais leve apenas de status (preserva a config que o usuário digita) ──
+  // ── Polling mais leve apenas de status e logs ──
   const loadStatusOnly = useCallback(async () => {
     try {
       const r = await fetch(`${BASE}/api/robo/status`, {
@@ -320,11 +555,48 @@ export default function RoboLocalPage() {
       if (res.ok) {
         setOnline(res.online);
         setStatus(res.status || null);
+        if (res.logs && Array.isArray(res.logs)) {
+          setLogs(res.logs);
+        }
       } else {
         setOnline(false);
       }
     } catch {
       setOnline(false);
+    }
+  }, []);
+
+  const loadLogsOnly = useCallback(async () => {
+    setLoadingLogs(true);
+    try {
+      const r = await fetch(`${BASE}/api/robo/logs`, {
+        credentials: "include",
+      });
+      const res = await r.json();
+      if (res.ok && Array.isArray(res.logs)) {
+        setLogs(res.logs);
+      }
+    } catch (e) {
+      console.error("Erro ao buscar logs:", e);
+    } finally {
+      setLoadingLogs(false);
+    }
+  }, []);
+
+  const clearLogs = useCallback(async () => {
+    try {
+      const r = await fetch(`${BASE}/api/robo/logs`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      const res = await r.json();
+      if (res.ok) {
+        setLogs([]);
+      } else {
+        alert("Erro ao limpar histórico: " + res.error);
+      }
+    } catch (e) {
+      alert("Erro de conexão ao limpar histórico: " + e);
     }
   }, []);
 
@@ -627,6 +899,14 @@ export default function RoboLocalPage() {
             )}
           </div>
         )}
+
+        {/* ── Histórico de Atualizações / Log ─────────────────────────────── */}
+        <HistoricoAtualizacoes
+          logs={logs}
+          loading={loadingLogs}
+          onRefresh={loadLogsOnly}
+          onClear={clearLogs}
+        />
 
         {/* ── Rodapé informativo ────────────────────────────────────────── */}
         <div className="bg-white/3 border border-white/5 rounded-2xl p-4 flex items-start gap-3">
