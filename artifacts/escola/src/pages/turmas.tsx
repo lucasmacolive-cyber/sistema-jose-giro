@@ -721,7 +721,7 @@ export default function TurmasPage() {
         {/* ── Painel Flutuante: Alunos Sem Turma ── */}
         <PainelAlunosSemTurma
           todosAlunos={todosAlunos}
-          turmas={turmasData}
+          turmas={turmas}
           onUpdated={() => {
             mutateTurmas();
             mutateAlunos();
@@ -747,7 +747,9 @@ function PainelAlunosSemTurma({
   const [turmaSelecionadaMap, setTurmaSelecionadaMap] = useState<Record<number, string>>({});
   const [salvandoMap, setSalvandoMap] = useState<Record<number, boolean>>({});
 
-  const turmasNomes = new Set((turmas ?? []).map((t) => t.nomeTurma.trim().toLowerCase()));
+  if (!turmas || !Array.isArray(turmas) || turmas.length === 0) return null;
+
+  const turmasNomes = new Set(turmas.map((t) => (t.nomeTurma || "").trim().toLowerCase()));
 
   // Filtra alunos que estão no arquivo ativo e não têm turma ou a turma é inválida
   const alunosSemTurma = (todosAlunos ?? []).filter((a) => {
