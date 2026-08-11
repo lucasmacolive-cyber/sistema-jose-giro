@@ -140,17 +140,13 @@ router.post("/impressoes/heartbeat", async (req, res) => {
 router.get("/impressoes/status-agente", async (_req, res) => {
   try {
     const [c] = await db.select().from(configuracoesTable).where(eq(configuracoesTable.chave, "last_heartbeat_impressora")).limit(1);
-    const [r] = await db.select().from(configuracoesTable).where(eq(configuracoesTable.chave, "last_heartbeat_ricoh")).limit(1);
-    const [e] = await db.select().from(configuracoesTable).where(eq(configuracoesTable.chave, "last_heartbeat_epson")).limit(1);
     const [rs] = await db.select().from(configuracoesTable).where(eq(configuracoesTable.chave, "ricoh_status")).limit(1);
     const [es] = await db.select().from(configuracoesTable).where(eq(configuracoesTable.chave, "epson_status")).limit(1);
     
     const online = c ? (Date.now() - new Date(c.valor).getTime() < 45000) : false;
-    const ricohOnlineVal = r ? (Date.now() - new Date(r.valor).getTime() < 45000) : false;
-    const epsonOnlineVal = e ? (Date.now() - new Date(e.valor).getTime() < 45000) : false;
     
-    const ricohStatus = ricohOnlineVal ? (rs?.valor || "online") : "offline";
-    const epsonStatus = epsonOnlineVal ? (es?.valor || "online") : "offline";
+    const ricohStatus = online ? (rs?.valor || "online") : "offline";
+    const epsonStatus = online ? (es?.valor || "online") : "offline";
     
     res.json({ 
       online, 
@@ -296,31 +292,24 @@ def _win32_by_name(name_match):
     """
     Consulta Win32_Printer pelo nome (funciona mesmo sem rede, detecta USB e rede local).
     PrinterStatus:
-      0 = Other, 1 = Unknown, 2 = Idle (DISPONIVEL)
-      3 = Printing, 4 = Warmup (IMPRIMINDO/AQUECENDO)
-      5 = Stop Printing, 6 = Offline
-      7 = Power Save (MODO ESPERA)
-    Retorna: 'online', 'descanso', 'offline', ou None se nao encontrar
-    """
+def _win32_by_name(name_match):
     try:
-        cmd = f"Get-CimInstance Win32_Printer | Where-Object {{ $_.Name -match '{name_match}' }} | Select-Object Name,PrinterStatus,WorkOffline | ConvertTo-Json"
+        regex_term = "(?i)EPSON|L3250|L3150|L4160|L5290|Epson" if "EPSON" in name_match.upper() else ("(?i)RICOH|3710|SP 3" if "RICOH" in name_match.upper() else name_match)
+        cmd = f"Get-CimInstance Win32_Printer | Where-Object {{ $_.Name -match '{regex_term}' }} | Select-Object Name,PrinterStatus,WorkOffline | ConvertTo-Json"
         out = subprocess.check_output(["powershell", "-Command", cmd],
                                       text=True, creationflags=0x08000000, timeout=6).strip()
         if not out: return None
         data = _json.loads(out)
         if isinstance(data, dict): data = [data]
         for d in data:
-            if d.get("WorkOffline"): continue  # marcado como offline no Windows
+            if d.get("WorkOffline") is True: continue
             st = d.get("PrinterStatus", 0)
-            if st in (2, 3, 4): return "online"   # Idle, Printing, Warmup
-            if st == 7:         return "descanso"  # Power Save
-            if st == 6:         continue           # Offline marcado
-        # Se achou impressoras mas nenhuma boa, retorna descanso (pode ser estado transitório)
-        return "descanso"
+            if st in (0, 1, 2, 3, 4): return "online"
+            if st == 7: return "descanso"
+        return "online" if data else None
     except: return None
 
 def _win32_by_ip(ip):
-    """Busca Win32_Printer pela porta IP (PortName contendo o IP)."""
     try:
         cmd = f"Get-CimInstance Win32_Printer | Where-Object {{ $_.PortName -like '*{ip}*' }} | Select-Object Name,PrinterStatus,WorkOffline | ConvertTo-Json"
         out = subprocess.check_output(["powershell", "-Command", cmd],
@@ -329,40 +318,28 @@ def _win32_by_ip(ip):
         data = _json.loads(out)
         if isinstance(data, dict): data = [data]
         for d in data:
-            if d.get("WorkOffline"): continue
+            if d.get("WorkOffline") is True: continue
             st = d.get("PrinterStatus", 0)
-            if st in (2, 3, 4): return "online"
-            if st == 7:         return "descanso"
-        return "descanso"
+            if st in (0, 1, 2, 3, 4): return "online"
+            if st == 7: return "descanso"
+        return "online" if data else None
     except: return None
 
-def check_printer(ip, name_match):
-    """
-    Estratégia em 3 camadas (da mais confiável para a menos):
-    1. Win32_Printer por nome -> detecta USB e rede local sem depender de ping
-    2. Win32_Printer por IP de porta -> confirma pelo IP configurado no Windows
-    3. Ping + TCP -> para impressoras de rede não registradas no Windows
-    Retorna: 'online', 'descanso', ou 'offline'
-    """
-    # Camada 1: Win32 por nome (mais confiável, independente de rede)
+def check_printer(name_match, ip):
     w_name = _win32_by_name(name_match)
-    if w_name == "online":   return "online"
-    if w_name == "descanso": return "descanso"
+    if w_name in ("online", "descanso"): return w_name
 
-    # Camada 2: Win32 por IP (caso o nome seja diferente do esperado)
-    has_ip = ip and re.match(r"^\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}$", ip.strip())
+    has_ip = ip and re.match(r"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$", str(ip).strip())
     if has_ip:
-        w_ip = _win32_by_ip(ip.strip())
-        if w_ip == "online":   return "online"
-        if w_ip == "descanso": return "descanso"
+        ip_clean = str(ip).strip()
+        w_ip = _win32_by_ip(ip_clean)
+        if w_ip in ("online", "descanso"): return w_ip
+        if not _ping(ip_clean): return "offline"
+        if _tcp(ip_clean, 9100) or _tcp(ip_clean, 80) or _tcp(ip_clean, 515): return "online"
+        return "descanso"
 
-    # Camada 3: Ping + TCP (rede)
-    if has_ip:
-        ip = ip.strip()
-        if not _ping(ip): return "offline"
-        # Ping respondeu -> está na rede, verifica se acordada
-        if _tcp(ip, 9100) or _tcp(ip, 80): return "online"
-        return "descanso"  # Ping ok mas porta fechada = modo sleep
+    if w_name is not None:
+        return "online"
 
     return "offline"
 

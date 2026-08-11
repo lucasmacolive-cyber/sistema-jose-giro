@@ -337,12 +337,9 @@ def _tcp_open(ip, port=9100, timeout=1.5):
         return False
 
 def _win32_status(name_match):
-    """
-    Consulta o Win32_Printer via PowerShell.
-    PrinterStatus: 3=Idle, 4=Printing -> online | 7=Power Save -> descanso
-    """
     try:
-        cmd = f"Get-CimInstance Win32_Printer | Where-Object {{ $_.Name -match '{name_match}' }} | Select-Object Name, PrinterStatus | ConvertTo-Json"
+        regex_term = "(?i)EPSON|L3250|L3150|L4160|L5290|Epson" if "EPSON" in name_match.upper() else ("(?i)RICOH|3710|SP 3" if "RICOH" in name_match.upper() else name_match)
+        cmd = f"Get-CimInstance Win32_Printer | Where-Object {{ $_.Name -match '{regex_term}' }} | Select-Object Name, PrinterStatus, WorkOffline | ConvertTo-Json"
         out = subprocess.check_output(["powershell", "-Command", cmd],
                                       text=True, creationflags=0x08000000, timeout=5).strip()
         if not out:
@@ -351,33 +348,31 @@ def _win32_status(name_match):
         if isinstance(data, dict):
             data = [data]
         for d in data:
+            if d.get("WorkOffline") is True: continue
             st = d.get("PrinterStatus", 0)
-            if st in (3, 4):
+            if st in (0, 1, 2, 3, 4):
                 return "online"
             if st == 7:
                 return "descanso"
-        return "offline"
+        return "online" if data else None
     except:
         return None
 
 def check_printer_status(ip, name_match):
-    """
-    'offline'  : sem resposta de ping
-    'descanso' : ping ok mas porta 9100 fechada (modo sleep)
-    'online'   : ping ok E (porta 9100 aberta OU Win32 diz Idle/Printing)
-    """
-    if not ip or not re.match(r"^\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}$", ip.strip()):
-        return "offline"
-    ip = ip.strip()
-    if not _ping(ip):
-        return "offline"
-    tcp = _tcp_open(ip, 9100) or _tcp_open(ip, 80)
     win32 = _win32_status(name_match)
-    if tcp or win32 == "online":
+    if win32 in ("online", "descanso"):
+        return win32
+
+    if ip and re.match(r"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$", str(ip).strip()):
+        ip_clean = str(ip).strip()
+        if _ping(ip_clean):
+            tcp = _tcp_open(ip_clean, 9100) or _tcp_open(ip_clean, 80)
+            return "online" if tcp else "descanso"
+
+    if win32 is not None:
         return "online"
-    if win32 == "descanso":
-        return "descanso"
-    return "descanso"
+
+    return "offline"
 
 def get_ips():
     try:

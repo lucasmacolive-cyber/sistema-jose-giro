@@ -54,4 +54,26 @@ router.get("/alunos/:id", async (req, res) => {
   res.json(alunos[0]);
 });
 
+router.patch("/alunos/:id", async (req, res) => {
+  const id = parseInt(req.params.id);
+  if (isNaN(id)) return res.status(400).json({ ok: false, mensagem: "ID inválido" });
+  try {
+    const { turmaAtual, situacao, arquivoMorto } = req.body;
+    const updates: any = {};
+    if (turmaAtual !== undefined) updates.turmaAtual = turmaAtual;
+    if (situacao !== undefined) updates.situacao = situacao;
+    if (arquivoMorto !== undefined) updates.arquivoMorto = arquivoMorto;
+
+    const [atualizado] = await db.update(alunosTable)
+      .set(updates)
+      .where(eq(alunosTable.id, id))
+      .returning();
+
+    if (!atualizado) return res.status(404).json({ ok: false, mensagem: "Aluno não encontrado" });
+    res.json({ ok: true, aluno: atualizado });
+  } catch (e: any) {
+    res.status(500).json({ ok: false, mensagem: e.message });
+  }
+});
+
 export default router;

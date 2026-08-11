@@ -718,8 +718,203 @@ export default function TurmasPage() {
             }}
           />
         )}
+        {/* ── Painel Flutuante: Alunos Sem Turma ── */}
+        <PainelAlunosSemTurma
+          todosAlunos={todosAlunos}
+          turmas={turmasData}
+          onUpdated={() => {
+            mutateTurmas();
+            mutateAlunos();
+          }}
+        />
       </AnimatePresence>
     </AppLayout>
+  );
+}
+
+/* ─── Painel Flutuante no Rodapé: Alunos Sem Turma ───────────────────────── */
+function PainelAlunosSemTurma({
+  todosAlunos,
+  turmas,
+  onUpdated,
+}: {
+  todosAlunos: any[] | undefined;
+  turmas: any[] | undefined;
+  onUpdated: () => void;
+}) {
+  const [expandido, setExpandido] = useState(false);
+  const [busca, setBusca] = useState("");
+  const [turmaSelecionadaMap, setTurmaSelecionadaMap] = useState<Record<number, string>>({});
+  const [salvandoMap, setSalvandoMap] = useState<Record<number, boolean>>({});
+
+  const turmasNomes = new Set((turmas ?? []).map((t) => t.nomeTurma.trim().toLowerCase()));
+
+  // Filtra alunos que estão no arquivo ativo e não têm turma ou a turma é inválida
+  const alunosSemTurma = (todosAlunos ?? []).filter((a) => {
+    if (a.arquivoMorto === 1) return false;
+    const situacao = (a.situacao || "").toLowerCase();
+    if (situacao.includes("transferido") || situacao.includes("cancelado") || situacao.includes("evadido")) return false;
+    const t = (a.turmaAtual || "").trim();
+    if (!t || t === "Sem Turma") return true;
+    return !turmasNomes.has(t.toLowerCase());
+  });
+
+  if (alunosSemTurma.length === 0) return null;
+
+  const alunosFiltrados = alunosSemTurma.filter((a) => {
+    if (!busca.trim()) return true;
+    const q = busca.toLowerCase();
+    return (a.nomeCompleto || "").toLowerCase().includes(q) || (a.matricula || "").toLowerCase().includes(q);
+  });
+
+  async function enturmarAluno(alunoId: number) {
+    const novaTurma = turmaSelecionadaMap[alunoId];
+    if (!novaTurma) {
+      alert("Selecione uma turma para alocar o aluno.");
+      return;
+    }
+
+    setSalvandoMap((prev) => ({ ...prev, [alunoId]: true }));
+    try {
+      const res = await fetch(`${BASE}/api/alunos/${alunoId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ turmaAtual: novaTurma, situacao: "Matriculado" }),
+      });
+      if (res.ok) {
+        onUpdated();
+      } else {
+        alert("Erro ao enturmar aluno.");
+      }
+    } catch {
+      alert("Erro de conexão ao enturmar aluno.");
+    } finally {
+      setSalvandoMap((prev) => ({ ...prev, [alunoId]: false }));
+    }
+  }
+
+  return (
+    <div className="fixed bottom-4 right-4 z-40 max-w-lg w-[calc(100vw-2rem)] sm:w-full">
+      <AnimatePresence mode="wait">
+        {!expandido ? (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 20 }}
+            onClick={() => setExpandido(true)}
+            className="cursor-pointer bg-[#0f172a]/95 border border-amber-500/40 p-4 rounded-2xl shadow-2xl backdrop-blur-xl flex items-center justify-between gap-3 text-white hover:border-amber-500/70 transition-all group"
+          >
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30 group-hover:scale-105 transition-transform">
+                <Users className="h-5 w-5" />
+              </div>
+              <div>
+                <p className="text-xs font-black uppercase text-amber-400 tracking-wider">Aviso de Enturmação</p>
+                <p className="text-sm font-bold text-white">
+                  {alunosSemTurma.length} {alunosSemTurma.length === 1 ? "aluno sem turma" : "alunos sem turma"}
+                </p>
+              </div>
+            </div>
+            <button className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs shadow-lg transition-all">
+              Enturmar Alunos
+            </button>
+          </motion.div>
+        ) : (
+          <motion.div
+            initial={{ opacity: 0, y: 30, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 30, scale: 0.95 }}
+            className="bg-[#0f172a]/98 border border-amber-500/40 rounded-3xl p-5 shadow-2xl backdrop-blur-2xl text-white space-y-4 max-h-[80vh] flex flex-col"
+          >
+            <div className="flex items-center justify-between pb-3 border-b border-white/10 shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                  <Users className="h-4 w-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white">Alunos Não Enturmados</h3>
+                  <p className="text-[11px] text-slate-400">
+                    Selecione a turma de cada aluno para alocá-lo no sistema.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setExpandido(false)}
+                className="p-1 rounded-lg hover:bg-white/10 text-slate-400 hover:text-white transition-colors"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="relative shrink-0">
+              <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-slate-400" />
+              <input
+                type="text"
+                value={busca}
+                onChange={(e) => setBusca(e.target.value)}
+                placeholder="Buscar aluno por nome ou matrícula..."
+                className="w-full h-8 pl-8 pr-3 bg-white/5 border border-white/10 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500/50"
+              />
+            </div>
+
+            <div className="overflow-y-auto space-y-2 flex-1 pr-1 max-h-[350px]">
+              {alunosFiltrados.length === 0 ? (
+                <p className="text-xs text-slate-400 text-center py-6">Nenhum aluno encontrado na busca.</p>
+              ) : (
+                alunosFiltrados.map((aluno) => {
+                  const salvando = salvandoMap[aluno.id] || false;
+                  return (
+                    <div
+                      key={aluno.id}
+                      className="p-3 rounded-xl bg-black/40 border border-white/6 flex flex-col gap-2"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="text-xs font-bold text-white truncate">{aluno.nomeCompleto}</p>
+                          <p className="text-[10px] text-slate-400">
+                            {aluno.matricula ? `Matrícula: ${aluno.matricula}` : "Sem matrícula"}
+                            {aluno.turmaAtual && (
+                              <span className="ml-2 text-amber-400/90 font-mono">
+                                (Lido: {aluno.turmaAtual})
+                              </span>
+                            )}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 pt-1 border-t border-white/5">
+                        <select
+                          value={turmaSelecionadaMap[aluno.id] || ""}
+                          onChange={(e) =>
+                            setTurmaSelecionadaMap((prev) => ({ ...prev, [aluno.id]: e.target.value }))
+                          }
+                          className="flex-1 h-8 px-2 rounded-lg bg-[#0f172a] text-white border border-white/15 text-xs focus:outline-none focus:border-amber-500/60"
+                        >
+                          <option value="">Selecione a Turma...</option>
+                          {(turmas ?? []).map((t) => (
+                            <option key={t.id} value={t.nomeTurma}>
+                              {t.nomeTurma} ({t.turno || "Manhã"})
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          onClick={() => enturmarAluno(aluno.id)}
+                          disabled={salvando || !turmaSelecionadaMap[aluno.id]}
+                          className="h-8 px-3 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs shadow transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 shrink-0"
+                        >
+                          {salvando && <Loader2 className="h-3 w-3 animate-spin" />}
+                          Enturmar
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
   );
 }
 

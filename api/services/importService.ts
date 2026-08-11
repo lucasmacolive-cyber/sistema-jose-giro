@@ -78,9 +78,40 @@ export async function processarImportacaoAlunos(rows: AlunoRow[], options: Impor
   const val = (row: AlunoRow, col: string | undefined): string =>
     col ? String(row[col] ?? "").trim() : "";
 
-  const extrairTurma = (raw: string): string => {
-    const m = raw.match(/\(([^)]+)\)/);
-    return m ? m[1].trim() : raw.trim();
+  const extrairInformacoesTurma = (rawCell: string) => {
+    if (!rawCell) return { turma: "", ano: "", turno: "" };
+    const raw = String(rawCell).trim();
+
+    // Extrai a sigla da turma de dentro dos parênteses: ex "20261.3.03161.1M (3AM01)" -> "3AM01"
+    let turma = "";
+    const mParen = raw.match(/\(([^)]+)\)/);
+    if (mParen && mParen[1]) {
+      const inside = mParen[1].trim();
+      if (!/^(19|20)\d{2}(\.[0-9]+|\/[0-9]+)?$/.test(inside)) {
+        turma = inside;
+      }
+    }
+
+    if (!turma) {
+      const before = raw.split("(")[0].trim();
+      turma = (before.length <= 20) ? before : raw;
+    }
+
+    let ano = "";
+    const mAno = raw.match(/^(20\d{2})/);
+    if (mAno) ano = mAno[1];
+
+    let turno = "";
+    const mTurno = raw.match(/([MTNI])\s*\(/i);
+    if (mTurno) {
+      const code = mTurno[1].toUpperCase();
+      if (code === "M") turno = "Manhã";
+      else if (code === "T") turno = "Tarde";
+      else if (code === "N") turno = "Noite";
+      else if (code === "I") turno = "Integral";
+    }
+
+    return { turma, ano, turno };
   };
 
   let adicionados = 0;
@@ -107,25 +138,34 @@ export async function processarImportacaoAlunos(rows: AlunoRow[], options: Impor
     try {
       const matricula = val(row, colMatricula);
       const nomeCompleto = val(row, colNome);
-      if (!nomeCompleto) continue;
+      if (!nomeCompleto || nomeCompleto.length < 3) {
+        errosCount++;
+        continue;
+      }
 
-      const turmaAtual = extrairTurma(val(row, colTurma));
-      const turmaAtualClean = turmaAtual.toLowerCase().trim();
+      const rawTurmaCell = val(row, colTurma);
+      const { turma: turmaExtraida, ano: anoExtraido, turno: turnoExtraido } = extrairInformacoesTurma(rawTurmaCell);
+      
+      // Se houver algum erro no registro ou a turma extraída for inválida, deixa sem turma para atribuição manual
+      const turmaValida = turmaExtraida && setTurmasExistentes.has(turmaExtraida.toLowerCase().trim());
+      const turmaFinal = turmaValida ? turmaExtraida : (turmaExtraida || null);
 
       if (matricula) matriculasNoArquivo.add(matricula);
       nomesNoArquivo.add(nomeCompleto.toLowerCase());
 
       const rawSituacao = val(row, colSituacao);
-      const situacaoNormalized = String(rawSituacao).toLowerCase().includes("matriculado") 
-        ? "Matriculado" 
-        : (rawSituacao || "Matriculado");
+      const isMatriculado = String(rawSituacao).toLowerCase().includes("matriculado");
+      const situacaoNormalized = isMatriculado ? "Matriculado" : (rawSituacao || "Matriculado");
+      const isSaida = ["transferido", "cancelado", "concluído", "concluido", "evadido", "jubilado"].some(s =>
+        situacaoNormalized.toLowerCase().includes(s)
+      );
 
       const alunoData: any = {
         nomeCompleto,
         matricula: matricula || null,
         dataNascimento: formatarData(colNascimento ? row[colNascimento] : undefined),
-        turmaAtual: turmaAtual || null,
-        turno: val(row, colTurno) || null,
+        turmaAtual: turmaFinal,
+        turno: val(row, colTurno) || turnoExtraido || null,
         situacao: situacaoNormalized,
         nomeMae: val(row, colMae) || null,
         nomePai: val(row, colPai) || null,
@@ -137,7 +177,7 @@ export async function processarImportacaoAlunos(rows: AlunoRow[], options: Impor
         etnia: val(row, colEtnia) || null,
         emailPessoal: val(row, colEmailPessoal) || null,
         emailResponsavel: val(row, colEmailResp) || null,
-        anoIngresso: val(row, colAnoIngresso) || null,
+        anoIngresso: val(row, colAnoIngresso) || anoExtraido || null,
         nivelEnsino: val(row, colNivel) || null,
         descricaoCurso: val(row, colCurso) || null,
         codigoCurso: val(row, colCodCurso) || null,
@@ -145,7 +185,7 @@ export async function processarImportacaoAlunos(rows: AlunoRow[], options: Impor
         cpf: val(row, colCPF) || null,
         rg: val(row, colRG) || null,
         naturalidade: val(row, colNaturalidade) || null,
-        arquivoMorto: 0, // Garante que volta ao arquivo ativo se estiver no XLS
+        arquivoMorto: isSaida ? 1 : 0,
       };
 
       const cpfLimpo = alunoData.cpf ? alunoData.cpf.replace(/\D/g, "") : "";

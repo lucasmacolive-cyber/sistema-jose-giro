@@ -7,7 +7,20 @@ import { sql } from "drizzle-orm";
 
 const router: IRouter = Router();
 
+// Garantir coluna link_suap_alunos no PostgreSQL
+let colCheckDone = false;
+async function ensureColumns() {
+  if (colCheckDone) return;
+  try {
+    await db.execute(sql`ALTER TABLE turmas ADD COLUMN IF NOT EXISTS link_suap_alunos VARCHAR(255);`);
+    colCheckDone = true;
+  } catch (e) {
+    console.error("Erro ao garantir coluna link_suap_alunos:", e);
+  }
+}
+
 router.get("/turmas", async (req, res) => {
+  await ensureColumns();
   const turmas = await db.select().from(turmasTable).orderBy(turmasTable.nomeTurma);
 
   const turmasComCount = await Promise.all(
@@ -39,6 +52,7 @@ router.get("/turmas", async (req, res) => {
 });
 
 router.get("/turmas/:id", async (req, res) => {
+  await ensureColumns();
   const id = parseInt(req.params.id);
   if (isNaN(id)) { res.status(400).json({ erro: "id_invalido", mensagem: "ID inválido" }); return; }
 
@@ -67,8 +81,9 @@ router.get("/turmas/:id", async (req, res) => {
 });
 
 router.post("/turmas", async (req, res) => {
+  await ensureColumns();
   try {
-    const { nomeTurma, turno, professorResponsavel, cor, linkSuap } = req.body;
+    const { nomeTurma, turno, professorResponsavel, cor, linkSuap, linkSuapAlunos } = req.body;
     if (!nomeTurma) {
       res.status(400).json({ erro: "dados_incompletos", mensagem: "Nome da turma é obrigatório" });
       return;
@@ -78,7 +93,8 @@ router.post("/turmas", async (req, res) => {
       turno: turno || "Manhã",
       professorResponsavel: professorResponsavel || null,
       cor: cor || "#3b82f6",
-      linkSuap: linkSuap || null
+      linkSuap: linkSuap || null,
+      linkSuapAlunos: linkSuapAlunos || null
     }).returning();
     res.json(nova);
   } catch (e: any) {
@@ -86,14 +102,55 @@ router.post("/turmas", async (req, res) => {
   }
 });
 
-router.patch("/turmas/:id", async (req, res) => {
+router.post("/turmas/salvar-links-suap-alunos", async (req, res) => {
+  await ensureColumns();
+  try {
+    const { links } = req.body; // Array de { turmaId: number, linkSuapAlunos: string }
+    if (!Array.isArray(links)) {
+      return res.status(400).json({ ok: false, mensagem: "Parâmetro 'links' deve ser uma lista." });
+    }
+    let salvos = 0;
+    for (const entry of links) {
+      if (entry.turmaId) {
+        await db.update(turmasTable)
+          .set({ linkSuapAlunos: entry.linkSuapAlunos || null })
+          .where(eq(turmasTable.id, entry.turmaId));
+        salvos++;
+      }
+    }
+    res.json({ ok: true, salvos });
+  } catch (e: any) {
+    res.status(500).json({ ok: false, mensagem: e.message });
+  }
+});
+
+router.patch("/turmas/:id/link-suap-alunos", async (req, res) => {
+  await ensureColumns();
   const id = parseInt(req.params.id);
   if (isNaN(id)) { res.status(400).json({ erro: "id_invalido", mensagem: "ID inválido" }); return; }
 
   try {
-    const { linkSuap, professorResponsavel, cor, turno, nomeTurma } = req.body;
+    const { linkSuapAlunos } = req.body;
+    const [atualizada] = await db.update(turmasTable)
+      .set({ linkSuapAlunos: linkSuapAlunos || null })
+      .where(eq(turmasTable.id, id))
+      .returning();
+    res.json({ ok: true, turma: atualizada });
+  } catch (e: any) {
+    res.status(500).json({ ok: false, mensagem: e.message });
+  }
+});
+
+router.patch("/turmas/:id", async (req, res) => {
+  await ensureColumns();
+  const id = parseInt(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ erro: "id_invalido", mensagem: "ID inválido" }); return; }
+
+  try {
+    const { linkSuap, linkSuapAlunos, professorResponsavel, cor, turno, nomeTurma } = req.body;
     const updates: any = {};
     if (linkSuap !== undefined) updates.linkSuap = linkSuap;
+    if (linkSuapAlunos !== undefined) updates.linkSuapAlunos = linkSuapAlunos;
     if (professorResponsavel !== undefined) updates.professorResponsavel = professorResponsavel;
     if (cor !== undefined) updates.cor = cor;
     if (turno !== undefined) updates.turno = turno;
@@ -128,6 +185,7 @@ router.patch("/turmas/:id", async (req, res) => {
 });
 
 router.delete("/turmas/:id", async (req, res) => {
+  await ensureColumns();
   const id = parseInt(req.params.id);
   if (isNaN(id)) { res.status(400).json({ erro: "id_invalido", mensagem: "ID inválido" }); return; }
 

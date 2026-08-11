@@ -1229,6 +1229,268 @@ function BlocoDiariosSinc({ extensaoInstalada, apiBase }: { extensaoInstalada: b
   );
 }
 
+/* ═══════════════════════════════════════════
+   BLOCO: Configuração dos Links dos Alunos por Turma (Excel SUAP)
+═══════════════════════════════════════════ */
+function BlocoLinksAlunosSuap({ apiBase }: { apiBase: string }) {
+  const { toast } = useToast();
+  const [turmas, setTurmas] = useState<any[]>([]);
+  const [carregandoTurmas, setCarregandoTurmas] = useState(true);
+  const [linksPerTurma, setLinksPerTurma] = useState<Record<number, string>>({});
+  const [linksDirty, setLinksDirty] = useState<Record<number, boolean>>({});
+  const [salvandoTodos, setSalvandoTodos] = useState(false);
+  const [salvandoSingle, setSalvandoSingle] = useState<Record<number, boolean>>({});
+
+  const carregarTurmas = useCallback(async () => {
+    setCarregandoTurmas(true);
+    try {
+      const r = await fetch(`${apiBase}/api/diario/turmas`, { credentials: "include" });
+      const data: any[] = await r.json();
+      setTurmas(Array.isArray(data) ? data : []);
+
+      const initialLinks: Record<number, string> = {};
+      for (const t of data) {
+        if (t.linkSuapAlunos) initialLinks[t.id] = t.linkSuapAlunos;
+      }
+      setLinksPerTurma(initialLinks);
+    } catch {
+      toast({ title: "Erro ao carregar turmas", variant: "destructive" });
+    } finally {
+      setCarregandoTurmas(false);
+    }
+  }, [apiBase, toast]);
+
+  useEffect(() => {
+    carregarTurmas();
+  }, [carregarTurmas]);
+
+  const setLink = (turmaId: number, value: string) => {
+    setLinksPerTurma(prev => ({ ...prev, [turmaId]: value }));
+    setLinksDirty(prev => ({ ...prev, [turmaId]: true }));
+  };
+
+  const salvarLinkTurma = async (turmaId: number, nomeTurma: string) => {
+    const link = linksPerTurma[turmaId] || "";
+    setSalvandoSingle(prev => ({ ...prev, [turmaId]: true }));
+    try {
+      await fetch(`${apiBase}/api/turmas/${turmaId}/link-suap-alunos`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ linkSuapAlunos: link }),
+      });
+      setLinksDirty(prev => ({ ...prev, [turmaId]: false }));
+      toast({ title: "Link salvo", description: `Link dos alunos da turma ${nomeTurma} foi atualizado.` });
+    } catch (err: any) {
+      toast({ title: "Erro ao salvar", description: err.message, variant: "destructive" });
+    } finally {
+      setSalvandoSingle(prev => ({ ...prev, [turmaId]: false }));
+    }
+  };
+
+  const salvarTodosOsLinks = async () => {
+    setSalvandoTodos(true);
+    try {
+      const entries = turmas
+        .filter(t => linksPerTurma[t.id]?.trim())
+        .map(t => ({ turmaId: t.id, linkSuapAlunos: linksPerTurma[t.id].trim() }));
+
+      const r = await fetch(`${apiBase}/api/turmas/salvar-links-suap-alunos`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ links: entries }),
+      });
+      const d = await r.json();
+      if (d.ok) {
+        setLinksDirty({});
+        toast({ title: `${d.salvos} links de alunos salvos!`, description: "Os links de dados do SUAP foram salvos por turma." });
+      } else {
+        toast({ title: "Erro ao salvar", description: d.mensagem, variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Erro de conexão", variant: "destructive" });
+    } finally {
+      setSalvandoTodos(false);
+    }
+  };
+
+  const manha  = turmas.filter(t => t.turno?.toLowerCase().includes("manh"));
+  const tarde  = turmas.filter(t => t.turno?.toLowerCase().includes("tard"));
+  const outros = turmas.filter(t => !t.turno?.toLowerCase().includes("manh") && !t.turno?.toLowerCase().includes("tard"));
+
+  const qtdLinksPreenchidos = turmas.filter(t => linksPerTurma[t.id]?.includes("suap")).length;
+  const algumDirty = Object.values(linksDirty).some(Boolean);
+
+  const TurmaAlunoLinkRow = ({ t }: { t: any }) => {
+    const link = linksPerTurma[t.id] ?? "";
+    const dirty = linksDirty[t.id] ?? false;
+    const salvando = salvandoSingle[t.id] ?? false;
+    const turnoEmoji = t.turno?.toLowerCase().includes("manh") ? "🌅" : t.turno?.toLowerCase().includes("tard") ? "🌇" : "🎓";
+
+    const handleClearLink = async () => {
+      setLinksPerTurma(prev => ({ ...prev, [t.id]: "" }));
+      try {
+        await fetch(`${apiBase}/api/turmas/${t.id}/link-suap-alunos`, {
+          method: "PATCH",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ linkSuapAlunos: "" }),
+        });
+        setLinksDirty(prev => ({ ...prev, [t.id]: false }));
+        toast({ title: "Link removido", description: `Link da turma ${t.nomeTurma} foi removido.` });
+      } catch (err: any) {
+        toast({ title: "Erro ao remover link", description: err.message, variant: "destructive" });
+      }
+    };
+
+    return (
+      <div className="flex flex-col gap-3 p-3.5 rounded-2xl bg-black/25 border border-white/6 hover:border-emerald-500/30 transition-all">
+        <div className="flex items-center justify-between gap-3 min-w-0">
+          <div className="flex items-center gap-3 min-w-0 flex-1">
+            <span className="text-lg leading-none shrink-0">{turnoEmoji}</span>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <p className="text-xs font-bold text-white truncate">{t.nomeTurma}</p>
+                {link ? (
+                  <span className="text-[0.55rem] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-medium shrink-0">Com Link Alunos</span>
+                ) : (
+                  <span className="text-[0.55rem] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 font-medium shrink-0">Sem Link Alunos</span>
+                )}
+              </div>
+              <p className="text-[0.65rem] text-slate-400 mt-0.5">{t.turno || "Manhã"}</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-1.5 shrink-0">
+            {dirty && (
+              <button
+                onClick={() => salvarLinkTurma(t.id, t.nomeTurma)}
+                disabled={salvando}
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[0.7rem] transition-all shadow"
+              >
+                {salvando ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
+                Salvar
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1">
+            <input
+              type="url"
+              value={link}
+              onChange={e => setLink(t.id, e.target.value)}
+              placeholder="Ex: https://suap.campos.rj.gov.br/edu/turma/45575/?tab=dados_alunos"
+              className="w-full bg-black/40 border border-white/10 rounded-xl px-3 py-1.5 text-xs text-white placeholder:text-slate-600 focus:outline-none focus:border-emerald-500/60 font-mono transition-colors"
+            />
+            {link && (
+              <button
+                onClick={handleClearLink}
+                title="Limpar link"
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 p-0.5 rounded"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="bg-[#0f172a] rounded-2xl border border-emerald-500/20 p-5 space-y-4 my-6">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h3 className="text-sm font-bold text-emerald-400 flex items-center gap-2">
+            <FileSpreadsheet className="h-4 w-4" /> Configuração dos Links dos Alunos por Turma (Excel SUAP)
+          </h3>
+          <p className="text-xs text-slate-400 mt-1">
+            Cole abaixo os links das turmas do SUAP (ex: <code className="text-emerald-300 font-mono text-[11px]">https://suap.campos.rj.gov.br/edu/turma/45575/?tab=dados_alunos</code>). Esses links serão utilizados para baixar a lista de alunos em Excel diretamente do SUAP.
+          </p>
+        </div>
+        <button
+          onClick={carregarTurmas}
+          className="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-white/5 transition-colors shrink-0"
+          title="Recarregar turmas"
+        >
+          <RefreshCcw className="h-4 w-4" />
+        </button>
+      </div>
+
+      {carregandoTurmas ? (
+        <div className="flex items-center justify-center py-8 text-slate-400 gap-2">
+          <Loader2 className="h-5 w-5 animate-spin text-emerald-400" />
+          <span className="text-xs">Carregando turmas...</span>
+        </div>
+      ) : turmas.length === 0 ? (
+        <div className="p-6 text-center text-xs text-slate-500 border border-white/5 rounded-2xl bg-white/[0.01]">
+          Nenhuma turma cadastrada. Cadastre turmas para configurar os links de alunos.
+        </div>
+      ) : (
+        <>
+          <div className="space-y-4 max-h-[450px] overflow-y-auto pr-1">
+            {manha.length > 0 && (
+              <div>
+                <p className="text-[0.65rem] font-bold uppercase tracking-wider text-amber-400 mb-2 flex items-center gap-1.5">
+                  <span>🌅</span> Manhã ({manha.length} turmas)
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                  {manha.map(t => <TurmaAlunoLinkRow key={t.id} t={t} />)}
+                </div>
+              </div>
+            )}
+
+            {tarde.length > 0 && (
+              <div>
+                <p className="text-[0.65rem] font-bold uppercase tracking-wider text-orange-400 mb-2 flex items-center gap-1.5">
+                  <span>🌇</span> Tarde ({tarde.length} turmas)
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                  {tarde.map(t => <TurmaAlunoLinkRow key={t.id} t={t} />)}
+                </div>
+              </div>
+            )}
+
+            {outros.length > 0 && (
+              <div>
+                <p className="text-[0.65rem] font-bold uppercase tracking-wider text-slate-400 mb-2 flex items-center gap-1.5">
+                  <span>🎓</span> Outros ({outros.length} turmas)
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                  {outros.map(t => <TurmaAlunoLinkRow key={t.id} t={t} />)}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="pt-3 border-t border-white/10 flex flex-col gap-2">
+            <button
+              onClick={salvarTodosOsLinks}
+              disabled={salvandoTodos || (qtdLinksPreenchidos === 0 && !algumDirty)}
+              className={`flex items-center justify-center gap-2 w-full py-2.5 rounded-xl text-xs font-bold transition-all border ${
+                salvandoTodos
+                  ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/30 cursor-wait"
+                  : algumDirty || qtdLinksPreenchidos > 0
+                  ? "bg-emerald-600 text-white border-emerald-500 hover:bg-emerald-500"
+                  : "bg-white/5 text-slate-500 border-white/5 cursor-not-allowed"
+              }`}
+            >
+              {salvandoTodos ? (
+                <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Salvando todos os links...</>
+              ) : (
+                <><Save className="h-3.5 w-3.5" /> Salvar todos os links de alunos ({qtdLinksPreenchidos} turmas preenchidas)</>
+              )}
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function SecaoSincronizacao() {
   const { toast } = useToast();
   const [extensaoInstalada, setExtensaoInstalada] = useState<boolean | null>(null);
@@ -2155,6 +2417,11 @@ function SecaoSincronizacao() {
           BLOCO DIÁRIOS — Sincronização dos Diários via Extensão
       ═══════════════════════════════════════════ */}
       <BlocoDiariosSinc extensaoInstalada={extensaoInstalada} apiBase={window.location.origin + BASE} />
+
+      {/* ═══════════════════════════════════════════
+          BLOCO LINKS ALUNOS — Configuração dos Links dos Alunos por Turma (Excel SUAP)
+      ═══════════════════════════════════════════ */}
+      <BlocoLinksAlunosSuap apiBase={window.location.origin + BASE} />
 
       {/* ── Histórico ── */}
       <div className="bg-[#0f172a] rounded-2xl border border-white/[0.07] p-5">

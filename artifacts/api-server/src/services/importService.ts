@@ -113,25 +113,33 @@ export async function processarImportacaoAlunos(rows: AlunoRow[], options: Impor
     try {
       const matricula = val(row, colMatricula);
       const nomeCompleto = val(row, colNome);
-      if (!nomeCompleto) continue;
+      if (!nomeCompleto || nomeCompleto.length < 3) {
+        errosCount++;
+        continue;
+      }
 
-      const turmaAtual = extrairTurma(val(row, colTurma));
-      const turmaAtualClean = turmaAtual ? turmaAtual.toLowerCase().trim() : "";
+      const rawTurmaCell = val(row, colTurma);
+      const { turma: turmaExtraida, ano: anoExtraido, turno: turnoExtraido } = extrairInformacoesTurma(rawTurmaCell);
+      
+      const turmaValida = turmaExtraida && setTurmasExistentes.has(turmaExtraida.toLowerCase().trim());
+      const turmaFinal = turmaValida ? turmaExtraida : (turmaExtraida || null);
 
       if (matricula) matriculasNoArquivo.add(matricula);
       nomesNoArquivo.add(nomeCompleto.toLowerCase());
 
       const rawSituacao = val(row, colSituacao);
-      const situacaoNormalized = String(rawSituacao).toLowerCase().includes("matriculado") 
-        ? "Matriculado" 
-        : (rawSituacao || "Matriculado");
+      const isMatriculado = String(rawSituacao).toLowerCase().includes("matriculado");
+      const situacaoNormalized = isMatriculado ? "Matriculado" : (rawSituacao || "Matriculado");
+      const isSaida = ["transferido", "cancelado", "concluído", "concluido", "evadido", "jubilado"].some(s =>
+        situacaoNormalized.toLowerCase().includes(s)
+      );
 
       const alunoData: any = {
         nomeCompleto,
         matricula: matricula || null,
         dataNascimento: formatarData(colNascimento ? row[colNascimento] : undefined),
-        turmaAtual: turmaAtual || null,
-        turno: val(row, colTurno) || null,
+        turmaAtual: turmaFinal,
+        turno: val(row, colTurno) || turnoExtraido || null,
         situacao: situacaoNormalized,
         nomeMae: val(row, colMae) || null,
         nomePai: val(row, colPai) || null,
@@ -143,7 +151,7 @@ export async function processarImportacaoAlunos(rows: AlunoRow[], options: Impor
         etnia: val(row, colEtnia) || null,
         emailPessoal: val(row, colEmailPessoal) || null,
         emailResponsavel: val(row, colEmailResp) || null,
-        anoIngresso: val(row, colAnoIngresso) || null,
+        anoIngresso: val(row, colAnoIngresso) || anoExtraido || null,
         nivelEnsino: val(row, colNivel) || null,
         descricaoCurso: val(row, colCurso) || null,
         codigoCurso: val(row, colCodCurso) || null,
@@ -151,7 +159,7 @@ export async function processarImportacaoAlunos(rows: AlunoRow[], options: Impor
         cpf: val(row, colCPF) || null,
         rg: val(row, colRG) || null,
         naturalidade: val(row, colNaturalidade) || null,
-        arquivoMorto: 0,
+        arquivoMorto: isSaida ? 1 : 0,
       };
 
       const cpfLimpo = alunoData.cpf ? alunoData.cpf.replace(/\D/g, "") : "";
