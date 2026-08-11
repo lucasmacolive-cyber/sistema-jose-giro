@@ -558,7 +558,7 @@ router.get("/diario/relatorio-frequencia-mensal", async (req, res) => {
 });
 
 /* ─── GET /diario/turmas ─── */
-router.get("/diario/turmas", requireAuth, async (req, res) => {
+router.get("/diario/turmas", async (req, res) => {
   try {
     const turmas = await db.select().from(turmasTable).orderBy(turmasTable.nomeTurma);
     const alunosCounts = await db
@@ -586,6 +586,47 @@ router.get("/diario/turmas", requireAuth, async (req, res) => {
     }));
 
     res.json(result);
+  } catch (e: any) {
+    res.status(500).json({ ok: false, mensagem: e.message });
+  }
+});
+
+/* ─── PATCH /diario/turmas/:id/link-suap ─── */
+router.patch("/diario/turmas/:id/link-suap", async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) return res.status(400).json({ ok: false, mensagem: "ID inválido" });
+    const { linkSuap } = req.body;
+    await db.update(turmasTable)
+      .set({ linkSuap: linkSuap || null })
+      .where(eq(turmasTable.id, id));
+    res.json({ ok: true });
+  } catch (e: any) {
+    res.status(500).json({ ok: false, mensagem: e.message });
+  }
+});
+
+/* ─── POST /diario/turmas/salvar-links-suap ─── salva todos de vez */
+router.post("/diario/turmas/salvar-links-suap", async (req, res) => {
+  try {
+    const { links } = req.body as { links: Array<{ turmaId: number; linkSuap: string }> };
+    if (!Array.isArray(links)) return res.status(400).json({ ok: false, mensagem: "links deve ser um array" });
+
+    for (const entry of links) {
+      if (!entry.turmaId) continue;
+      await db.update(turmasTable)
+        .set({ linkSuap: entry.linkSuap || null })
+        .where(eq(turmasTable.id, entry.turmaId));
+    }
+
+    const linksValidos = links.filter(e => e.linkSuap?.includes("suap")).map(e => e.linkSuap);
+    if (linksValidos.length > 0) {
+      await db.insert(configuracoesTable)
+        .values({ chave: "diario_links_salvos", valor: JSON.stringify(linksValidos), atualizadoEm: new Date() })
+        .onConflictDoUpdate({ target: configuracoesTable.chave, set: { valor: JSON.stringify(linksValidos), atualizadoEm: new Date() } });
+    }
+
+    res.json({ ok: true, salvos: links.length });
   } catch (e: any) {
     res.status(500).json({ ok: false, mensagem: e.message });
   }

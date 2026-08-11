@@ -558,7 +558,7 @@ router.get("/diario/relatorio-frequencia-mensal", async (req, res) => {
 });
 
 /* ─── GET /diario/turmas ─── */
-router.get("/diario/turmas", requireAuth, async (req, res) => {
+router.get("/diario/turmas", async (req, res) => {
   try {
     const turmas = await db.select().from(turmasTable).orderBy(turmasTable.nomeTurma);
     const alunosCounts = await db
