@@ -19,11 +19,17 @@ router.get("/escola", (_req, res) => {
 
 router.get("/dashboard/stats", async (_req, res) => {
   try {
+    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate, max-age=0");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+
     const allAlunos = await db.select().from(alunosTable);
+    const allTurmas = await db.select().from(turmasTable);
+
     const totalAlunos = allAlunos.filter(a => Number(a.arquivoMorto || 0) === 0 && (a.situacao === "Matriculado" || !a.situacao)).length;
     const totalTransferidos = allAlunos.filter(a => Number(a.arquivoMorto || 0) === 0 && Boolean(a.tipoTransferencia)).length;
-    const turmasSet = new Set(allAlunos.filter(a => Number(a.arquivoMorto || 0) === 0 && a.turmaAtual).map(a => a.turmaAtual));
-    const totalTurmas = turmasSet.size || 17;
+    const totalTurmas = allTurmas.length;
+
     const [totalProfessores] = await db.select({ count: sql<number>`count(*)` }).from(professoresTable);
     const [totalFuncionarios] = await db.select({ count: sql<number>`count(*)` }).from(funcionariosTable);
     const [impressoesPendentes] = await db.select({ count: sql<number>`count(*)` }).from(impressoesTable).where(eq(impressoesTable.status, "Pendente"));

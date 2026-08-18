@@ -238,8 +238,20 @@ export async function processarImportacaoAlunos(rows: AlunoRow[], options: Impor
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
     try {
-      const matricula = val(row, colMatricula);
-      const nomeCompleto = val(row, colNome);
+      let matricula = val(row, colMatricula);
+      let nomeCompleto = val(row, colNome);
+
+      if (!nomeCompleto || nomeCompleto.length < 3) {
+        const keys = Object.keys(row);
+        for (const k of keys) {
+          const v = String(row[k] || "").trim();
+          if (v.length >= 4 && /[a-zA-ZáéíóúÁÉÍÓÚñÑâêôÂÊÔãõÃÕçÇ]{3,}\s+[a-zA-ZáéíóúÁÉÍÓÚñÑâêôÂÊÔãõÃÕçÇ]{2,}/.test(v) && !v.includes("http") && !v.includes("@")) {
+            nomeCompleto = v;
+            break;
+          }
+        }
+      }
+
       if (!nomeCompleto || nomeCompleto.length < 3) {
         errosCount++;
         continue;
