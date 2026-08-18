@@ -1267,18 +1267,22 @@ export async function importarSecao(
 
   // Filtrar alunos da turma local correspondente
   const alunosDaTurma = todosAlunos.filter(
-    (a) => a.turmaAtual?.toUpperCase() === secao.turmaLocal.toUpperCase()
+    (a) => a.turmaAtual?.toUpperCase() === secao.turmaLocal.toUpperCase() ||
+           a.turmaAtual?.toUpperCase() === secao.turmaCodigo.toUpperCase() ||
+           normalizarTurma(a.turmaAtual || "") === normalizarTurma(secao.turmaLocal || secao.turmaCodigo || "")
   );
+
+  const poolAlunos = alunosDaTurma.length > 0 ? alunosDaTurma : todosAlunos;
 
   // Mapa: matricula → alunoId
   const porMatricula = new Map<string, number>();
-  for (const a of alunosDaTurma) {
+  for (const a of poolAlunos) {
     if (a.matricula) porMatricula.set(a.matricula.trim(), a.id);
   }
 
   // Mapa: nome normalizado → alunoId (fallback)
   const porNome = new Map<string, number>();
-  for (const a of alunosDaTurma) {
+  for (const a of poolAlunos) {
     porNome.set(normNome(a.nomeCompleto), a.id);
   }
 

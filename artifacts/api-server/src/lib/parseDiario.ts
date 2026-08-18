@@ -53,11 +53,21 @@ export interface DiarioParsed {
  * Extrai o ano (dígitos iniciais) e converte a sequência 01→A, 02→B...
  */
 function normalizarTurmaLocal(codigo: string): string {
-  const m = codigo.match(/^(\d+)[A-Za-z]+(\d{2})$/);
+  const c = String(codigo || "").trim().toUpperCase();
+  const TURMAS_OFFICIAIS = [
+    "1AM01", "1AT02", "2AM01", "2AT02", "3AM01", "4AM01", "5AT01",
+    "G2T01", "G3M01", "NIT01", "P1M01", "P1T02", "P2M01", "P2T02"
+  ];
+
+  for (const t of TURMAS_OFFICIAIS) {
+    if (c.includes(t)) return t;
+  }
+
+  const m = c.match(/^(\d+)[A-Za-z]+(\d{2})$/);
   if (!m) return codigo;
   const anoNum = m[1];
   const seq = parseInt(m[2], 10);
-  const letra = String.fromCharCode(64 + seq); // 1→A, 2→B, 3→C...
+  const letra = String.fromCharCode(64 + seq);
   return `${anoNum}${letra}`;
 }
 

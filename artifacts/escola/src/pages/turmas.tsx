@@ -571,8 +571,10 @@ export default function TurmasPage() {
   const [criandoTurma, setCriandoTurma] = useState(false);
 
   const contagemPorTurma = (todosAlunos ?? []).reduce<Record<string, number>>((acc, a) => {
-    if (a.turmaAtual && a.situacao?.toLowerCase() === "matriculado") {
-      acc[a.turmaAtual] = (acc[a.turmaAtual] ?? 0) + 1;
+    const t = (a.turmaAtual || a.turma_atual || "").trim();
+    const sit = (a.situacao || "").toLowerCase();
+    if (t && (sit === "matriculado" || sit === "" || sit === "matriculados" || !sit)) {
+      acc[t] = (acc[t] ?? 0) + 1;
     }
     return acc;
   }, {});
@@ -753,10 +755,10 @@ function PainelAlunosSemTurma({
 
   // Filtra alunos que estão no arquivo ativo e não têm turma ou a turma é inválida
   const alunosSemTurma = (todosAlunos ?? []).filter((a) => {
-    if (a.arquivoMorto === 1) return false;
+    if (a.arquivoMorto === 1 || a.arquivo_morto === 1) return false;
     const situacao = (a.situacao || "").toLowerCase();
     if (situacao.includes("transferido") || situacao.includes("cancelado") || situacao.includes("evadido")) return false;
-    const t = (a.turmaAtual || "").trim();
+    const t = (a.turmaAtual || a.turma_atual || "").trim();
     if (!t || t === "Sem Turma") return true;
     return !turmasNomes.has(t.toLowerCase());
   });
