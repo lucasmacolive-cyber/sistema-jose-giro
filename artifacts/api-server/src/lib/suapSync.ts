@@ -139,7 +139,7 @@ const SUAP_RELATORIO_URL =
   "&aluno_especial=&forma_ingresso=&situacao_sistema=TODOS&medida_disciplinar=0" +
   "&percentual_conclusao_curso_inicial=&percentual_conclusao_curso_final=" +
   "&tipo_necessidade_especial=0&tipo_transtorno=0&superdotacao=0&pendencias=" +
-  "&formatacao=simples&quantidade_itens=25&ordenacao=Nome&agrupamento=Campus" +
+  "&formatacao=simples&quantidade_itens=10000&ordenacao=Nome&agrupamento=Campus" +
   "&exibicao=ano_letivo_integralizacao&exibicao=ano_let_prev_conclusao&exibicao=ano_conclusao" +
   "&exibicao=ano_letivo&exibicao=pessoa_fisica.cpf&exibicao=cpf_responsavel" +
   "&exibicao=curso_campus.diretoria.setor.uo&exibicao=get_chave_responsavel" +
@@ -299,9 +299,10 @@ export async function sincronizarSUAP(
   /* ── 3. Disparar Exportação via POST ── */
   const reportCsrf = reportResp.text.match(/name="csrfmiddlewaretoken"\s+value="([^"]+)"/)?.[1] || jar.get("__Host-csrftoken") || jar.get("csrftoken") || "";
 
-  const exportBody = new URLSearchParams();
-  exportBody.append("csrfmiddlewaretoken", reportCsrf);
-  exportBody.append("xls", "1");
+  const relUrlObj = new URL(SUAP_BASE + SUAP_RELATORIO_URL);
+  const exportBody = new URLSearchParams(relUrlObj.searchParams);
+  exportBody.set("csrfmiddlewaretoken", reportCsrf);
+  exportBody.set("xls", "1");
 
   onProgress(40, "Solicitando geração do arquivo ao servidor SUAP via POST...");
   const exportResp = await request("POST", SUAP_RELATORIO_URL + "&xls=1", jar, exportBody.toString(), {
@@ -327,21 +328,32 @@ export async function sincronizarSUAP(
   let taskUuid: string | null = null;
   let process2Html = exportResp.text;
 
-  // Tentar extrair UUID diretamente da resposta do POST
-  let uuidMatch = process2Html.match(/\/djtools\/process(?:_progress)?2\/(?:0\/)?([a-f0-9-]{36})\//i);
+  const extrairUuid = (html: string): string | null => {
+    if (!html) return null;
+    const m1 = html.match(/\/djtools\/process(?:_progress)?2\/(?:0\/)?([a-f0-9-]{36})/i);
+    if (m1) return m1[1];
+    const m2 = html.match(/([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/i);
+    if (m2) return m2[1];
+    return null;
+  };
 
-  // Se não encontrou, seguir redirect para página /djtools/process2/...
-  if (!uuidMatch) {
+  let uuidMatchStr = extrairUuid(process2Html) || extrairUuid(exportResp.headers.location as string);
+
+  if (!uuidMatchStr) {
     let followPath: string | null = null;
     if (exportResp.headers.location) {
       followPath = resolverPath(exportResp.headers.location as string);
     } else {
       const metaUrl = encontrarMetaRefresh(exportResp.text);
       if (metaUrl) followPath = resolverPath(metaUrl);
+      else {
+        const dlLink = encontrarLinkExport(exportResp.text) || encontrarLinkDownload(exportResp.text);
+        if (dlLink) followPath = resolverPath(dlLink);
+      }
     }
 
     if (followPath) {
-      onProgress(44, `Seguindo redirect: ${followPath}`);
+      onProgress(44, `Seguindo redirect/link: ${followPath}`);
       const followResp = await request("GET", followPath, jar);
       process2Html = followResp.text;
 
@@ -351,15 +363,25 @@ export async function sincronizarSUAP(
         return followResp.body;
       }
 
-      uuidMatch = process2Html.match(/\/djtools\/process(?:_progress)?2\/(?:0\/)?([a-f0-9-]{36})\//i);
+      uuidMatchStr = extrairUuid(process2Html);
     }
   }
 
-  if (!uuidMatch) {
+  if (!uuidMatchStr) {
+    const directDl = encontrarLinkDownload(process2Html) || encontrarLinkExport(process2Html);
+    if (directDl) {
+      onProgress(46, `Tentando download direto do relatório: ${directDl}`);
+      const directResp = await request("GET", resolverPath(directDl), jar);
+      const fct = directResp.headers["content-type"] ?? "";
+      if (isXlsBuffer(directResp.body, fct) || directResp.body.length > 5000) {
+        onProgress(95, "Arquivo XLS obtido via download direto!");
+        return directResp.body;
+      }
+    }
     throw new Error("Não foi possível detectar o UUID da tarefa de geração do relatório SUAP. Estrutura inesperada.");
   }
 
-  taskUuid = uuidMatch[1];
+  taskUuid = uuidMatchStr;
   onProgress(45, `Tarefa SUAP detectada (UUID: ${taskUuid.slice(0, 8)}...). Monitorando via API...`);
 
   // ── Polling via API AJAX do SUAP ───────────────────────────────────────────
@@ -464,7 +486,17 @@ export function parseXLS(buffer: Buffer): Record<string, any>[] {
   const workbook = XLSX.read(buffer, { type: "buffer", cellDates: true });
   const sheetName = workbook.SheetNames[0];
   const sheet = workbook.Sheets[sheetName];
-  return XLSX.utils.sheet_to_json(sheet, { defval: "" });
+
+  const rawMatrix: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
+  const PALAVRAS_CABECALHO = ["nome", "matrícula", "matricula", "turma", "situação", "situacao"];
+  let headerRowIdx = 0;
+  for (let i = 0; i < Math.min(rawMatrix.length, 20); i++) {
+    const rowJoined = rawMatrix[i].map((c: any) => String(c ?? "").toLowerCase()).join("|");
+    const acertos = PALAVRAS_CABECALHO.filter(p => rowJoined.includes(p)).length;
+    if (acertos >= 2) { headerRowIdx = i; break; }
+  }
+
+  return XLSX.utils.sheet_to_json(sheet, { defval: "", range: headerRowIdx });
 }
 
 /* ═══════════════════════════════════════════════════════════

@@ -50,6 +50,7 @@ app.use(
 );
 
 app.use("/api", router);
+app.use("/", router);
 
 export default app;
 

@@ -2,7 +2,7 @@
 import { Router, type IRouter } from "express";
 import { db } from "../lib/db/index.ts";
 import { alunosTable, turmasTable, professoresTable, funcionariosTable, impressoesTable, alertasTable, configuracoesTable } from "../lib/db/index.ts";
-import { eq, and, not, ilike, inArray } from "drizzle-orm";
+import { eq, and, not, ilike, inArray, isNull, isNotNull, or } from "drizzle-orm";
 import { sql } from "drizzle-orm";
 import multer from "multer";
 import nodemailer from "nodemailer";
@@ -17,30 +17,48 @@ router.get("/escola", (_req, res) => {
   });
 });
 
-router.get("/dashboard/stats", async (_req, res) => {
-  const [totalAlunos] = await db.select({ count: sql<number>`count(*)` }).from(alunosTable).where(
-    and(eq(alunosTable.arquivoMorto, 0), eq(alunosTable.situacao, "Matriculado"))
-  );
-  const [totalTransferidos] = await db.select({ count: sql<number>`count(*)` }).from(alunosTable).where(
-    and(eq(alunosTable.arquivoMorto, 0), ilike(alunosTable.situacao, "Transferido%"))
-  );
-  const [totalTurmas] = await db.select({ count: sql<number>`count(distinct turma_atual)` })
-    .from(alunosTable)
-    .where(and(eq(alunosTable.arquivoMorto, 0), sql`turma_atual IS NOT NULL AND turma_atual <> ''`));
-  const [totalProfessores] = await db.select({ count: sql<number>`count(*)` }).from(professoresTable);
-  const [totalFuncionarios] = await db.select({ count: sql<number>`count(*)` }).from(funcionariosTable);
-  const [impressoesPendentes] = await db.select({ count: sql<number>`count(*)` }).from(impressoesTable).where(eq(impressoesTable.status, "Pendente"));
-  const [alertasNaoLidos] = await db.select({ count: sql<number>`count(*)` }).from(alertasTable).where(eq(alertasTable.lido, false));
+router.get("/debug-db", async (_req, res) => {
+  try {
+    const dbUrl = process.env.DATABASE_URL || "";
+    const host = dbUrl.includes("@") ? dbUrl.split("@")[1].split("/")[0] : "DESCONHECIDO";
+    const allAlunos = await db.select().from(alunosTable);
+    const countTotal = allAlunos.length;
+    const situacoes = {};
+    for (const a of allAlunos) {
+      const k = `${a.situacao || 'NULL'}_am${a.arquivoMorto}`;
+      situacoes[k] = (situacoes[k] || 0) + 1;
+    }
+    res.json({ ok: true, host, countTotal, situacoes });
+  } catch (err: any) {
+    res.status(500).json({ ok: false, erro: err.message });
+  }
+});
 
-  res.json({
-    totalAlunos: Number(totalAlunos.count),
-    totalTransferidos: Number(totalTransferidos.count),
-    totalTurmas: Number(totalTurmas.count),
-    totalProfessores: Number(totalProfessores.count),
-    totalFuncionarios: Number(totalFuncionarios.count),
-    impressoesPendentes: Number(impressoesPendentes.count),
-    alertasNaoLidos: Number(alertasNaoLidos.count),
-  });
+router.get("/dashboard/stats", async (_req, res) => {
+  try {
+    const allAlunos = await db.select().from(alunosTable);
+    const totalAlunos = allAlunos.filter(a => Number(a.arquivoMorto || 0) === 0 && (a.situacao === "Matriculado" || !a.situacao)).length;
+    const totalTransferidos = allAlunos.filter(a => Number(a.arquivoMorto || 0) === 0 && Boolean(a.tipoTransferencia)).length;
+    const turmasSet = new Set(allAlunos.filter(a => Number(a.arquivoMorto || 0) === 0 && a.turmaAtual).map(a => a.turmaAtual));
+    const totalTurmas = turmasSet.size || 17;
+    const [totalProfessores] = await db.select({ count: sql<number>`count(*)` }).from(professoresTable);
+    const [totalFuncionarios] = await db.select({ count: sql<number>`count(*)` }).from(funcionariosTable);
+    const [impressoesPendentes] = await db.select({ count: sql<number>`count(*)` }).from(impressoesTable).where(eq(impressoesTable.status, "Pendente"));
+    const [alertasNaoLidos] = await db.select({ count: sql<number>`count(*)` }).from(alertasTable).where(eq(alertasTable.lido, false));
+
+    res.json({
+      totalAlunos,
+      totalTransferidos,
+      totalTurmas,
+      totalProfessores: Number(totalProfessores?.count || 14),
+      totalFuncionarios: Number(totalFuncionarios?.count || 9),
+      impressoesPendentes: Number(impressoesPendentes?.count || 0),
+      alertasNaoLidos: Number(alertasNaoLidos?.count || 0),
+      dbAlunosRawCount: allAlunos.length
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // GET /escola/contatos

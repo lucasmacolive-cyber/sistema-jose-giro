@@ -467,7 +467,17 @@ router.post("/sync/auto", async (req, res) => {
     const workbook = XLSX.read(xlsBuffer, { type: "buffer", cellDates: true });
     const sheetName = workbook.SheetNames[0];
     const sheet = workbook.Sheets[sheetName];
-    const rows: Record<string, any>[] = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+
+    const rawMatrix: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
+    const PALAVRAS_CABECALHO = ["nome", "matrícula", "matricula", "turma", "situação", "situacao"];
+    let headerRowIdx = 0;
+    for (let i = 0; i < Math.min(rawMatrix.length, 20); i++) {
+      const rowJoined = rawMatrix[i].map((c: any) => String(c ?? "").toLowerCase()).join("|");
+      const acertos = PALAVRAS_CABECALHO.filter(p => rowJoined.includes(p)).length;
+      if (acertos >= 2) { headerRowIdx = i; break; }
+    }
+
+    const rows: Record<string, any>[] = XLSX.utils.sheet_to_json(sheet, { defval: "", range: headerRowIdx });
 
     if (rows.length === 0) {
       throw new Error("Planilha do SUAP está vazia ou formato inválido.");
@@ -663,6 +673,56 @@ router.post("/sync/upload-alunos", async (req, res) => {
     }).catch(() => {});
 
     res.status(500).json({ mensagem: "Erro ao processar o arquivo: " + e.message });
+  }
+});
+
+/* ─── POST /api/sync/processar-links-turmas — Realoca alunos com base nos links de turma cadastrados ─── */
+router.post("/sync/processar-links-turmas", async (_req, res) => {
+  try {
+    const turmasComLinks = await db.select().from(turmasTable);
+    const turmasValidas = turmasComLinks.filter(t => t.linkSuap && t.linkSuap.includes("suap"));
+
+    if (turmasValidas.length === 0) {
+      res.json({ ok: true, mensagem: "Nenhuma turma possui link do SUAP configurado.", movidos: 0, mantidos: 0 });
+      return;
+    }
+
+    let totalMovidos = 0;
+    let totalMantidos = 0;
+    const detalhes: any[] = [];
+
+    for (const t of turmasValidas) {
+      try {
+        const rawUrl = t.linkSuap!;
+        const linkXls = rawUrl.includes("xls=1") ? rawUrl : (rawUrl.includes("?") ? `${rawUrl}&xls=1` : `${rawUrl}?xls=1`);
+
+        const response = await fetch(linkXls);
+        if (response.ok) {
+          const arrayBuffer = await response.arrayBuffer();
+          const buffer = Buffer.from(arrayBuffer);
+          const workbook = XLSX.read(buffer, { type: "buffer", cellDates: true });
+          const sheet = workbook.Sheets[workbook.SheetNames[0]];
+          const rows = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+
+          const rRes = await realocarAlunosPorPlanilhaTurma(rows as Record<string, any>[], t.nomeTurma, t.turno || "Manhã");
+          totalMovidos += rRes.movidos;
+          totalMantidos += rRes.mantidos;
+          detalhes.push({ turma: t.nomeTurma, movidos: rRes.movidos, mantidos: rRes.mantidos });
+        }
+      } catch (err: any) {
+        console.warn(`[sync/processar-links-turmas] Erro na turma ${t.nomeTurma}:`, err.message);
+      }
+    }
+
+    res.json({
+      ok: true,
+      mensagem: `Processamento por links de turma concluído: ${totalMovidos} alunos realocados, ${totalMantidos} mantidos no lugar certo.`,
+      movidos: totalMovidos,
+      mantidos: totalMantidos,
+      detalhes,
+    });
+  } catch (e: any) {
+    res.status(500).json({ ok: false, mensagem: "Erro ao processar links de turmas: " + e.message });
   }
 });
 

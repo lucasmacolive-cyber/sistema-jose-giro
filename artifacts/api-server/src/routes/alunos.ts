@@ -2,13 +2,13 @@
 import { Router } from "express";
 import { db } from "../lib/db/index.js";
 import { alunosTable } from "../lib/db/index.js";
-import { eq, ilike, or, and, isNotNull, ne } from "drizzle-orm";
+import { eq, ilike, or, and, isNotNull, isNull, ne } from "drizzle-orm";
 
 const router = Router();
 
 router.get("/alunos", async (req, res) => {
   const { turma, busca, status, transferidos } = req.query;
-  let conditions: any[] = [eq(alunosTable.arquivoMorto, 0)];
+  let conditions: any[] = [or(eq(alunosTable.arquivoMorto, 0), isNull(alunosTable.arquivoMorto))];
 
   if (transferidos === "true") {
     // Alunos com qualquer tipo de transferência registrada
@@ -40,7 +40,7 @@ router.get("/alunos/transferidos", async (_req, res) => {
     turmaDestino: alunosTable.turmaDestino,
   })
   .from(alunosTable)
-  .where(and(eq(alunosTable.arquivoMorto, 0), ilike(alunosTable.situacao, "Transferido%")))
+  .where(and(eq(alunosTable.arquivoMorto, 0), isNotNull(alunosTable.tipoTransferencia)))
   .orderBy(alunosTable.turmaAtual, alunosTable.nomeCompleto);
   res.json(transferidos);
 });
@@ -61,8 +61,26 @@ router.patch("/alunos/:id", async (req, res) => {
     const { turmaAtual, situacao, arquivoMorto } = req.body;
     const updates: any = {};
     if (turmaAtual !== undefined) updates.turmaAtual = turmaAtual;
-    if (situacao !== undefined) updates.situacao = situacao;
-    if (arquivoMorto !== undefined) updates.arquivoMorto = arquivoMorto;
+    if (situacao !== undefined) {
+      updates.situacao = situacao;
+      if (situacao === "Matriculado") {
+        updates.arquivoMorto = 0;
+        updates.motivoSaida = null;
+        updates.dataSaida = null;
+        updates.dataTransferencia = null;
+        updates.tipoTransferencia = null;
+      }
+    }
+    if (arquivoMorto !== undefined) {
+      updates.arquivoMorto = arquivoMorto;
+      if (arquivoMorto === 0 && !updates.situacao) {
+        updates.situacao = "Matriculado";
+        updates.motivoSaida = null;
+        updates.dataSaida = null;
+        updates.dataTransferencia = null;
+        updates.tipoTransferencia = null;
+      }
+    }
 
     const [atualizado] = await db.update(alunosTable)
       .set(updates)

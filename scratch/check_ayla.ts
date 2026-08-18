@@ -10,9 +10,8 @@ const pool = new pg.Pool({
 });
 
 async function main() {
-  const turmasRes = await pool.query("SELECT * FROM turmas;");
-  console.log("Turmas in DB:", turmasRes.rows.length);
-  console.table(turmasRes.rows);
+  const res = await pool.query("SELECT id, nome_completo, turma_atual, turno, situacao FROM alunos WHERE nome_completo ILIKE '%AYLA OHANNA%';");
+  console.log("Ayla in DB:", res.rows);
   await pool.end();
 }
 

@@ -10,9 +10,8 @@ const pool = new pg.Pool({
 });
 
 async function main() {
-  const turmasRes = await pool.query("SELECT * FROM turmas;");
-  console.log("Turmas in DB:", turmasRes.rows.length);
-  console.table(turmasRes.rows);
+  const res = await pool.query("SELECT id, status, mensagem, total_alunos, ultima_sync FROM sync_status ORDER BY id DESC LIMIT 5;");
+  console.log(JSON.stringify(res.rows, null, 2));
   await pool.end();
 }
 
