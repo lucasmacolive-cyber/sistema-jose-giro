@@ -1,6 +1,5 @@
-import { db, configuracoesTable } from "./db/index.js";
+import { db, configuracoesTable, filaWhatsappTable } from "../../lib/db/index.ts";
 import { eq, like } from "drizzle-orm";
-import { filaWhatsappTable } from "./db/schema/fila-whatsapp.js";
 
 export function initWhatsApp() {
   // A inicialização agora é feita pelo robô local (robo_whatsapp.js).

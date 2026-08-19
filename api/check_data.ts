@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { db, professoresTable, funcionariosTable } from './src/lib/db/src/index.js';
+import { db, professoresTable, funcionariosTable } from '../lib/db/index.ts';
 
 async function run() {
   const p = await db.select().from(professoresTable);
