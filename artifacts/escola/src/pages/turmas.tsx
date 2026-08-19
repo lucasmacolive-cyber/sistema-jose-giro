@@ -119,7 +119,7 @@ function ModalAlunosTurma({ turma, onClose, onUpdated }: { turma: TurmaInfo; onC
   const alunosDaTurma = (todosAlunos ?? []).filter(a => a.turmaAtual === turma.nomeTurma);
 
   const matriculados = alunosDaTurma
-    .filter(a => !isTransferido(a.situacao) && (a.situacao?.toLowerCase() === "matriculado"))
+    .filter(a => !isTransferido(a.situacao))
     .sort((a, b) => a.nomeCompleto.localeCompare(b.nomeCompleto, "pt-BR"));
 
   const transferidos = alunosDaTurma

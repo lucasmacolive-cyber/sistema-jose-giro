@@ -8,12 +8,12 @@ const router: IRouter = Router();
 
 router.get("/alunos", async (req, res) => {
   const { turma, busca, status, transferidos } = req.query;
-  let conditions: any[] = [or(eq(alunosTable.arquivoMorto, 0), isNull(alunosTable.arquivoMorto))];
+  let conditions: any[] = [];
 
   if (transferidos === "true") {
-    // Alunos com qualquer tipo de transferência registrada
     conditions.push(isNotNull(alunosTable.tipoTransferencia));
   } else {
+    conditions.push(or(eq(alunosTable.arquivoMorto, 0), isNull(alunosTable.arquivoMorto)));
     if (turma) conditions.push(eq(alunosTable.turmaAtual, String(turma)));
   }
 
@@ -25,7 +25,10 @@ router.get("/alunos", async (req, res) => {
     ));
   }
 
-  const alunos = await db.select().from(alunosTable).where(and(...conditions)).orderBy(alunosTable.nomeCompleto);
+  let alunos = await db.select().from(alunosTable).where(and(...conditions)).orderBy(alunosTable.nomeCompleto);
+  if (alunos.length === 0 && !busca && !turma && transferidos !== "true") {
+    alunos = await db.select().from(alunosTable).orderBy(alunosTable.nomeCompleto);
+  }
   res.json(alunos);
 });
 
