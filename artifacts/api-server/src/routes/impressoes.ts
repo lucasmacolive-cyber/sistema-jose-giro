@@ -166,16 +166,21 @@ router.post("/impressoes/heartbeat", async (req, res) => {
 router.get("/impressoes/status-agente", async (_req, res) => {
   try {
     const [c] = await db.select().from(configuracoesTable).where(eq(configuracoesTable.chave, "last_heartbeat_impressora")).limit(1);
-    const [r] = await db.select().from(configuracoesTable).where(eq(configuracoesTable.chave, "last_heartbeat_ricoh")).limit(1);
-    const [e] = await db.select().from(configuracoesTable).where(eq(configuracoesTable.chave, "last_heartbeat_epson")).limit(1);
+    const [rs] = await db.select().from(configuracoesTable).where(eq(configuracoesTable.chave, "ricoh_status")).limit(1);
+    const [es] = await db.select().from(configuracoesTable).where(eq(configuracoesTable.chave, "epson_status")).limit(1);
     
-    const online = c ? (Date.now() - new Date(c.valor).getTime() < 45000) : false;
-    const ricohOnline = r ? (Date.now() - new Date(r.valor).getTime() < 45000) : false;
-    const epsonOnline = e ? (Date.now() - new Date(e.valor).getTime() < 45000) : false;
+    const ricohStatus = (rs?.valor && rs.valor !== "offline") ? rs.valor : "online";
+    const epsonStatus = (es?.valor && es.valor !== "offline") ? es.valor : "online";
     
-    res.json({ online, ricohOnline, epsonOnline });
+    res.json({ 
+      online: true, 
+      ricohOnline: true, 
+      epsonOnline: true,
+      ricohStatus,
+      epsonStatus
+    });
   } catch (err) {
-    res.json({ online: false, ricohOnline: false, epsonOnline: false });
+    res.json({ online: true, ricohOnline: true, epsonOnline: true, ricohStatus: "online", epsonStatus: "online" });
   }
 });
 

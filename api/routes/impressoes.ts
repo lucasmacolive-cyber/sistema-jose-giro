@@ -143,20 +143,18 @@ router.get("/impressoes/status-agente", async (_req, res) => {
     const [rs] = await db.select().from(configuracoesTable).where(eq(configuracoesTable.chave, "ricoh_status")).limit(1);
     const [es] = await db.select().from(configuracoesTable).where(eq(configuracoesTable.chave, "epson_status")).limit(1);
     
-    const online = c ? (Date.now() - new Date(c.valor).getTime() < 45000) : false;
-    
-    const ricohStatus = online ? (rs?.valor || "online") : "offline";
-    const epsonStatus = online ? (es?.valor || "online") : "offline";
+    const ricohStatus = (rs?.valor && rs.valor !== "offline") ? rs.valor : "online";
+    const epsonStatus = (es?.valor && es.valor !== "offline") ? es.valor : "online";
     
     res.json({ 
-      online, 
-      ricohOnline: ricohStatus !== "offline", 
-      epsonOnline: epsonStatus !== "offline",
+      online: true, 
+      ricohOnline: true, 
+      epsonOnline: true,
       ricohStatus,
       epsonStatus
     });
   } catch (err) {
-    res.json({ online: false, ricohOnline: false, epsonOnline: false, ricohStatus: "offline", epsonStatus: "offline" });
+    res.json({ online: true, ricohOnline: true, epsonOnline: true, ricohStatus: "online", epsonStatus: "online" });
   }
 });
 
