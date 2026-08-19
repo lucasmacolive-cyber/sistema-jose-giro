@@ -59,10 +59,10 @@ export async function processarImportacaoAlunos(rows: AlunoRow[], options: Impor
   // Mapeamento de colunas (baseado na estrutura do SUAP)
   const colMatricula    = mapearColuna(["matrícula", "matricula", "mat."], 1);
   const colNome         = mapearColuna(["nome completo", "nome do aluno", "nome"], 2);
-  const colTurma        = mapearColuna(["turma/série", "turma", "série"], 72);
+  const colTurma        = mapearColuna(["turma atual", "turma no ano selecionado", "turma/série", "turma", "série"], 71);
   const colTurno        = mapearColuna(["turno"]);
-  const colSituacao     = mapearColuna(["situação no curso", "situacao no curso", "situação no per", "situação", "situacao", "status"], 65);
-  const colNascimento   = mapearColuna(["data de nascimento", "nascimento", "data nasc", "nascimento_data"], 23);
+  const colSituacao     = mapearColuna(["situação no curso", "situacao no curso", "situação no ano selecionado", "situação", "situacao", "status"], 64);
+  const colNascimento   = mapearColuna(["data de nascimento", "nascimento", "data nasc", "nascimento_data"], 22);
   const colCPF          = mapearColuna(["cpf"], 7);
   const colRG           = mapearColuna(["rg"]);
   const colMae          = mapearColuna(["nome da mãe", "nome da mae", "mãe", "mae", "nome_mae"]);
