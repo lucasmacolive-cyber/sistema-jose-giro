@@ -27,7 +27,7 @@ router.get("/dashboard/stats", async (_req, res) => {
     const allTurmas = await db.select().from(turmasTable);
 
     const ativos = allAlunos.filter(a => Number(a.arquivoMorto || 0) === 0 && String(a.situacao || "").toLowerCase() !== "transferido");
-    const totalAlunos = ativos.length > 0 ? ativos.length : (allAlunos.length > 0 ? allAlunos.length : 260);
+    const totalAlunos = ativos.length;
     const totalTransferidos = allAlunos.filter(a => Number(a.arquivoMorto || 0) === 0 && Boolean(a.tipoTransferencia)).length;
     const totalTurmas = allTurmas.length > 0 ? allTurmas.length : 14;
 
