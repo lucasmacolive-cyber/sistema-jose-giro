@@ -68,7 +68,7 @@ function iconeAlerta(tipo: string) {
 }
 
 export default function DashboardPage() {
-  const { data: stats, isLoading } = useGetDashboardStats();
+  const { data: stats, isLoading } = useGetDashboardStats({ query: { refetchInterval: 10000 } } as any);
   const [, navigate] = useLocation();
   const [aniversario, setAniversario] = useState<DadosAniv | null>(null);
   const [alertas, setAlertas] = useState<Alerta[]>([]);

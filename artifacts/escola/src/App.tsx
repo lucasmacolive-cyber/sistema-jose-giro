@@ -31,7 +31,14 @@ import FicaiPage from "@/pages/ficai";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient({
-  defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } },
+  defaultOptions: {
+    queries: {
+      retry: 1,
+      refetchOnWindowFocus: true,
+      refetchInterval: 15000, // Auto-atualiza os dados a cada 15s sem precisar clicar em nada
+      staleTime: 5000,
+    },
+  },
 });
 
 function Router() {
