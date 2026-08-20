@@ -136,7 +136,7 @@ const SUAP_RELATORIO_URL =
   "&ano_letivo=9&periodo_letivo=0&periodo_matriz=0&periodo_referencia=0&ano_conclusao=" +
   "&situacao_diario=0&turno=&situacao_matricula=&situacao_matricula_periodo=" +
   "&ano_ingresso_inicio=&periodo_ingresso_inicio=0&ano_ingresso_fim=&periodo_ingresso_fim=0" +
-  "&aluno_especial=&forma_ingresso=&situacao_sistema=TODOS&medida_disciplinar=0" +
+  "&aluno_especial=&forma_ingresso=&situacao_sistema=MATRICULADO&medida_disciplinar=0" +
   "&percentual_conclusao_curso_inicial=&percentual_conclusao_curso_final=" +
   "&tipo_necessidade_especial=0&tipo_transtorno=0&superdotacao=0&pendencias=" +
   "&formatacao=simples&quantidade_itens=10000&ordenacao=Nome&agrupamento=Campus" +
