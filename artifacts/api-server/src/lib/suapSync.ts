@@ -522,6 +522,9 @@ export type DiarioSyncResultado = {
 
 /** Normaliza nome de turma do SUAP para o formato interno (ex: "6A") */
 function normalizarTurma(suapNome: string): string {
+  if (/\bNI\b|INCLUS[AÃ]O/i.test(suapNome)) {
+    return "NIT01";
+  }
   const m = suapNome.match(/(\d+)\s*[°º]\s*[Aa]no\s+([A-Z])/i);
   if (m) return `${m[1]}${m[2].toUpperCase()}`;
   const m2 = suapNome.match(/^(\d+)\s*([A-Z])$/i);

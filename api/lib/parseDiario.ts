@@ -63,6 +63,10 @@ function normalizarTurmaLocal(codigo: string): string {
     if (c.includes(t)) return t;
   }
 
+  if (/\bNI\b|INCLUS[AÃ]O/i.test(c)) {
+    return "NIT01";
+  }
+
   const m = c.match(/^(\d+)[A-Za-z]+(\d{2})$/);
   if (!m) return codigo;
   const anoNum = m[1];

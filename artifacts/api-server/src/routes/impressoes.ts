@@ -329,13 +329,12 @@ try:
 except:
     log("Erro ao listar impressoras.")
 
-def _ping(ip):
-    """Retorna True se o IP responde ao ping."""
+def _tcp_open(ip, port, timeout=1.5):
+    """Retorna True se a porta TCP do IP estiver aberta (impressora acordada ou em descanso)."""
     try:
-        res = subprocess.call(["ping", "-n", "1", "-w", "800", ip],
-                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                              creationflags=0x08000000)
-        return res == 0
+        s = socket.create_connection((ip, port), timeout=timeout)
+        s.close()
+        return True
     except:
         return False
 
@@ -373,7 +372,8 @@ def _win32_status(name_match):
 def check_printer_status(ip, name_match):
     if ip and re.match(r"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$", str(ip).strip()):
         ip_clean = str(ip).strip()
-        if _ping(ip_clean) or _tcp_open(ip_clean, 9100) or _tcp_open(ip_clean, 80) or _tcp_open(ip_clean, 515) or _tcp_open(ip_clean, 631) or _tcp_open(ip_clean, 5357):
+        # Porta 9100 (Raw Printing) ou 80 (Web) provam que a impressora está viva (mesmo em descanso)
+        if _tcp_open(ip_clean, 9100) or _tcp_open(ip_clean, 80) or _tcp_open(ip_clean, 443) or _tcp_open(ip_clean, 515) or _tcp_open(ip_clean, 631):
             return "online"
         return "offline"
 
