@@ -190,9 +190,9 @@ export async function processarImportacaoAlunos(rows: AlunoRow[], options: Impor
       const rawSituacao = val(row, colSituacao);
       const isMatriculado = String(rawSituacao).toLowerCase().includes("matriculado");
       const situacaoNormalized = isMatriculado ? "Matriculado" : (rawSituacao || "Matriculado");
-      const isSaida = ["transferido", "cancelado", "concluído", "concluido", "evadido", "jubilado"].some(s =>
+      const isSaida = ["transferido", "cancelado", "concluído", "concluido", "evadido", "jubilado", "deixou de frequentar", "desistente", "inativo"].some(s =>
         situacaoNormalized.toLowerCase().includes(s)
-      );
+      ) || (!turmaValida && (!existingRecord?.turmaAtual || !setTurmasExistentes.has(existingRecord.turmaAtual.toLowerCase().trim())));
 
       const cpfLimpo = cleanCPF(rawCpf);
       let existingRecord: typeof existentes[0] | undefined = undefined;
