@@ -105,88 +105,30 @@ export async function processarImportacaoAlunos(rows: AlunoRow[], options: Impor
   const turmasExistentes = await db.select().from(turmasTable);
   const setTurmasExistentes = new Set(turmasExistentes.map(t => t.nomeTurma.toLowerCase().trim()));
 
+  const TURMAS_OFICIAIS = [
+    "1AM01", "1AT02", "2AM01", "2AT02", "3AM01", "4AM01", "5AT01",
+    "G2T01", "G3M01", "NIT01", "P1M01", "P1T02", "P2M01", "P2T02"
+  ];
+
   const extrairInformacoesTurma = (rawCell: string, rawTurnoCell?: string) => {
     if (!rawCell) return { turma: "", ano: "", turno: "" };
     const raw = String(rawCell).trim();
-    const tNorm = String(rawTurnoCell || '').trim().toLowerCase();
 
-    let turma = "";
-
-    // 1. Tentar casar diretamente com o nome exato de uma turma cadastrada na escola
-    const rawClean = raw.toLowerCase().trim();
-    const matchedDirect = turmasExistentes.find(t => t.nomeTurma.toLowerCase().trim() === rawClean);
-    if (matchedDirect) {
-      turma = matchedDirect.nomeTurma;
-    } else {
-      // Tentar dentro dos parênteses
-      const mParen = raw.match(/\(([^)]+)\)/);
-      if (mParen && mParen[1]) {
-        const inside = mParen[1].trim();
-        const insideMatch = turmasExistentes.find(t => t.nomeTurma.toLowerCase().trim() === inside.toLowerCase());
-        if (insideMatch) {
-          turma = insideMatch.nomeTurma;
-        } else if (!/^(19|20)\d{2}(\.[0-9]+|\/[0-9]+)?$/.test(inside)) {
-          turma = inside;
-        }
+    const mParen = raw.match(/\(([^)]+)\)/);
+    if (mParen && mParen[1]) {
+      const inside = mParen[1].trim().toUpperCase();
+      if (TURMAS_OFICIAIS.includes(inside)) {
+        return { turma: inside, ano: "2026", turno: "" };
       }
     }
 
-    if (!turma) {
-      const before = raw.split("(")[0].trim();
-      const beforeMatch = turmasExistentes.find(t => t.nomeTurma.toLowerCase().trim() === before.toLowerCase());
-      if (beforeMatch) {
-        turma = beforeMatch.nomeTurma;
-      } else {
-        turma = (before.length <= 20) ? before : raw;
+    for (const code of TURMAS_OFICIAIS) {
+      if (raw.toUpperCase().includes(code)) {
+        return { turma: code, ano: "2026", turno: "" };
       }
     }
 
-    // Resolução inteligente da turma com base na estrutura da escola e no turno
-    if (turma.startsWith("1A") || raw.includes("1.03161")) {
-      if (tNorm.includes("manh")) turma = "1AM01";
-      else if (tNorm.includes("tarde")) turma = "1AT02";
-    } else if (turma.startsWith("2A") || raw.includes("2.03161")) {
-      if (tNorm.includes("manh")) turma = "2AM01";
-      else if (tNorm.includes("tarde")) turma = "2AT02";
-    } else if (turma.startsWith("3A") || raw.includes("3.03161")) {
-      if (tNorm.includes("manh")) turma = "3AM01";
-      else if (tNorm.includes("tarde")) turma = "3AT02";
-    } else if (turma.startsWith("4A") || raw.includes("4.03161")) {
-      if (tNorm.includes("manh")) turma = "4AM01";
-      else if (tNorm.includes("tarde")) turma = "4AT01";
-    } else if (turma.startsWith("5A") || raw.includes("5.03161")) {
-      if (tNorm.includes("tarde")) turma = "5AT01";
-      else if (tNorm.includes("manh")) turma = "5AM01";
-    } else if (turma.startsWith("P1") || raw.includes("P1") || raw.includes("4.02161")) {
-      if (tNorm.includes("manh")) turma = "P1M01";
-      else if (tNorm.includes("tarde")) turma = "P1T02";
-    } else if (turma.startsWith("P2") || raw.includes("P2") || raw.includes("5.02161")) {
-      if (tNorm.includes("manh")) turma = "P2M01";
-      else if (tNorm.includes("tarde")) turma = "P2T02";
-    } else if (turma.startsWith("G2") || raw.includes("2.02161")) {
-      if (tNorm.includes("tarde")) turma = "G2T01";
-    } else if (turma.startsWith("G3") || raw.includes("3.02161")) {
-      if (tNorm.includes("manh")) turma = "G3M01";
-      else if (tNorm.includes("tarde")) turma = "G3T01";
-    }
-
-    let ano = "";
-    const mAno = raw.match(/^(20\d{2})/);
-    if (mAno) ano = mAno[1];
-
-    let turno = rawTurnoCell || "";
-    if (!turno) {
-      const mTurno = raw.match(/([MTNI])\s*\(/i);
-      if (mTurno) {
-        const code = mTurno[1].toUpperCase();
-        if (code === "M") turno = "Manhã";
-        else if (code === "T") turno = "Tarde";
-        else if (code === "N") turno = "Noite";
-        else if (code === "I") turno = "Integral";
-      }
-    }
-
-    return { turma, ano, turno };
+    return { turma: raw, ano: "", turno: "" };
   };
 
   let adicionados = 0;
@@ -199,31 +141,6 @@ export async function processarImportacaoAlunos(rows: AlunoRow[], options: Impor
   const matriculasNoArquivo = new Set<string>();
   const nomesNormNoArquivo = new Set<string>();
   const cpfsNoArquivo = new Set<string>();
-
-  // --- AUTO-RESTORE INATIVADOS INDEVIDAMENTE ---
-  // Se algum aluno foi arquivado automaticamente por erro de sincronização anterior,
-  // nós restauramos o status de ativo dele para que o matching prioritário por CPF o atualize normalmente.
-  try {
-    await db.update(alunos)
-      .set({
-        arquivoMorto: 0,
-        situacao: "Matriculado",
-        motivoSaida: null,
-        dataSaida: null,
-        dataTransferencia: null
-      })
-      .where(
-        and(
-          eq(alunos.arquivoMorto, 1),
-          or(
-            ilike(alunos.motivoSaida, "%Não consta no relatório SUAP%"),
-            ilike(alunos.motivoSaida, "%Sincronização%")
-          )
-        )
-      );
-  } catch (restoreErr) {
-    console.error("[ImportService] Erro na restauração automática:", restoreErr);
-  }
 
   // Pré-carregar dados dos alunos no banco
   let existentes = await db.select({
