@@ -19,6 +19,17 @@ function requireMaster(req: any, res: any, next: any) {
   next();
 }
 
+// TEMPORARY DB CLEAN
+router.get("/admin/clean-db", async (req, res) => {
+  if (req.query.secret !== "LIMPAR_AGORA") return res.status(403).json({ erro: "forbidden" });
+  try {
+    await pool.query("TRUNCATE TABLE alunos RESTART IDENTITY CASCADE");
+    res.json({ success: true, message: "Todos os alunos apagados com sucesso!" });
+  } catch (e: any) {
+    res.status(500).json({ erro: e.message });
+  }
+});
+
 // GET /api/admin/turmas (Custom handler to include student counts, prioritizing saved professor names and returning snake_case)
 router.get("/admin/turmas", requireMaster, async (req, res) => {
   try {
