@@ -756,8 +756,9 @@ function PainelAlunosSemTurma({
   // Filtra alunos que estão no arquivo ativo e não têm turma ou a turma é inválida
   const alunosSemTurma = (todosAlunos ?? []).filter((a) => {
     if (a.arquivoMorto === 1 || a.arquivo_morto === 1) return false;
+    if (a.anoIngresso && String(a.anoIngresso).trim() !== "2026" && Number(a.anoIngresso) < 2026) return false;
     const situacao = (a.situacao || "").toLowerCase();
-    if (situacao.includes("transferido") || situacao.includes("cancelado") || situacao.includes("evadido")) return false;
+    if (situacao.includes("transferido") || situacao.includes("cancelado") || situacao.includes("evadido") || situacao.includes("concluido")) return false;
     const t = (a.turmaAtual || a.turma_atual || "").trim();
     if (!t || t === "Sem Turma") return true;
     return !turmasNomes.has(t.toLowerCase());
