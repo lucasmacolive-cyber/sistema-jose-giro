@@ -285,7 +285,7 @@ function PrinterStatusBadge() {
         .catch(() => setStatus({ online: false, ricohOnline: false, epsonOnline: false, ricohStatus: "offline", epsonStatus: "offline" }));
     };
     check();
-    const t = setInterval(check, 10000);
+    const t = setInterval(check, 3000);
     return () => clearInterval(t);
   }, []);
 

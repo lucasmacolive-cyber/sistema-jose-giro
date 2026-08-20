@@ -165,22 +165,29 @@ router.post("/impressoes/heartbeat", async (req, res) => {
 
 router.get("/impressoes/status-agente", async (_req, res) => {
   try {
-    const [c] = await db.select().from(configuracoesTable).where(eq(configuracoesTable.chave, "last_heartbeat_impressora")).limit(1);
+    const [c]  = await db.select().from(configuracoesTable).where(eq(configuracoesTable.chave, "last_heartbeat_impressora")).limit(1);
     const [rs] = await db.select().from(configuracoesTable).where(eq(configuracoesTable.chave, "ricoh_status")).limit(1);
     const [es] = await db.select().from(configuracoesTable).where(eq(configuracoesTable.chave, "epson_status")).limit(1);
     
-    const ricohStatus = (rs?.valor && rs.valor !== "offline") ? rs.valor : "online";
-    const epsonStatus = (es?.valor && es.valor !== "offline") ? es.valor : "online";
+    const agora = Date.now();
+    const lastHb = c?.valor ? new Date(c.valor).getTime() : 0;
+    const isAgenteOnline = (agora - lastHb) < 15000;
+
+    const ricohSt = rs?.valor ? rs.valor : "offline";
+    const epsonSt = es?.valor ? es.valor : "offline";
+
+    const ricohOnline = isAgenteOnline && ricohSt !== "offline";
+    const epsonOnline = isAgenteOnline && epsonSt !== "offline";
     
     res.json({ 
-      online: true, 
-      ricohOnline: true, 
-      epsonOnline: true,
-      ricohStatus,
-      epsonStatus
+      online: isAgenteOnline, 
+      ricohOnline, 
+      epsonOnline,
+      ricohStatus: isAgenteOnline ? ricohSt : "offline",
+      epsonStatus: isAgenteOnline ? epsonSt : "offline"
     });
   } catch (err) {
-    res.json({ online: true, ricohOnline: true, epsonOnline: true, ricohStatus: "online", epsonStatus: "online" });
+    res.json({ online: false, ricohOnline: false, epsonOnline: false, ricohStatus: "offline", epsonStatus: "offline" });
   }
 });
 
@@ -364,18 +371,17 @@ def _win32_status(name_match):
         return None
 
 def check_printer_status(ip, name_match):
-    win32 = _win32_status(name_match)
-    if win32 in ("online", "descanso"):
-        return win32
-
     if ip and re.match(r"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$", str(ip).strip()):
         ip_clean = str(ip).strip()
-        if _ping(ip_clean):
-            tcp = _tcp_open(ip_clean, 9100) or _tcp_open(ip_clean, 80)
-            return "online" if tcp else "descanso"
+        if _ping(ip_clean) or _tcp_open(ip_clean, 9100) or _tcp_open(ip_clean, 80) or _tcp_open(ip_clean, 515) or _tcp_open(ip_clean, 631) or _tcp_open(ip_clean, 5357):
+            return "online"
+        return "offline"
 
-    if win32 is not None:
-        return "online"
+    win32 = _win32_status(name_match)
+    if win32 in ("online", "descanso"):
+        if "EPSON" in name_match.upper() or "RICOH" in name_match.upper():
+            return "offline"
+        return win32
 
     return "offline"
 

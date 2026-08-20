@@ -681,7 +681,7 @@ export default function ImpressoesPage() {
     poll();
     checarAgente();
     carregarPingLogs(true);
-    const interval = setInterval(() => { poll(); checarAgente(); carregarPingLogs(); }, 5000);
+    const interval = setInterval(() => { poll(); checarAgente(); carregarPingLogs(); }, 3000);
     return () => clearInterval(interval);
   }, [isAdmin]);
 
