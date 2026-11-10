@@ -11,6 +11,32 @@ const PgSession = (connectPgSimple as any)(session);
 
 const app = (express as any)();
 
+app.use((req: any, _res: any, next: any) => {
+  try {
+    const u = new URL(req.url || "/", "http://localhost");
+    const pathnameParam = u.searchParams.get("__pathname");
+    if (
+      pathnameParam ||
+      u.pathname === "/src/index.ts" ||
+      u.pathname === "/api/index.ts"
+    ) {
+      let targetPath =
+        pathnameParam ||
+        (req.headers["x-matched-path"] as string) ||
+        (req.headers["x-invoke-path"] as string) ||
+        "/";
+      if (!targetPath.startsWith("/")) targetPath = "/" + targetPath;
+      u.searchParams.delete("__pathname");
+      const qs = u.searchParams.toString();
+      req.url = targetPath + (qs ? `?${qs}` : "");
+      req.originalUrl = req.url;
+      delete req._parsedUrl;
+      delete req._parsedOriginalUrl;
+    }
+  } catch {}
+  next();
+});
+
 app.use(
   (pinoHttp as any)({
     serializers: {
