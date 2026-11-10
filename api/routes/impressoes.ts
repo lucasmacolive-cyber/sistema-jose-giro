@@ -539,7 +539,7 @@ function getApiBase(req: any) {
 }
 
 function gerarPython(apiBase: string) {
-  return `import os, sys, time, tempfile, subprocess, requests, re, socket, glob, json as _json
+  return `import os, sys, time, tempfile, subprocess, requests, re, socket, glob, threading, json as _json
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 API = "${apiBase}"
@@ -708,7 +708,7 @@ def _probe_single_ip(ip):
     return False, ip, None
 
 def check_both_printers_fast(cfg_ricoh_ip, cfg_epson_ip):
-    disc = discover_local_printer_endpoints()
+    disc = _discovered_cache
 
     ricoh_candidates = []
     for ip in _extract_ips(cfg_ricoh_ip) + disc["ricoh"] + DEFAULT_RICOH_IPS:
@@ -739,20 +739,30 @@ def check_both_printers_fast(cfg_ricoh_ip, cfg_epson_ip):
         return f_ricoh.result(), f_epson.result()
 
 _cached_cfg_ips = {"ts": 0, "ricoh": "", "epson": ""}
-def get_ips():
-    now = time.time()
-    if now - _cached_cfg_ips["ts"] < 15:
-        return _cached_cfg_ips["ricoh"], _cached_cfg_ips["epson"]
+def _refresh_cfg_ips():
     try:
         r = SESSION.get(f"{API}/api/escola/contatos", timeout=3.5)
         if r.status_code == 200:
             cfg = r.json()
             _cached_cfg_ips["ricoh"] = cfg.get("impressora_ricoh_ip", "")
             _cached_cfg_ips["epson"] = cfg.get("impressora_epson_ip", "")
-            _cached_cfg_ips["ts"] = now
+            _cached_cfg_ips["ts"] = time.time()
     except Exception as e:
         log(f"Aviso ao buscar IPs: {e}")
+
+def get_ips():
     return _cached_cfg_ips["ricoh"], _cached_cfg_ips["epson"]
+
+def _bg_config_and_discovery():
+    while True:
+        try:
+            _refresh_cfg_ips()
+            discover_local_printer_endpoints()
+        except:
+            pass
+        time.sleep(20)
+
+threading.Thread(target=_bg_config_and_discovery, daemon=True).start()
 
 def normalize_external_url(url):
     u = (url or "").strip()
