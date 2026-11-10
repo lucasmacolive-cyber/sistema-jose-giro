@@ -741,7 +741,7 @@ def check_both_printers_fast(cfg_ricoh_ip, cfg_epson_ip):
 _cached_cfg_ips = {"ts": 0, "ricoh": "", "epson": ""}
 def _refresh_cfg_ips():
     try:
-        r = SESSION.get(f"{API}/api/escola/contatos", timeout=3.5)
+        r = requests.get(f"{API}/api/escola/contatos", headers={"User-Agent": "RoboImpressaoGiro/3.0"}, timeout=3.5)
         if r.status_code == 200:
             cfg = r.json()
             _cached_cfg_ips["ricoh"] = cfg.get("impressora_ricoh_ip", "")
