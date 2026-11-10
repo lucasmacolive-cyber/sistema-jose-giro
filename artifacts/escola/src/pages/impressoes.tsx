@@ -372,7 +372,8 @@ function FormNovoPedido({ onSucesso, nomeUsuario }: { onSucesso: () => void; nom
         <div className="rounded-xl bg-emerald-500/8 border border-emerald-500/20 px-3 py-2.5 flex items-center gap-2.5">
           <Zap className="h-4 w-4 text-emerald-400 shrink-0" />
           <p className="text-[12px] text-emerald-300/80">
-            O arquivo entrará na fila imediatamente e será impresso na <strong>Ricoh SP 3710sf</strong> em até 30 segundos.
+            O arquivo entrará na fila imediatamente e será impresso na{" "}
+            <strong>{colorida ? "Epson L3250" : "Ricoh SP 3710SF"}</strong> em poucos segundos.
           </p>
         </div>
       )}
@@ -460,7 +461,7 @@ export default function ImpressoesPage() {
   const carregarPingLogs = async (mostrarLoading = false) => {
     if (mostrarLoading) setCarregandoPings(true);
     try {
-      const res = await fetch(API("impressoes/pings-log"), { credentials: "include" });
+      const res = await fetch(API("impressoes/pings-log"), { credentials: "include", cache: "no-store" });
       if (res.ok) {
         setPingLogs(await res.json());
       }
@@ -475,6 +476,10 @@ export default function ImpressoesPage() {
   const [agenteOnline, setAgenteOnline] = useState(false);
   const [ricohStatus, setRicohStatus] = useState<"online"|"descanso"|"offline">("offline");
   const [epsonStatus, setEpsonStatus] = useState<"online"|"descanso"|"offline">("offline");
+  const [ricohIp, setRicohIp] = useState<string>("192.168.18.17");
+  const [epsonIp, setEpsonIp] = useState<string>("192.168.18.162");
+  const [ricohPingMs, setRicohPingMs] = useState<number | null>(null);
+  const [epsonPingMs, setEpsonPingMs] = useState<number | null>(null);
   const ricohOnline = ricohStatus !== "offline";
   const epsonOnline = epsonStatus !== "offline";
   const knownIds            = useRef<Set<number>>(new Set());
@@ -664,12 +669,16 @@ export default function ImpressoesPage() {
     // Polling do status do robô (Heartbeat)
     async function checarAgente() {
       try {
-        const res = await fetch(API("impressoes/status-agente"), { credentials: "include" });
+        const res = await fetch(API("impressoes/status-agente"), { credentials: "include", cache: "no-store" });
         if (res.ok) {
           const data = await res.json();
-          setAgenteOnline(data.online);
+          setAgenteOnline(!!data.online);
           setRicohStatus((data.ricohStatus as any) || (data.ricohOnline ? "online" : "offline"));
           setEpsonStatus((data.epsonStatus as any) || (data.epsonOnline ? "online" : "offline"));
+          if (data.ricohIp) setRicohIp(data.ricohIp);
+          if (data.epsonIp) setEpsonIp(data.epsonIp);
+          setRicohPingMs(data.ricohPingMs ?? null);
+          setEpsonPingMs(data.epsonPingMs ?? null);
         }
       } catch { 
         setAgenteOnline(false); 
@@ -681,7 +690,7 @@ export default function ImpressoesPage() {
     poll();
     checarAgente();
     carregarPingLogs(true);
-    const interval = setInterval(() => { poll(); checarAgente(); carregarPingLogs(); }, 3000);
+    const interval = setInterval(() => { poll(); checarAgente(); carregarPingLogs(); }, 2000);
     return () => clearInterval(interval);
   }, [isAdmin]);
 
@@ -839,37 +848,35 @@ export default function ImpressoesPage() {
           <div>
             <h1 className="text-3xl font-display font-bold flex flex-wrap items-center gap-3">
               Fila de Impressão
-              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/30 border border-white/5 text-[10px] font-medium uppercase tracking-wider">
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/30 border border-white/10 text-[10px] font-medium uppercase tracking-wider">
                 <span className={`h-2 w-2 rounded-full ${agenteOnline ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)] animate-pulse" : "bg-red-500"}`} />
-                <span className={agenteOnline ? "text-emerald-400/80" : "text-red-400/80"}>
+                <span className={agenteOnline ? "text-emerald-400" : "text-red-400"}>
                   Robô {agenteOnline ? "Online" : "Offline"}
                 </span>
               </div>
-              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/30 border border-white/5 text-[10px] font-medium uppercase tracking-wider">
-                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/30 border border-white/5 text-[10px] font-medium uppercase tracking-wider">
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/30 border border-white/10 text-[10px] font-medium uppercase tracking-wider">
                 <span className={`h-2 w-2 rounded-full ${
                   ricohStatus === "online" ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)] animate-pulse" :
                   ricohStatus === "descanso" ? "bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.5)] animate-pulse" : "bg-red-500"
                 }`} />
-                <span className={ricohStatus === "online" ? "text-emerald-400/80" : ricohStatus === "descanso" ? "text-amber-400/80" : "text-red-400/80"}>
+                <span className={ricohStatus === "online" ? "text-emerald-400" : ricohStatus === "descanso" ? "text-amber-400" : "text-red-400"}>
                   RICOH {
-                    ricohStatus === "online" ? "Online" :
-                    ricohStatus === "descanso" ? "Em Espera" : "Offline"
+                    ricohStatus === "online" ? `Ligada (Online)${ricohPingMs != null ? ` · ${ricohPingMs}ms` : ""}` :
+                    ricohStatus === "descanso" ? "Em Espera" : "Desligada (Offline)"
                   }
                 </span>
               </div>
-              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/30 border border-white/5 text-[10px] font-medium uppercase tracking-wider">
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/30 border border-white/10 text-[10px] font-medium uppercase tracking-wider">
                 <span className={`h-2 w-2 rounded-full ${
                   epsonStatus === "online" ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)] animate-pulse" :
                   epsonStatus === "descanso" ? "bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.5)] animate-pulse" : "bg-red-500"
                 }`} />
-                <span className={epsonStatus === "online" ? "text-emerald-400/80" : epsonStatus === "descanso" ? "text-amber-400/80" : "text-red-400/80"}>
+                <span className={epsonStatus === "online" ? "text-emerald-400" : epsonStatus === "descanso" ? "text-amber-400" : "text-red-400"}>
                   EPSON {
-                    epsonStatus === "online" ? "Online" :
-                    epsonStatus === "descanso" ? "Em Espera" : "Offline"
+                    epsonStatus === "online" ? `Ligada (Online)${epsonPingMs != null ? ` · ${epsonPingMs}ms` : ""}` :
+                    epsonStatus === "descanso" ? "Em Espera" : "Desligada (Offline)"
                   }
                 </span>
-              </div>
               </div>
               {pendentes > 0 && (
                 <span className="text-base font-normal bg-orange-500/20 text-orange-300 border border-orange-500/30 rounded-full px-3 py-0.5">
@@ -1046,14 +1053,46 @@ export default function ImpressoesPage() {
                       <Zap className="h-4 w-4 text-violet-400" />
                     </div>
                     <div>
-                      <p className="text-sm font-semibold text-white">Status das Impressoras</p>
-                      <p className="text-[11px] text-white/40">Logs de pings do agente</p>
+                      <p className="text-sm font-semibold text-white">Status das Impressoras (Ping 2s)</p>
+                      <p className="text-[11px] text-white/40">Monitoramento em tempo real via Ping ICMP/TCP</p>
                     </div>
                   </div>
                   <Button onClick={() => carregarPingLogs(true)} variant="ghost" size="icon" className="h-8 w-8 text-white/40 hover:text-white hover:bg-white/5">
                     <RefreshCw className={`h-3.5 w-3.5 ${carregandoPings ? "animate-spin" : ""}`} />
                   </Button>
                 </div>
+
+                {/* Cards de status direto das duas impressoras */}
+                <div className="grid grid-cols-2 gap-2">
+                  <div className={`rounded-xl border p-2.5 space-y-1 ${ricohOnline ? "bg-emerald-500/10 border-emerald-500/30" : "bg-red-500/10 border-red-500/25"}`}>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-white">Ricoh SP 3710SF</span>
+                      <span className={`h-2 w-2 rounded-full ${ricohOnline ? "bg-emerald-400 animate-pulse" : "bg-red-400"}`} />
+                    </div>
+                    <p className={`text-[11px] font-semibold ${ricohOnline ? "text-emerald-300" : "text-red-300"}`}>
+                      {ricohOnline ? "Ligada (Online)" : "Desligada (Offline)"}
+                    </p>
+                    <div className="flex items-center justify-between text-[10px] font-mono text-white/45">
+                      <span>{ricohIp}</span>
+                      <span>{ricohOnline && ricohPingMs != null ? `${ricohPingMs}ms` : "sem resp."}</span>
+                    </div>
+                  </div>
+
+                  <div className={`rounded-xl border p-2.5 space-y-1 ${epsonOnline ? "bg-emerald-500/10 border-emerald-500/30" : "bg-red-500/10 border-red-500/25"}`}>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-white">Epson L3250</span>
+                      <span className={`h-2 w-2 rounded-full ${epsonOnline ? "bg-emerald-400 animate-pulse" : "bg-red-400"}`} />
+                    </div>
+                    <p className={`text-[11px] font-semibold ${epsonOnline ? "text-emerald-300" : "text-red-300"}`}>
+                      {epsonOnline ? "Ligada (Online)" : "Desligada (Offline)"}
+                    </p>
+                    <div className="flex items-center justify-between text-[10px] font-mono text-white/45">
+                      <span>{epsonIp}</span>
+                      <span>{epsonOnline && epsonPingMs != null ? `${epsonPingMs}ms` : "sem resp."}</span>
+                    </div>
+                  </div>
+                </div>
+
                 <div className="bg-black/30 border border-white/8 rounded-xl p-3 font-mono text-[10px] text-violet-300 overflow-y-auto max-h-[200px] space-y-1 h-[200px]">
                   {carregandoPings ? (
                     <div className="flex justify-center items-center h-full text-white/30">Carregando logs...</div>
