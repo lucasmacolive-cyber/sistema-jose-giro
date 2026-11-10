@@ -1,15 +1,15 @@
 // @ts-nocheck
 import { Router, type IRouter } from "express";
-import { db } from "../lib/db/index.ts";
-import { syncStatusTable, alunosTable, configuracoesTable, diarioAulasTable, diarioPresencasTable, turmasTable, professoresTable, notasTable, presencasTable } from "../lib/db/index.ts";
-import { desc, eq, isNotNull, and } from "drizzle-orm";
+import { db } from "../lib/db/index.js";
+import { syncStatusTable, alunosTable, configuracoesTable, diarioAulasTable, diarioPresencasTable, turmasTable, professoresTable, notasTable, presencasTable } from "../lib/db/index.js";
+import { desc, eq, isNotNull, and, inArray, sql } from "drizzle-orm";
 import * as XLSX from "xlsx";
 import archiver from "archiver";
 import path from "path";
 import fs from "fs";
-import { sincronizarSUAP, sincronizarDiariosSUAP, baixarDiarioPorLink, identificarDiarioPorLinks, type SecaoDiario, sincronizarTurmasSUAP } from "../lib/suapSync.js";
-import { parseDiarioPDF, normNome } from "../lib/parseDiario.js";
-import { processarImportacaoAlunos } from "../services/importService.js";
+import { sincronizarSUAP, sincronizarDiariosSUAP, baixarDiarioPorLink, baixarDiarioEBoletimPorLink, baixarXlsTurmaPorLink, identificarDiarioPorLinks, normalizarTurma, type SecaoDiario, type BoletimParsed, sincronizarTurmasSUAP } from "../lib/suapSync.js";
+import { parseDiarioPDF, parseBoletimPDF, normNome } from "../lib/parseDiario.js";
+import { processarImportacaoAlunos, realocarAlunosPorPlanilhaTurma } from "../services/importService.js";
 
 /* Estado em memória do sync automático */
 let autoSyncState: {
@@ -223,8 +223,8 @@ router.post("/sync/baixar-diario", async (req, res) => {
     return;
   }
   try {
-    const pdfBuffer = await baixarDiarioPorLink(usuario, senha, link);
-    const { secoes, erros: errosParse } = await parseDiarioPDF(pdfBuffer);
+    const { diarioPdf, boletimPdf } = await baixarDiarioEBoletimPorLink(usuario, senha, link);
+    const { secoes, erros: errosParse } = await parseDiarioPDF(diarioPdf);
     if (secoes.length === 0) {
       res.status(422).json({ ok: false, mensagem: "Nenhuma seção encontrada no PDF.", erros: errosParse });
       return;
@@ -239,6 +239,11 @@ router.post("/sync/baixar-diario", async (req, res) => {
       const r = await importarSecao(secao, todosAlunos);
       resultados.push({ turma: secao.turmaLocal, ...r });
     }
+    if (boletimPdf) {
+      const bol = await parseBoletimPDF(boletimPdf);
+      bol.turmaLocal = secoes[0].turmaLocal;
+      await importarBoletim(bol, todosAlunos);
+    }
     await salvarLinkMeta(link, secoes[0].turmaLocal);
     const totalAulas     = resultados.reduce((s, r) => s + r.aulasImportadas, 0);
     const totalPresencas = resultados.reduce((s, r) => s + r.presencasImportadas, 0);
@@ -250,7 +255,7 @@ router.post("/sync/baixar-diario", async (req, res) => {
 
 /* ═══════════════════════════════════════════════════════════
    POST /api/sync/baixar-diario-turma
-   Encontra o link pelo nome da turma (via metadata) e importa.
+   Encontra os links pelo nome da turma (suporta múltiplos links por turma, ex: NIT01) e importa.
    Body: { turma: string }
 ════════════════════════════════════════════════════════════ */
 router.post("/sync/baixar-diario-turma", async (req, res) => {
@@ -268,30 +273,41 @@ router.post("/sync/baixar-diario-turma", async (req, res) => {
     });
     return;
   }
-  const link = turmaDb.linkSuap;
+  const links = (turmaDb.linkSuap as string).split("\n").map(l => l.trim()).filter(Boolean);
   const { usuario, senha } = await getSuapCreds();
   if (!usuario || !senha) {
     res.status(400).json({ ok: false, mensagem: "Credenciais SUAP não configuradas." });
     return;
   }
   try {
-    const pdfBuffer = await baixarDiarioPorLink(usuario, senha, link);
-    const { secoes, erros: errosParse } = await parseDiarioPDF(pdfBuffer);
     const todosAlunos = await db.select({
       id: alunosTable.id, matricula: alunosTable.matricula,
       nomeCompleto: alunosTable.nomeCompleto, turmaAtual: alunosTable.turmaAtual,
     }).from(alunosTable);
 
     const resultados: { turma: string; aulasImportadas: number; presencasImportadas: number; erros: string[] }[] = [];
-    for (const secao of secoes) {
-      secao.turmaLocal = turma;
-      const r = await importarSecao(secao, todosAlunos);
-      resultados.push({ turma: secao.turmaLocal, ...r });
+    const errosParseAll: string[] = [];
+
+    for (const link of links) {
+      const { diarioPdf, boletimPdf } = await baixarDiarioEBoletimPorLink(usuario, senha, link);
+      const { secoes, erros: errosParse } = await parseDiarioPDF(diarioPdf);
+      errosParseAll.push(...errosParse);
+      for (const secao of secoes) {
+        secao.turmaLocal = turma;
+        const r = await importarSecao(secao, todosAlunos);
+        resultados.push({ turma: secao.turmaLocal, ...r });
+      }
+      if (boletimPdf) {
+        const bol = await parseBoletimPDF(boletimPdf);
+        bol.turmaLocal = turma;
+        await importarBoletim(bol, todosAlunos);
+      }
+      await salvarLinkMeta(link, turma);
     }
-    await salvarLinkMeta(link, turma);
+
     const totalAulas     = resultados.reduce((s, r) => s + r.aulasImportadas, 0);
     const totalPresencas = resultados.reduce((s, r) => s + r.presencasImportadas, 0);
-    res.json({ ok: true, turma, totalAulas, totalPresencas, secoes: resultados, errosParse });
+    res.json({ ok: true, turma, totalAulas, totalPresencas, secoes: resultados, errosParse: errosParseAll });
   } catch (e: any) {
     res.status(500).json({ ok: false, mensagem: e.message ?? "Erro interno." });
   }
@@ -411,8 +427,8 @@ router.post("/sync/baixar-todos-diarios", async (req, res) => {
       batchSyncState.msg = `Baixando ${nomeTurma} (${i + 1}/${jobs.length})...`;
       await setChave("batch_sync_state", JSON.stringify(batchSyncState));
       try {
-        const pdfBuffer = await baixarDiarioPorLink(usuario, senha, link);
-        const { secoes } = await parseDiarioPDF(pdfBuffer);
+        const { diarioPdf, boletimPdf } = await baixarDiarioEBoletimPorLink(usuario, senha, link);
+        const { secoes } = await parseDiarioPDF(diarioPdf);
         let totalAulas = 0;
         let totalPresencas = 0;
         for (const secao of secoes) {
@@ -421,6 +437,11 @@ router.post("/sync/baixar-todos-diarios", async (req, res) => {
           totalAulas += r.aulasImportadas;
           totalPresencas += r.presencasImportadas;
           await salvarLinkMeta(link, nomeTurma);
+        }
+        if (boletimPdf) {
+          const bol = await parseBoletimPDF(boletimPdf);
+          bol.turmaLocal = nomeTurma;
+          await importarBoletim(bol, todosAlunos);
         }
         batchSyncState.resultados.push({ turma: nomeTurma, aulas: totalAulas, presencas: totalPresencas });
         batchSyncState.msg = `${i + 1}/${jobs.length} concluídos`;
@@ -555,23 +576,6 @@ router.post("/sync/auto", async (req, res) => {
         erro: null,
         concluido: true,
       };
-
-      // Registrar no histórico
-      await db.insert(syncStatusTable).values({
-        status: "success",
-        mensagem: `${importados} alunos importados automaticamente do SUAP (${erros} erros).`,
-        totalAlunos: String(importados),
-        ultimaSync: new Date(),
-      });
-
-      autoSyncState = {
-        rodando: false,
-        pct: 100,
-        msg: `✓ ${importados} alunos sincronizados com sucesso!`,
-        erro: null,
-        concluido: true,
-      };
-
     } catch (e: any) {
       console.error("[AutoSync] Erro:", e.message);
       autoSyncState = {
@@ -736,26 +740,34 @@ router.post("/sync/upload-alunos", async (req, res) => {
 router.post("/sync/processar-links-turmas", async (_req, res) => {
   try {
     const turmasComLinks = await db.select().from(turmasTable);
-    const turmasValidas = turmasComLinks.filter(t => t.linkSuap && t.linkSuap.includes("suap"));
+    const turmasValidas = turmasComLinks.filter(t => (t.linkSuapAlunos && t.linkSuapAlunos.includes("suap")) || (t.linkSuap && t.linkSuap.includes("suap")));
 
     if (turmasValidas.length === 0) {
       res.json({ ok: true, mensagem: "Nenhuma turma possui link do SUAP configurado.", movidos: 0, mantidos: 0 });
       return;
     }
 
+    const { usuario, senha } = await getSuapCreds();
     let totalMovidos = 0;
     let totalMantidos = 0;
     const detalhes: any[] = [];
 
     for (const t of turmasValidas) {
       try {
-        const rawUrl = t.linkSuap!;
-        const linkXls = rawUrl.includes("xls=1") ? rawUrl : (rawUrl.includes("?") ? `${rawUrl}&xls=1` : `${rawUrl}?xls=1`);
+        const rawUrl = (t.linkSuapAlunos || t.linkSuap || "").split("\n")[0].trim();
+        const linkXls = rawUrl.includes("xls=") ? rawUrl : (rawUrl.includes("?") ? `${rawUrl}&xls=1` : `${rawUrl}?xls=1`);
 
-        const response = await fetch(linkXls);
-        if (response.ok) {
-          const arrayBuffer = await response.arrayBuffer();
-          const buffer = Buffer.from(arrayBuffer);
+        let buffer: Buffer | null = null;
+        if (usuario && senha) {
+          buffer = await baixarXlsTurmaPorLink(usuario, senha, linkXls);
+        } else {
+          const response = await fetch(linkXls);
+          if (response.ok) {
+            buffer = Buffer.from(await response.arrayBuffer());
+          }
+        }
+
+        if (buffer && buffer.length > 200) {
           const workbook = XLSX.read(buffer, { type: "buffer", cellDates: true });
           const sheet = workbook.Sheets[workbook.SheetNames[0]];
           const rows = XLSX.utils.sheet_to_json(sheet, { defval: "" });
@@ -1173,7 +1185,7 @@ router.post("/sync/diarios-auto", async (req, res) => {
         turmaAtual: alunosTable.turmaAtual,
       }).from(alunosTable);
 
-      const { secoes, erros: errosDiarios } = await sincronizarDiariosSUAP(
+      const { secoes, boletins, erros: errosDiarios } = await sincronizarDiariosSUAP(
         usuario,
         senha,
         (pct, msg) => {
@@ -1206,6 +1218,14 @@ router.post("/sync/diarios-auto", async (req, res) => {
             alunosNaoEncontrados: [],
             erros: [e.message],
           });
+        }
+      }
+
+      if (boletins && boletins.length > 0) {
+        for (const bol of boletins) {
+          try {
+            await importarBoletim(bol, todosAlunos);
+          } catch (_) { /* ignore */ }
         }
       }
 
@@ -1364,42 +1384,49 @@ async function importarSecao(
     todasDatas.add(dataConv);
   }
 
-  // Upsert diario_aulas e criar mapa data → aulaId
+  // Upsert diario_aulas em lote (1 única query SQL!) e criar mapa data → aulaId
   const aulaIdPorData = new Map<string, number>();
-  for (const data of todasDatas) {
-    const info = datasComConteudo.get(data);
+  const datasArr = Array.from(todasDatas);
+  if (datasArr.length > 0) {
     try {
-      const [row] = await db
-        .insert(diarioAulasTable)
-        .values({
+      const aulasBatch = datasArr.map((data) => {
+        const info = datasComConteudo.get(data);
+        return {
           turmaNome: secao.turmaLocal,
           data,
           numeroAulas: info?.numAulas ?? 1,
-          conteudo: info?.conteudo ?? null,
-        })
+          conteudo: info?.conteudo || null,
+        };
+      });
+      const rowsAulas = await db
+        .insert(diarioAulasTable)
+        .values(aulasBatch)
         .onConflictDoUpdate({
           target: [diarioAulasTable.turmaNome, diarioAulasTable.data],
           set: {
-            numeroAulas: info?.numAulas ?? 1,
-            conteudo: info?.conteudo ?? null,
+            numeroAulas: sql`excluded.numero_aulas`,
+            conteudo: sql`COALESCE(excluded.conteudo, ${diarioAulasTable.conteudo})`,
           },
         })
-        .returning({ id: diarioAulasTable.id });
-      aulaIdPorData.set(data, row.id);
-      aulasImportadas++;
+        .returning({ id: diarioAulasTable.id, data: diarioAulasTable.data });
+
+      for (const r of rowsAulas) {
+        aulaIdPorData.set(r.data, r.id);
+      }
+      aulasImportadas += rowsAulas.length;
     } catch (e: any) {
-      erros.push(`Aula ${data}: ${e.message}`);
+      erros.push(`Aulas lote (${secao.turmaLocal}): ${e.message}`);
     }
   }
 
-  // 2. Importar presenças → diario_presencas
+  // 2. Importar presenças → diario_presencas em lote
+  const presencasMap = new Map<string, { aulaId: number; alunoId: number; status: string }>();
+
   for (const aluno of secao.alunos) {
-    // Resolver alunoId: primeiro por matrícula, depois por nome
     let alunoId = porMatricula.get(aluno.matricula);
     if (!alunoId) alunoId = porNome.get(aluno.nome);
 
     if (!alunoId) {
-      // Busca mais ampla (sem filtrar por turma) — aluno pode estar em outra turma
       for (const a of todosAlunos) {
         if (a.matricula?.trim() === aluno.matricula) { alunoId = a.id; break; }
       }
@@ -1419,107 +1446,155 @@ async function importarSecao(
       const dataConv = converterData(f.data);
       const aulaId = aulaIdPorData.get(dataConv);
       if (!aulaId) continue;
-      try {
-        await db
-          .insert(diarioPresencasTable)
-          .values({ aulaId, alunoId, status: f.status })
-          .onConflictDoUpdate({
-            target: [diarioPresencasTable.aulaId, diarioPresencasTable.alunoId],
-            set: { status: f.status },
-          });
-        presencasImportadas++;
-      } catch (e: any) {
-        erros.push(`Presença aluno ${alunoId} dia ${f.data}: ${e.message}`);
-      }
+      presencasMap.set(`${aulaId}:${alunoId}`, { aulaId, alunoId, status: f.status });
     }
+  }
 
-    // 3. Importar nota bimestral
-    const disciplinaNome = secao.disciplina || "Sem Disciplina";
-    if (aluno.nota !== undefined) {
-      try {
-        const existingNota = await db
-          .select()
-          .from(notasTable)
-          .where(and(
-            eq(notasTable.alunoId, alunoId),
-            eq(notasTable.bimestre, secao.bimestre),
-            eq(notasTable.disciplina, disciplinaNome)
-          ))
-          .limit(1);
-
-        const notaValStr = aluno.nota !== null ? String(aluno.nota) : null;
-
-        if (existingNota.length > 0) {
-          await db
-            .update(notasTable)
-            .set({
-              notaFinal: notaValStr,
-              mediaFinal: notaValStr,
-              dataAtualizacao: new Date()
-            })
-            .where(eq(notasTable.id, existingNota[0].id));
-        } else {
-          await db
-            .insert(notasTable)
-            .values({
-              alunoId,
-              bimestre: secao.bimestre,
-              disciplina: disciplinaNome,
-              notaFinal: notaValStr,
-              mediaFinal: notaValStr
-            });
-        }
-      } catch (e: any) {
-        erros.push(`Erro ao importar nota do aluno ${aluno.nome}: ${e.message}`);
-      }
-    }
-
-    // 4. Importar resumo de presenças bimestral
+  const presencasBatch = Array.from(presencasMap.values());
+  for (let k = 0; k < presencasBatch.length; k += 300) {
+    const chunk = presencasBatch.slice(k, k + 300);
     try {
-      const totalAulasBim = todasDatas.size;
-      const faltasBim = aluno.totalFaltasPDF || 0;
-      const freqCalc = totalAulasBim > 0
-        ? (((totalAulasBim - faltasBim) / totalAulasBim) * 100).toFixed(2)
-        : "100.00";
-
-      const existingPresenca = await db
-        .select()
-        .from(presencasTable)
-        .where(and(
-          eq(presencasTable.alunoId, alunoId),
-          eq(presencasTable.bimestre, secao.bimestre),
-          eq(presencasTable.disciplina, disciplinaNome)
-        ))
-        .limit(1);
-
-      if (existingPresenca.length > 0) {
-        await db
-          .update(presencasTable)
-          .set({
-            totalAulas: totalAulasBim,
-            faltas: faltasBim,
-            percentualFrequencia: freqCalc,
-            dataAtualizacao: new Date()
-          })
-          .where(eq(presencasTable.id, existingPresenca[0].id));
-      } else {
-        await db
-          .insert(presencasTable)
-          .values({
-            alunoId,
-            bimestre: secao.bimestre,
-            disciplina: disciplinaNome,
-            totalAulas: totalAulasBim,
-            faltas: faltasBim,
-            percentualFrequencia: freqCalc
-          });
-      }
+      await db
+        .insert(diarioPresencasTable)
+        .values(chunk)
+        .onConflictDoUpdate({
+          target: [diarioPresencasTable.aulaId, diarioPresencasTable.alunoId],
+          set: { status: sql`excluded.status` },
+        });
+      presencasImportadas += chunk.length;
     } catch (e: any) {
-      erros.push(`Erro ao importar resumo de presenças do aluno ${aluno.nome}: ${e.message}`);
+      erros.push(`Presenças lote (${secao.turmaLocal}): ${e.message}`);
     }
   }
 
   return { aulasImportadas, presencasImportadas, alunosNaoEncontrados, erros };
+}
+
+/* ═══════════════════════════════════════════════════════════
+   POST /api/sync/boletim-pdf
+   Recebe base64 de um PDF de Boletim de Notas do Diário (/edu/emitir_boletins_pdf/{id}/)
+   e importa notas e faltas dos 4 bimestres
+════════════════════════════════════════════════════════════ */
+router.post("/sync/boletim-pdf", async (req, res) => {
+  const { arquivo, turma } = req.body as { arquivo?: string; turma?: string };
+  if (!arquivo) {
+    res.status(400).json({ ok: false, mensagem: "PDF do boletim não enviado." });
+    return;
+  }
+  try {
+    const base64 = arquivo.includes(",") ? arquivo.split(",")[1] : arquivo;
+    const buffer = Buffer.from(base64, "base64");
+    const bol = await parseBoletimPDF(buffer);
+    if (turma) bol.turmaLocal = turma;
+
+    const todosAlunos = await db.select({
+      id: alunosTable.id,
+      matricula: alunosTable.matricula,
+      nomeCompleto: alunosTable.nomeCompleto,
+      turmaAtual: alunosTable.turmaAtual,
+    }).from(alunosTable);
+
+    const r = await importarBoletim(bol, todosAlunos);
+    res.json({
+      ok: true,
+      turma: bol.turmaLocal,
+      disciplina: bol.disciplina,
+      ...r,
+    });
+  } catch (e: any) {
+    res.status(500).json({ ok: false, mensagem: e.message ?? "Erro ao processar boletim PDF." });
+  }
+});
+
+async function importarBoletim(
+  boletim: BoletimParsed,
+  todosAlunos: { id: number; matricula: string | null; nomeCompleto: string; turmaAtual: string | null }[]
+): Promise<{ notasImportadas: number; presencasBimestraisImportadas: number; alunosNaoEncontrados: string[] }> {
+  const alunosNaoEncontrados: string[] = [];
+
+  const porMatricula = new Map<string, number>();
+  const porNome = new Map<string, number>();
+  for (const a of todosAlunos) {
+    if (a.matricula) porMatricula.set(a.matricula.trim(), a.id);
+    porNome.set(normNome(a.nomeCompleto), a.id);
+  }
+
+  const disciplinaNome = boletim.disciplina || "Regente / Globalizado";
+  const aulasPorBimestre = Math.max(40, Math.round((boletim.aulasPrevistas || 200) / 4));
+
+  const alunoIdsAfetados: number[] = [];
+  const notasBatch: any[] = [];
+  const presencasBatch: any[] = [];
+
+  for (const al of boletim.alunos) {
+    let alunoId = porMatricula.get(al.matricula);
+    if (!alunoId) alunoId = porNome.get(al.nome);
+    if (!alunoId) {
+      alunosNaoEncontrados.push(al.nome);
+      continue;
+    }
+    alunoIdsAfetados.push(alunoId);
+
+    for (const bim of al.bimestres) {
+      const notaValStr = bim.nota !== null ? String(bim.nota) : null;
+      const mediaValStr = al.mediaFinal !== null ? String(al.mediaFinal) : notaValStr;
+      const situacao =
+        bim.nota === null
+          ? "Cursando"
+          : bim.nota >= 6
+          ? "Aprovado"
+          : "Em Recuperação";
+
+      if (bim.nota !== null || al.mediaFinal !== null) {
+        notasBatch.push({
+          alunoId,
+          bimestre: bim.bimestre,
+          disciplina: disciplinaNome,
+          nota1: notaValStr,
+          notaFinal: notaValStr,
+          mediaFinal: mediaValStr,
+          situacao,
+          dataAtualizacao: new Date(),
+        });
+      }
+
+      const freqCalc = aulasPorBimestre > 0
+        ? Math.max(0, (((aulasPorBimestre - bim.faltas) / aulasPorBimestre) * 100)).toFixed(2)
+        : String(al.percentualFrequencia);
+
+      presencasBatch.push({
+        alunoId,
+        bimestre: bim.bimestre,
+        disciplina: disciplinaNome,
+        totalAulas: aulasPorBimestre,
+        faltas: bim.faltas,
+        percentualFrequencia: freqCalc,
+        dataAtualizacao: new Date(),
+      });
+    }
+  }
+
+  if (alunoIdsAfetados.length > 0) {
+    await db.delete(notasTable).where(
+      and(inArray(notasTable.alunoId, alunoIdsAfetados), eq(notasTable.disciplina, disciplinaNome))
+    );
+    await db.delete(presencasTable).where(
+      and(inArray(presencasTable.alunoId, alunoIdsAfetados), eq(presencasTable.disciplina, disciplinaNome))
+    );
+  }
+
+  if (notasBatch.length > 0) {
+    await db.insert(notasTable).values(notasBatch);
+  }
+  if (presencasBatch.length > 0) {
+    await db.insert(presencasTable).values(presencasBatch);
+  }
+
+  return {
+    notasImportadas: notasBatch.length,
+    presencasBimestraisImportadas: presencasBatch.length,
+    alunosNaoEncontrados,
+  };
 }
 
 export default router;

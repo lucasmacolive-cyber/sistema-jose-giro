@@ -1,15 +1,15 @@
 // @ts-nocheck
-import { Router } from "express";
+import { Router, type IRouter } from "express";
 import { db } from "../lib/db/index.js";
-import { syncStatusTable, alunosTable, configuracoesTable, diarioAulasTable, diarioPresencasTable, turmasTable, professoresTable, notasTable } from "../lib/db/index.js";
+import { syncStatusTable, alunosTable, configuracoesTable, diarioAulasTable, diarioPresencasTable, turmasTable, professoresTable, notasTable, presencasTable } from "../lib/db/index.js";
 import { desc, eq, isNotNull, and, inArray, sql } from "drizzle-orm";
 import * as XLSX from "xlsx";
 import archiver from "archiver";
 import path from "path";
 import fs from "fs";
-import { sincronizarSUAP, sincronizarDiariosSUAP, baixarDiarioPorLink, identificarDiarioPorLinks, type SecaoDiario, sincronizarTurmasSUAP } from "../lib/suapSync.js";
-import { parseDiarioPDF, normNome } from "../lib/parseDiario.js";
-import { processarImportacaoAlunos } from "../services/importService.js";
+import { sincronizarSUAP, sincronizarDiariosSUAP, baixarDiarioPorLink, baixarDiarioEBoletimPorLink, baixarXlsTurmaPorLink, identificarDiarioPorLinks, normalizarTurma, type SecaoDiario, type BoletimParsed, sincronizarTurmasSUAP } from "../lib/suapSync.js";
+import { parseDiarioPDF, parseBoletimPDF, normNome } from "../lib/parseDiario.js";
+import { processarImportacaoAlunos, realocarAlunosPorPlanilhaTurma } from "../services/importService.js";
 
 /* Estado em memória do sync automático */
 let autoSyncState: {
@@ -35,15 +35,12 @@ let batchSyncState: {
   total: number;
   atual: number;
   msg: string;
-  turmaAtual: string;
   erro: string | null;
   concluido: boolean;
   ultimaSync: string | null;
-  resultados: { turma: string; aulas: number; presencas: number; erro?: string }[];
-  turmasSemLink: string[];
-} = { rodando: false, total: 0, atual: 0, msg: "", turmaAtual: "", erro: null, concluido: false, ultimaSync: null, resultados: [], turmasSemLink: [] };
+} = { rodando: false, total: 0, atual: 0, msg: "", erro: null, concluido: false, ultimaSync: null };
 
-const router = Router();
+const router: IRouter = Router();
 
 /* ─── Status atual ─── */
 router.get("/sync/status", async (_req, res) => {
@@ -61,11 +58,6 @@ router.get("/sync/status", async (_req, res) => {
     mensagem: status.mensagem,
     totalAlunos: status.totalAlunos ? parseInt(status.totalAlunos) : 0,
   });
-});
-
-router.get("/sync/historico", async (_req, res) => {
-  const history = await db.select().from(syncStatusTable).orderBy(desc(syncStatusTable.id)).limit(20);
-  res.json(history);
 });
 
 /* ═══════════════════════════════════════════════════════════
@@ -231,8 +223,8 @@ router.post("/sync/baixar-diario", async (req, res) => {
     return;
   }
   try {
-    const pdfBuffer = await baixarDiarioPorLink(usuario, senha, link);
-    const { secoes, erros: errosParse } = await parseDiarioPDF(pdfBuffer);
+    const { diarioPdf, boletimPdf } = await baixarDiarioEBoletimPorLink(usuario, senha, link);
+    const { secoes, erros: errosParse } = await parseDiarioPDF(diarioPdf);
     if (secoes.length === 0) {
       res.status(422).json({ ok: false, mensagem: "Nenhuma seção encontrada no PDF.", erros: errosParse });
       return;
@@ -247,6 +239,11 @@ router.post("/sync/baixar-diario", async (req, res) => {
       const r = await importarSecao(secao, todosAlunos);
       resultados.push({ turma: secao.turmaLocal, ...r });
     }
+    if (boletimPdf) {
+      const bol = await parseBoletimPDF(boletimPdf);
+      bol.turmaLocal = secoes[0].turmaLocal;
+      await importarBoletim(bol, todosAlunos);
+    }
     await salvarLinkMeta(link, secoes[0].turmaLocal);
     const totalAulas     = resultados.reduce((s, r) => s + r.aulasImportadas, 0);
     const totalPresencas = resultados.reduce((s, r) => s + r.presencasImportadas, 0);
@@ -258,7 +255,7 @@ router.post("/sync/baixar-diario", async (req, res) => {
 
 /* ═══════════════════════════════════════════════════════════
    POST /api/sync/baixar-diario-turma
-   Encontra o link pelo nome da turma (via metadata) e importa.
+   Encontra os links pelo nome da turma (suporta múltiplos links por turma, ex: NIT01) e importa.
    Body: { turma: string }
 ════════════════════════════════════════════════════════════ */
 router.post("/sync/baixar-diario-turma", async (req, res) => {
@@ -276,40 +273,77 @@ router.post("/sync/baixar-diario-turma", async (req, res) => {
     });
     return;
   }
-  const link = turmaDb.linkSuap;
+  const links = (turmaDb.linkSuap as string).split("\n").map(l => l.trim()).filter(Boolean);
   const { usuario, senha } = await getSuapCreds();
   if (!usuario || !senha) {
     res.status(400).json({ ok: false, mensagem: "Credenciais SUAP não configuradas." });
     return;
   }
   try {
-    const pdfBuffer = await baixarDiarioPorLink(usuario, senha, link);
-    const { secoes, erros: errosParse } = await parseDiarioPDF(pdfBuffer);
     const todosAlunos = await db.select({
       id: alunosTable.id, matricula: alunosTable.matricula,
       nomeCompleto: alunosTable.nomeCompleto, turmaAtual: alunosTable.turmaAtual,
     }).from(alunosTable);
 
     const resultados: { turma: string; aulasImportadas: number; presencasImportadas: number; erros: string[] }[] = [];
-    for (const secao of secoes) {
-      secao.turmaLocal = turma;
-      const r = await importarSecao(secao, todosAlunos);
-      resultados.push({ turma: secao.turmaLocal, ...r });
+    const errosParseAll: string[] = [];
+
+    for (const link of links) {
+      const { diarioPdf, boletimPdf } = await baixarDiarioEBoletimPorLink(usuario, senha, link);
+      const { secoes, erros: errosParse } = await parseDiarioPDF(diarioPdf);
+      errosParseAll.push(...errosParse);
+      for (const secao of secoes) {
+        secao.turmaLocal = turma;
+        const r = await importarSecao(secao, todosAlunos);
+        resultados.push({ turma: secao.turmaLocal, ...r });
+      }
+      if (boletimPdf) {
+        const bol = await parseBoletimPDF(boletimPdf);
+        bol.turmaLocal = turma;
+        await importarBoletim(bol, todosAlunos);
+      }
+      await salvarLinkMeta(link, turma);
     }
-    await salvarLinkMeta(link, turma);
+
     const totalAulas     = resultados.reduce((s, r) => s + r.aulasImportadas, 0);
     const totalPresencas = resultados.reduce((s, r) => s + r.presencasImportadas, 0);
-    res.json({ ok: true, turma, totalAulas, totalPresencas, secoes: resultados, errosParse });
+    res.json({ ok: true, turma, totalAulas, totalPresencas, secoes: resultados, errosParse: errosParseAll });
   } catch (e: any) {
     res.status(500).json({ ok: false, mensagem: e.message ?? "Erro interno." });
   }
 });
 
+// Helper to read setting
+async function getChave(chave: string, defaultVal: string = ""): Promise<string> {
+  const [row] = await db.select().from(configuracoesTable).where(eq(configuracoesTable.chave, chave)).limit(1);
+  return row ? (row.valor || defaultVal) : defaultVal;
+}
+
+// Helper to write setting
+async function setChave(chave: string, valor: string) {
+  await db.insert(configuracoesTable)
+    .values({ chave, valor, atualizadoEm: new Date() })
+    .onConflictDoUpdate({
+      target: configuracoesTable.chave,
+      set: { valor, atualizadoEm: new Date() }
+    });
+}
+
 /* ═══════════════════════════════════════════════════════════
    GET /api/sync/baixar-todos-status — progresso do batch download
+   Lê do banco de dados para sincronizar progresso entre nuvem e local.
 ════════════════════════════════════════════════════════════ */
-router.get("/sync/baixar-todos-status", (_req, res) => {
-  res.json(batchSyncState);
+router.get("/sync/baixar-todos-status", async (_req, res) => {
+  try {
+    const stateRaw = await getChave("batch_sync_state", "");
+    if (stateRaw) {
+      res.json(JSON.parse(stateRaw));
+    } else {
+      res.json(batchSyncState);
+    }
+  } catch {
+    res.json(batchSyncState);
+  }
 });
 
 /* ═══════════════════════════════════════════════════════════
@@ -317,6 +351,42 @@ router.get("/sync/baixar-todos-status", (_req, res) => {
    Baixa todos os links salvos em sequência (background).
 ════════════════════════════════════════════════════════════ */
 router.post("/sync/baixar-todos-diarios", async (req, res) => {
+  const { bypassRobo } = req.body || {};
+
+  // Verificar se o robô local está online
+  const lastHeartbeat = await getChave("last_heartbeat_robo", "");
+  const isRoboOnline = lastHeartbeat ? (Date.now() - new Date(lastHeartbeat).getTime() < 40000) : false;
+
+  // Buscar todas as turmas, separar as que têm link das que não têm
+  const todasTurmas = await db.select().from(turmasTable);
+  const turmasComLink = todasTurmas.filter(t => t.linkSuap);
+  const turmasSemLink = todasTurmas.filter(t => !t.linkSuap).map(t => t.nomeTurma as string);
+
+  // Expandir turmas com múltiplos links (separados por \n) em pares {nomeTurma, link}
+  const jobs: { nomeTurma: string; link: string }[] = [];
+  for (const turma of turmasComLink) {
+    const linksRaw = (turma.linkSuap as string).split("\n").map(l => l.trim()).filter(Boolean);
+    for (const link of linksRaw) {
+      jobs.push({ nomeTurma: turma.nomeTurma as string, link });
+    }
+  }
+
+  if (isRoboOnline && !bypassRobo) {
+    // Agenda o comando no robô local
+    await setChave("robo_comando_pendente", "sync_diarios");
+
+    const pendingState = {
+      rodando: true, total: jobs.length, atual: 0, pct: 0,
+      msg: "Acionando o Robô Escolar local na escola...", turmaAtual: "",
+      erro: null, concluido: false, ultimaSync: null,
+      resultados: [], turmasSemLink,
+    };
+    await setChave("batch_sync_state", JSON.stringify(pendingState));
+
+    res.json({ ok: true, total: jobs.length, turmasSemLink, mensagem: "Sincronização acionada no Robô Escolar." });
+    return;
+  }
+
   if (batchSyncState.rodando) {
     res.json({ ok: true, mensagem: "Download já em andamento.", ...batchSyncState });
     return;
@@ -328,23 +398,9 @@ router.post("/sync/baixar-todos-diarios", async (req, res) => {
     return;
   }
 
-  // Buscar todas as turmas, separar as que têm link das que não têm
-  const todasTurmas = await db.select().from(turmasTable);
-  const turmasComLink = todasTurmas.filter(t => t.linkSuap);
-  const turmasSemLink = todasTurmas.filter(t => !t.linkSuap).map(t => t.nomeTurma as string);
-
-  if (turmasComLink.length === 0) {
-    res.status(400).json({ ok: false, mensagem: "Nenhum link de diário cadastrado. Configure os links em Ajustes → Turmas." });
+  if (jobs.length === 0) {
+    res.status(400).json({ ok: false, mensagem: "Nenhum link de diário cadastrado. Configure em Ajustes → Sincronização." });
     return;
-  }
-
-  // Expandir turmas com múltiplos links (separados por \n) em pares {nomeTurma, link}
-  const jobs: { nomeTurma: string; link: string }[] = [];
-  for (const turma of turmasComLink) {
-    const linksRaw = (turma.linkSuap as string).split("\n").map(l => l.trim()).filter(Boolean);
-    for (const link of linksRaw) {
-      jobs.push({ nomeTurma: turma.nomeTurma as string, link });
-    }
   }
 
   batchSyncState = {
@@ -353,6 +409,7 @@ router.post("/sync/baixar-todos-diarios", async (req, res) => {
     erro: null, concluido: false, ultimaSync: null,
     resultados: [], turmasSemLink,
   };
+  await setChave("batch_sync_state", JSON.stringify(batchSyncState));
   res.json({ ok: true, total: jobs.length, turmasSemLink });
 
   // Background: baixar cada diário em sequência
@@ -368,9 +425,10 @@ router.post("/sync/baixar-todos-diarios", async (req, res) => {
       batchSyncState.pct = Math.round((i / jobs.length) * 100);
       batchSyncState.turmaAtual = nomeTurma;
       batchSyncState.msg = `Baixando ${nomeTurma} (${i + 1}/${jobs.length})...`;
+      await setChave("batch_sync_state", JSON.stringify(batchSyncState));
       try {
-        const pdfBuffer = await baixarDiarioPorLink(usuario, senha, link);
-        const { secoes } = await parseDiarioPDF(pdfBuffer);
+        const { diarioPdf, boletimPdf } = await baixarDiarioEBoletimPorLink(usuario, senha, link);
+        const { secoes } = await parseDiarioPDF(diarioPdf);
         let totalAulas = 0;
         let totalPresencas = 0;
         for (const secao of secoes) {
@@ -380,12 +438,18 @@ router.post("/sync/baixar-todos-diarios", async (req, res) => {
           totalPresencas += r.presencasImportadas;
           await salvarLinkMeta(link, nomeTurma);
         }
+        if (boletimPdf) {
+          const bol = await parseBoletimPDF(boletimPdf);
+          bol.turmaLocal = nomeTurma;
+          await importarBoletim(bol, todosAlunos);
+        }
         batchSyncState.resultados.push({ turma: nomeTurma, aulas: totalAulas, presencas: totalPresencas });
         batchSyncState.msg = `${i + 1}/${jobs.length} concluídos`;
       } catch (e: any) {
         batchSyncState.resultados.push({ turma: nomeTurma, aulas: 0, presencas: 0, erro: e.message });
         batchSyncState.msg = `Erro em ${nomeTurma} (${i + 1}/${jobs.length}): ${e.message}`;
       }
+      await setChave("batch_sync_state", JSON.stringify(batchSyncState));
     }
     const agora = new Date().toISOString();
     const comErro = batchSyncState.resultados.filter(r => r.erro).length;
@@ -393,12 +457,14 @@ router.post("/sync/baixar-todos-diarios", async (req, res) => {
     batchSyncState = {
       ...batchSyncState,
       rodando: false, atual: jobs.length,
-      msg: `${concluidos} turmas sincronizadas${comErro > 0 ? ` (${comErro} com erro)` : ""}`,
+      msg: `${concluidos} diários sincronizados${comErro > 0 ? ` (${comErro} com erro)` : ""}`,
       turmaAtual: "",
       concluido: true, ultimaSync: agora,
     };
-  })().catch((e) => {
+    await setChave("batch_sync_state", JSON.stringify(batchSyncState));
+  })().catch(async (e) => {
     batchSyncState = { ...batchSyncState, rodando: false, erro: e.message, concluido: true };
+    await setChave("batch_sync_state", JSON.stringify(batchSyncState));
   });
 });
 
@@ -449,88 +515,83 @@ router.post("/sync/auto", async (req, res) => {
     return;
   }
 
+  // Iniciar sync em background
   autoSyncState = { rodando: true, pct: 0, msg: "Iniciando sincronização...", erro: null, concluido: false };
+  res.json({ ok: true, mensagem: "Sincronização iniciada. Acompanhe o progresso." });
 
-  try {
-    const onProgress = (pct: number, msg: string) => {
-      autoSyncState.pct = pct;
-      autoSyncState.msg = msg;
-      console.log(`[AutoSync] ${pct}% — ${msg}`);
-    };
+  // Executar de forma assíncrona (não bloqueia a resposta)
+  (async () => {
+    try {
+      const onProgress = (pct: number, msg: string) => {
+        autoSyncState.pct = pct;
+        autoSyncState.msg = msg;
+        console.log(`[AutoSync] ${pct}% — ${msg}`);
+      };
 
-    // Baixar XLS do SUAP
-    const xlsBuffer = await sincronizarSUAP(usuario, senha, onProgress);
+      // Baixar XLS do SUAP
+      const xlsBuffer = await sincronizarSUAP(usuario, senha, onProgress);
 
-    onProgress(88, "Processando dados dos alunos...");
+      onProgress(88, "Processando dados dos alunos...");
 
-    // Parsear XLS
-    const workbook = XLSX.read(xlsBuffer, { type: "buffer", cellDates: true });
-    const sheetName = workbook.SheetNames[0];
-    const sheet = workbook.Sheets[sheetName];
+      // Parsear XLS
+      const workbook = XLSX.read(xlsBuffer, { type: "buffer", cellDates: true });
+      const sheetName = workbook.SheetNames[0];
+      const sheet = workbook.Sheets[sheetName];
 
-    const rawMatrix: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
-    const PALAVRAS_CABECALHO = ["nome", "matrícula", "matricula", "turma", "situação", "situacao"];
-    let headerRowIdx = 0;
-    for (let i = 0; i < Math.min(rawMatrix.length, 20); i++) {
-      const rowJoined = rawMatrix[i].map((c: any) => String(c ?? "").toLowerCase()).join("|");
-      const acertos = PALAVRAS_CABECALHO.filter(p => rowJoined.includes(p)).length;
-      if (acertos >= 2) { headerRowIdx = i; break; }
+      const rawMatrix: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
+      const PALAVRAS_CABECALHO = ["nome", "matrícula", "matricula", "turma", "situação", "situacao"];
+      let headerRowIdx = 0;
+      for (let i = 0; i < Math.min(rawMatrix.length, 20); i++) {
+        const rowJoined = rawMatrix[i].map((c: any) => String(c ?? "").toLowerCase()).join("|");
+        const acertos = PALAVRAS_CABECALHO.filter(p => rowJoined.includes(p)).length;
+        if (acertos >= 2) { headerRowIdx = i; break; }
+      }
+
+      const rows: Record<string, any>[] = XLSX.utils.sheet_to_json(sheet, { defval: "", range: headerRowIdx });
+
+      if (rows.length === 0) {
+        throw new Error("Planilha do SUAP está vazia ou formato inválido.");
+      }
+
+      onProgress(90, `${rows.length} alunos encontrados. Importando...`);
+
+      // Importar alunos usando o serviço centralizado
+      const result = await processarImportacaoAlunos(rows, { 
+        substituirTudo: true, // AutoSync sempre sincroniza o estado atual do SUAP
+        onProgress: (pct, msg) => onProgress(pct, msg)
+      });
+
+      // Registrar no histórico
+      await db.insert(syncStatusTable).values({
+        status: "success",
+        mensagem: `${result.adicionados} novos, ${result.atualizados} atualizados, ${result.transferidos} transferidos do SUAP.`,
+        totalAlunos: String(result.adicionados + result.atualizados),
+        ultimaSync: new Date(),
+      });
+
+      autoSyncState = {
+        rodando: false,
+        pct: 100,
+        msg: `✓ Sincronização concluída: ${result.adicionados} novos, ${result.atualizados} atualizados.`,
+        erro: null,
+        concluido: true,
+      };
+    } catch (e: any) {
+      console.error("[AutoSync] Erro:", e.message);
+      autoSyncState = {
+        rodando: false,
+        pct: 0,
+        msg: "",
+        erro: e.message || "Erro desconhecido durante a sincronização.",
+        concluido: false,
+      };
+      await db.insert(syncStatusTable).values({
+        status: "error",
+        mensagem: `Erro na sincronização automática: ${e.message}`,
+        ultimaSync: new Date(),
+      });
     }
-
-    const rows: Record<string, any>[] = XLSX.utils.sheet_to_json(sheet, { defval: "", range: headerRowIdx });
-
-    if (rows.length === 0) {
-      throw new Error("Planilha do SUAP está vazia ou formato inválido.");
-    }
-
-    onProgress(90, `${rows.length} alunos encontrados. Importando...`);
-
-    // Importar alunos usando o serviço centralizado
-    const result = await processarImportacaoAlunos(rows, { 
-      substituirTudo: true, // AutoSync sempre sincroniza o estado atual do SUAP
-      onProgress: (pct, msg) => onProgress(pct, msg)
-    });
-
-    // Registrar no histórico
-    await db.insert(syncStatusTable).values({
-      status: "success",
-      mensagem: `${result.adicionados} novos, ${result.atualizados} atualizados, ${result.transferidos} transferidos do SUAP.`,
-      totalAlunos: String(result.adicionados + result.atualizados),
-      ultimaSync: new Date(),
-      detalhes: JSON.stringify(result.detalhes),
-    });
-
-    autoSyncState = {
-      rodando: false,
-      pct: 100,
-      msg: `✓ Sincronização concluída: ${result.adicionados} novos, ${result.atualizados} atualizados.`,
-      erro: null,
-      concluido: true,
-    };
-
-    res.json({
-      ok: true,
-      mensagem: `Sincronização concluída com sucesso! ${result.adicionados} novos alunos adicionados, ${result.atualizados} atualizados e ${result.transferidos} transferidos do SUAP.`,
-      adicionados: result.adicionados,
-      atualizados: result.atualizados,
-    });
-
-  } catch (e: any) {
-    console.error("[AutoSync] Erro:", e.message);
-    autoSyncState = {
-      rodando: false,
-      pct: 0,
-      msg: "",
-      erro: e.message || "Erro desconhecido durante a sincronização.",
-      concluido: false,
-    };
-    await db.insert(syncStatusTable).values({
-      status: "error",
-      mensagem: `Erro na sincronização automática: ${e.message}`,
-      ultimaSync: new Date(),
-    });
-    res.status(500).json({ ok: false, mensagem: e.message || "Erro durante a sincronização." });
-  }
+  })();
 });
 
 /* ═══════════════════════════════════════════════════════════
@@ -650,7 +711,6 @@ router.post("/sync/upload-alunos", async (req, res) => {
       mensagem: `Planilha importada: ${result.adicionados} novos, ${result.atualizados} atualizados, ${result.transferidos} transferidos.`,
       totalAlunos: String(result.adicionados + result.atualizados),
       ultimaSync: new Date(),
-      detalhes: JSON.stringify(result.detalhes),
     });
 
     res.json({
@@ -680,26 +740,34 @@ router.post("/sync/upload-alunos", async (req, res) => {
 router.post("/sync/processar-links-turmas", async (_req, res) => {
   try {
     const turmasComLinks = await db.select().from(turmasTable);
-    const turmasValidas = turmasComLinks.filter(t => t.linkSuap && t.linkSuap.includes("suap"));
+    const turmasValidas = turmasComLinks.filter(t => (t.linkSuapAlunos && t.linkSuapAlunos.includes("suap")) || (t.linkSuap && t.linkSuap.includes("suap")));
 
     if (turmasValidas.length === 0) {
       res.json({ ok: true, mensagem: "Nenhuma turma possui link do SUAP configurado.", movidos: 0, mantidos: 0 });
       return;
     }
 
+    const { usuario, senha } = await getSuapCreds();
     let totalMovidos = 0;
     let totalMantidos = 0;
     const detalhes: any[] = [];
 
     for (const t of turmasValidas) {
       try {
-        const rawUrl = t.linkSuap!;
-        const linkXls = rawUrl.includes("xls=1") ? rawUrl : (rawUrl.includes("?") ? `${rawUrl}&xls=1` : `${rawUrl}?xls=1`);
+        const rawUrl = (t.linkSuapAlunos || t.linkSuap || "").split("\n")[0].trim();
+        const linkXls = rawUrl.includes("xls=") ? rawUrl : (rawUrl.includes("?") ? `${rawUrl}&xls=1` : `${rawUrl}?xls=1`);
 
-        const response = await fetch(linkXls);
-        if (response.ok) {
-          const arrayBuffer = await response.arrayBuffer();
-          const buffer = Buffer.from(arrayBuffer);
+        let buffer: Buffer | null = null;
+        if (usuario && senha) {
+          buffer = await baixarXlsTurmaPorLink(usuario, senha, linkXls);
+        } else {
+          const response = await fetch(linkXls);
+          if (response.ok) {
+            buffer = Buffer.from(await response.arrayBuffer());
+          }
+        }
+
+        if (buffer && buffer.length > 200) {
           const workbook = XLSX.read(buffer, { type: "buffer", cellDates: true });
           const sheet = workbook.Sheets[workbook.SheetNames[0]];
           const rows = XLSX.utils.sheet_to_json(sheet, { defval: "" });
@@ -758,91 +826,86 @@ router.post("/sync/auto-turmas", async (req, res) => {
   }
 
   autoSyncTurmasState = { rodando: true, pct: 0, msg: "Iniciando sincronização de turmas...", erro: null, concluido: false, adicionadas: 0 };
+  res.json({ ok: true, mensagem: "Sincronização de turmas iniciada. Acompanhe o progresso." });
 
-  try {
-    const onProgress = (pct: number, msg: string) => {
-      autoSyncTurmasState.pct = pct;
-      autoSyncTurmasState.msg = msg;
-      console.log(`[AutoSyncTurmas] ${pct}% — ${msg}`);
-    };
+  (async () => {
+    try {
+      const onProgress = (pct: number, msg: string) => {
+        autoSyncTurmasState.pct = pct;
+        autoSyncTurmasState.msg = msg;
+        console.log(`[AutoSyncTurmas] ${pct}% — ${msg}`);
+      };
 
-    const xlsBuffer = await sincronizarTurmasSUAP(usuario, senha, onProgress);
+      const xlsBuffer = await sincronizarTurmasSUAP(usuario, senha, onProgress);
 
-    onProgress(88, "Lendo dados das turmas...");
+      onProgress(88, "Lendo dados das turmas...");
 
-    const workbook = XLSX.read(xlsBuffer, { type: "buffer", cellDates: true });
-    const sheetName = workbook.SheetNames[0];
-    const sheet = workbook.Sheets[sheetName];
-    const rows: Record<string, any>[] = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+      const workbook = XLSX.read(xlsBuffer, { type: "buffer", cellDates: true });
+      const sheetName = workbook.SheetNames[0];
+      const sheet = workbook.Sheets[sheetName];
+      const rows: Record<string, any>[] = XLSX.utils.sheet_to_json(sheet, { defval: "" });
 
-    if (rows.length === 0) {
-      throw new Error("Planilha de turmas do SUAP está vazia ou formato inválido.");
-    }
+      if (rows.length === 0) {
+        throw new Error("Planilha de turmas do SUAP está vazia ou formato inválido.");
+      }
 
-    onProgress(90, `${rows.length} registros de turmas encontrados. Importando...`);
+      onProgress(90, `${rows.length} registros de turmas encontrados. Importando...`);
 
-    let countAdded = 0;
-    for (const row of rows) {
-      const siglaKey = Object.keys(row).find(k => k.toUpperCase().includes("SIGLA"));
-      const sigla = siglaKey ? String(row[siglaKey]).trim() : "";
+      let countAdded = 0;
+      for (const row of rows) {
+        const siglaKey = Object.keys(row).find(k => k.toUpperCase().includes("SIGLA"));
+        const sigla = siglaKey ? String(row[siglaKey]).trim() : "";
 
-      if (sigla) {
-        const [existing] = await db
-          .select()
-          .from(turmasTable)
-          .where(eq(turmasTable.nomeTurma, sigla));
+        if (sigla) {
+          const [existing] = await db
+            .select()
+            .from(turmasTable)
+            .where(eq(turmasTable.nomeTurma, sigla));
 
-        if (!existing) {
-          await db.insert(turmasTable).values({
-            nomeTurma: sigla,
-            cor: "#3b82f6"
-          });
-          countAdded++;
+          if (!existing) {
+            await db.insert(turmasTable).values({
+              nomeTurma: sigla,
+              cor: "#3b82f6"
+            });
+            countAdded++;
+          }
         }
       }
+
+      autoSyncTurmasState = {
+        rodando: false,
+        pct: 100,
+        msg: `Sincronização concluída! ${countAdded} novas turmas adicionadas.`,
+        erro: null,
+        concluido: true,
+        adicionadas: countAdded,
+      };
+
+      await db.insert(syncStatusTable).values({
+        status: "success",
+        mensagem: `Turmas: Sincronização automática concluída. ${countAdded} novas turmas adicionadas.`,
+        detalhes: JSON.stringify({ adicionadas: countAdded }),
+        ultimaSync: new Date()
+      }).catch(() => {});
+
+    } catch (e: any) {
+      console.error("Erro na sincronização automática de turmas:", e);
+      autoSyncTurmasState = {
+        rodando: false,
+        pct: 0,
+        msg: "Falha na sincronização.",
+        erro: e.message || "Erro desconhecido.",
+        concluido: false,
+        adicionadas: 0,
+      };
+
+      await db.insert(syncStatusTable).values({
+        status: "error",
+        mensagem: "Erro ao sincronizar turmas automaticamente: " + e.message,
+        ultimaSync: new Date()
+      }).catch(() => {});
     }
-
-    autoSyncTurmasState = {
-      rodando: false,
-      pct: 100,
-      msg: `Sincronização concluída! ${countAdded} novas turmas adicionadas.`,
-      erro: null,
-      concluido: true,
-      adicionadas: countAdded,
-    };
-
-    await db.insert(syncStatusTable).values({
-      status: "success",
-      mensagem: `Turmas: Sincronização automática concluída. ${countAdded} novas turmas adicionadas.`,
-      detalhes: JSON.stringify({ adicionadas: countAdded }),
-      ultimaSync: new Date()
-    }).catch(() => {});
-
-    res.json({
-      ok: true,
-      mensagem: `Sincronização de turmas concluída com sucesso! ${countAdded} novas turmas adicionadas.`,
-      adicionadas: countAdded,
-    });
-
-  } catch (e: any) {
-    console.error("Erro na sincronização automática de turmas:", e);
-    autoSyncTurmasState = {
-      rodando: false,
-      pct: 0,
-      msg: "Falha na sincronização.",
-      erro: e.message || "Erro desconhecido.",
-      concluido: false,
-      adicionadas: 0,
-    };
-
-    await db.insert(syncStatusTable).values({
-      status: "error",
-      mensagem: "Erro ao sincronizar turmas automaticamente: " + e.message,
-      ultimaSync: new Date()
-    }).catch(() => {});
-
-    res.status(500).json({ ok: false, mensagem: e.message || "Erro durante a sincronização das turmas." });
-  }
+  })();
 });
 
 /* ═══════════════════════════════════════════════════════════
@@ -1122,7 +1185,7 @@ router.post("/sync/diarios-auto", async (req, res) => {
         turmaAtual: alunosTable.turmaAtual,
       }).from(alunosTable);
 
-      const { secoes, erros: errosDiarios } = await sincronizarDiariosSUAP(
+      const { secoes, boletins, erros: errosDiarios } = await sincronizarDiariosSUAP(
         usuario,
         senha,
         (pct, msg) => {
@@ -1155,6 +1218,14 @@ router.post("/sync/diarios-auto", async (req, res) => {
             alunosNaoEncontrados: [],
             erros: [e.message],
           });
+        }
+      }
+
+      if (boletins && boletins.length > 0) {
+        for (const bol of boletins) {
+          try {
+            await importarBoletim(bol, todosAlunos);
+          } catch (_) { /* ignore */ }
         }
       }
 
@@ -1251,7 +1322,7 @@ router.post("/sync/diario-pdf", async (req, res) => {
   }
 });
 
-export async function importarSecao(
+async function importarSecao(
   secao: SecaoDiario,
   todosAlunos: { id: number; matricula: string | null; nomeCompleto: string; turmaAtual: string | null }[]
 ): Promise<{
@@ -1313,44 +1384,49 @@ export async function importarSecao(
     todasDatas.add(dataConv);
   }
 
-  // Upsert diario_aulas e criar mapa data → aulaId
+  // Upsert diario_aulas em lote (1 única query SQL!) e criar mapa data → aulaId
   const aulaIdPorData = new Map<string, number>();
-  for (const data of todasDatas) {
-    const info = datasComConteudo.get(data);
+  const datasArr = Array.from(todasDatas);
+  if (datasArr.length > 0) {
     try {
-      const [row] = await db
-        .insert(diarioAulasTable)
-        .values({
+      const aulasBatch = datasArr.map((data) => {
+        const info = datasComConteudo.get(data);
+        return {
           turmaNome: secao.turmaLocal,
           data,
           numeroAulas: info?.numAulas ?? 1,
-          conteudo: info?.conteudo ?? null,
-        })
+          conteudo: info?.conteudo || null,
+        };
+      });
+      const rowsAulas = await db
+        .insert(diarioAulasTable)
+        .values(aulasBatch)
         .onConflictDoUpdate({
           target: [diarioAulasTable.turmaNome, diarioAulasTable.data],
           set: {
-            numeroAulas: info?.numAulas ?? 1,
-            conteudo: info?.conteudo ?? null,
+            numeroAulas: sql`excluded.numero_aulas`,
+            conteudo: sql`COALESCE(excluded.conteudo, ${diarioAulasTable.conteudo})`,
           },
         })
-        .returning({ id: diarioAulasTable.id });
-      aulaIdPorData.set(data, row.id);
-      aulasImportadas++;
+        .returning({ id: diarioAulasTable.id, data: diarioAulasTable.data });
+
+      for (const r of rowsAulas) {
+        aulaIdPorData.set(r.data, r.id);
+      }
+      aulasImportadas += rowsAulas.length;
     } catch (e: any) {
-      erros.push(`Aula ${data}: ${e.message}`);
+      erros.push(`Aulas lote (${secao.turmaLocal}): ${e.message}`);
     }
   }
 
-  // 2. Coletar presenças para bulk insert e processar notas dos alunos
-  const presencasParaInserir: { aulaId: number; alunoId: number; status: "P" | "F" }[] = [];
+  // 2. Importar presenças → diario_presencas em lote
+  const presencasMap = new Map<string, { aulaId: number; alunoId: number; status: string }>();
 
   for (const aluno of secao.alunos) {
-    // Resolver alunoId: primeiro por matrícula, depois por nome
     let alunoId = porMatricula.get(aluno.matricula);
     if (!alunoId) alunoId = porNome.get(aluno.nome);
 
     if (!alunoId) {
-      // Busca mais ampla (sem filtrar por turma) — aluno pode estar em outra turma
       for (const a of todosAlunos) {
         if (a.matricula?.trim() === aluno.matricula) { alunoId = a.id; break; }
       }
@@ -1366,63 +1442,28 @@ export async function importarSecao(
       continue;
     }
 
-    // Coletar presenças deste aluno
     for (const f of aluno.frequencias) {
       const dataConv = converterData(f.data);
       const aulaId = aulaIdPorData.get(dataConv);
       if (!aulaId) continue;
-      presencasParaInserir.push({ aulaId, alunoId, status: f.status });
-    }
-
-    // 3. Importar Nota (se existir) → notasTable
-    if (aluno.nota !== null && secao.disciplina) {
-      try {
-        await db.insert(notasTable)
-          .values({
-            alunoId,
-            disciplina: secao.disciplina,
-            bimestre: secao.bimestre,
-            notaFinal: String(aluno.nota), // DECIMAL costuma ser string no JS/Drizzle
-            dataAtualizacao: new Date(),
-          })
-          .onConflictDoUpdate({
-            target: [notasTable.id],
-            set: {
-              notaFinal: String(aluno.nota),
-              dataAtualizacao: new Date(),
-            }
-          });
-          
-        await db.update(notasTable)
-          .set({ notaFinal: String(aluno.nota), dataAtualizacao: new Date() })
-          .where(and(
-            eq(notasTable.alunoId, alunoId),
-            eq(notasTable.disciplina, secao.disciplina),
-            eq(notasTable.bimestre, secao.bimestre)
-          ));
-      } catch (e: any) {
-        erros.push(`Nota aluno ${alunoId} (${secao.disciplina}): ${e.message}`);
-      }
+      presencasMap.set(`${aulaId}:${alunoId}`, { aulaId, alunoId, status: f.status });
     }
   }
 
-  // Executar bulk insert de presenças acumuladas
-  if (presencasParaInserir.length > 0) {
+  const presencasBatch = Array.from(presencasMap.values());
+  for (let k = 0; k < presencasBatch.length; k += 300) {
+    const chunk = presencasBatch.slice(k, k + 300);
     try {
-      const chunkSize = 100;
-      for (let offset = 0; offset < presencasParaInserir.length; offset += chunkSize) {
-        const chunk = presencasParaInserir.slice(offset, offset + chunkSize);
-        await db
-          .insert(diarioPresencasTable)
-          .values(chunk)
-          .onConflictDoUpdate({
-            target: [diarioPresencasTable.aulaId, diarioPresencasTable.alunoId],
-            set: { status: sql`excluded.status` },
-          });
-        presencasImportadas += chunk.length;
-      }
+      await db
+        .insert(diarioPresencasTable)
+        .values(chunk)
+        .onConflictDoUpdate({
+          target: [diarioPresencasTable.aulaId, diarioPresencasTable.alunoId],
+          set: { status: sql`excluded.status` },
+        });
+      presencasImportadas += chunk.length;
     } catch (e: any) {
-      erros.push(`Erro bulk insert presenças: ${e.message}`);
+      erros.push(`Presenças lote (${secao.turmaLocal}): ${e.message}`);
     }
   }
 
@@ -1430,118 +1471,130 @@ export async function importarSecao(
 }
 
 /* ═══════════════════════════════════════════════════════════
-   POST /api/sync/limpar-duplicados
-   Varre o banco em busca de alunos com mesmo CPF ou Nome e funde-os.
+   POST /api/sync/boletim-pdf
+   Recebe base64 de um PDF de Boletim de Notas do Diário (/edu/emitir_boletins_pdf/{id}/)
+   e importa notas e faltas dos 4 bimestres
 ════════════════════════════════════════════════════════════ */
-router.post("/sync/limpar-duplicados", async (_req, res) => {
+router.post("/sync/boletim-pdf", async (req, res) => {
+  const { arquivo, turma } = req.body as { arquivo?: string; turma?: string };
+  if (!arquivo) {
+    res.status(400).json({ ok: false, mensagem: "PDF do boletim não enviado." });
+    return;
+  }
   try {
-    const todosAlunos = await db.select().from(alunosTable);
-    
-    // 0. Saneamento: Corrigir turmas "sujas" em todos os alunos antes de começar
-    for (const a of todosAlunos) {
-      if (a.turmaAtual && (a.turmaAtual.includes(".") || a.turmaAtual.length > 12)) {
-        // Tentar extrair se houver parênteses perdidos
-        const m = a.turmaAtual.match(/\(([^)]+)\)/);
-        const novaTurma = m ? m[1].trim() : null;
-        await db.update(alunosTable).set({ turmaAtual: novaTurma }).where(eq(alunosTable.id, a.id));
-        a.turmaAtual = novaTurma; // Atualizar na lista em memória para o agrupamento abaixo
-      }
-    }
+    const base64 = arquivo.includes(",") ? arquivo.split(",")[1] : arquivo;
+    const buffer = Buffer.from(base64, "base64");
+    const bol = await parseBoletimPDF(buffer);
+    if (turma) bol.turmaLocal = turma;
 
-    const gruposCPF = new Map<string, typeof todosAlunos>();
-    const gruposNome = new Map<string, typeof todosAlunos>();
-    const semCPF: typeof todosAlunos = [];
+    const todosAlunos = await db.select({
+      id: alunosTable.id,
+      matricula: alunosTable.matricula,
+      nomeCompleto: alunosTable.nomeCompleto,
+      turmaAtual: alunosTable.turmaAtual,
+    }).from(alunosTable);
 
-    // 1. Agrupar por CPF e Nome
-    for (const a of todosAlunos) {
-      const cpf = a.cpf ? a.cpf.replace(/\D/g, "") : "";
-      if (cpf) {
-        const lista = gruposCPF.get(cpf) || [];
-        lista.push(a);
-        gruposCPF.set(cpf, lista);
-      } else {
-        semCPF.push(a);
-      }
-      // Normalização extra: remover espaços duplos
-      const nomeNorm = a.nomeCompleto.toLowerCase().trim().replace(/\s+/g, " ");
-      const listaNome = gruposNome.get(nomeNorm) || [];
-      listaNome.push(a);
-      gruposNome.set(nomeNorm, listaNome);
-    }
-
-    let totalRemovidos = 0;
-    const processados = new Set<number>();
-
-    // 2. Processar duplicatas de CPF
-    for (const [cpf, lista] of gruposCPF) {
-      if (lista.length > 1) {
-        lista.sort((a, b) => a.id - b.id); // Mais antigo primeiro
-        const sobrevivente = lista[0];
-        const duplicados = lista.slice(1);
-        const duplicadosIds = duplicados.map(d => d.id);
-
-        // Fusão Inteligente: Se o sobrevivente não tem algum dado e o duplicado tem, copia.
-        for (const d of duplicados) {
-          const updateData: any = {};
-          if (!sobrevivente.cpf && d.cpf) updateData.cpf = d.cpf;
-          if (!sobrevivente.matricula && d.matricula) updateData.matricula = d.matricula;
-          if (!sobrevivente.turmaAtual && d.turmaAtual) updateData.turmaAtual = d.turmaAtual;
-          if (!sobrevivente.nomeMae && d.nomeMae) updateData.nomeMae = d.nomeMae;
-          
-          if (Object.keys(updateData).length > 0) {
-            await db.update(alunosTable).set(updateData).where(eq(alunosTable.id, sobrevivente.id));
-            Object.assign(sobrevivente, updateData);
-          }
-        }
-
-        // Mover Notas e Presenças para o sobrevivente
-        await db.update(diarioPresencasTable).set({ alunoId: sobrevivente.id }).where(inArray(diarioPresencasTable.alunoId, duplicadosIds));
-        await db.update(notasTable).set({ alunoId: sobrevivente.id }).where(inArray(notasTable.alunoId, duplicadosIds));
-
-        // Remover duplicados
-        await db.delete(alunosTable).where(inArray(alunosTable.id, duplicadosIds));
-        totalRemovidos += duplicadosIds.length;
-        duplicadosIds.forEach(id => processados.add(id));
-        processados.add(sobrevivente.id);
-      }
-    }
-
-    // 3. Processar duplicatas de Nome (para quem não tem CPF ou não foi processado)
-    for (const [nome, lista] of gruposNome) {
-      const listaFiltrada = lista.filter(a => !processados.has(a.id));
-      if (listaFiltrada.length > 1) {
-        listaFiltrada.sort((a, b) => a.id - b.id);
-        const sobrevivente = listaFiltrada[0];
-        const duplicados = listaFiltrada.slice(1);
-        const duplicadosIds = duplicados.map(d => d.id);
-
-        // Fusão Inteligente: Se o sobrevivente não tem algum dado e o duplicado tem, copia.
-        for (const d of duplicados) {
-          const updateData: any = {};
-          if (!sobrevivente.cpf && d.cpf) updateData.cpf = d.cpf;
-          if (!sobrevivente.matricula && d.matricula) updateData.matricula = d.matricula;
-          if (!sobrevivente.turmaAtual && d.turmaAtual) updateData.turmaAtual = d.turmaAtual;
-          if (!sobrevivente.nomeMae && d.nomeMae) updateData.nomeMae = d.nomeMae;
-          
-          if (Object.keys(updateData).length > 0) {
-            await db.update(alunosTable).set(updateData).where(eq(alunosTable.id, sobrevivente.id));
-            Object.assign(sobrevivente, updateData);
-          }
-        }
-
-        await db.update(diarioPresencasTable).set({ alunoId: sobrevivente.id }).where(inArray(diarioPresencasTable.alunoId, duplicadosIds));
-        await db.update(notasTable).set({ alunoId: sobrevivente.id }).where(inArray(notasTable.alunoId, duplicadosIds));
-
-        await db.delete(alunosTable).where(inArray(alunosTable.id, duplicadosIds));
-        totalRemovidos += duplicadosIds.length;
-        duplicadosIds.forEach(id => processados.add(id));
-      }
-    }
-
-    res.json({ ok: true, mensagem: `Limpeza concluída! ${totalRemovidos} alunos duplicados foram removidos e seus dados foram mesclados.`, removidos: totalRemovidos });
+    const r = await importarBoletim(bol, todosAlunos);
+    res.json({
+      ok: true,
+      turma: bol.turmaLocal,
+      disciplina: bol.disciplina,
+      ...r,
+    });
   } catch (e: any) {
-    res.status(500).json({ ok: false, mensagem: "Erro na limpeza: " + e.message });
+    res.status(500).json({ ok: false, mensagem: e.message ?? "Erro ao processar boletim PDF." });
   }
 });
+
+async function importarBoletim(
+  boletim: BoletimParsed,
+  todosAlunos: { id: number; matricula: string | null; nomeCompleto: string; turmaAtual: string | null }[]
+): Promise<{ notasImportadas: number; presencasBimestraisImportadas: number; alunosNaoEncontrados: string[] }> {
+  const alunosNaoEncontrados: string[] = [];
+
+  const porMatricula = new Map<string, number>();
+  const porNome = new Map<string, number>();
+  for (const a of todosAlunos) {
+    if (a.matricula) porMatricula.set(a.matricula.trim(), a.id);
+    porNome.set(normNome(a.nomeCompleto), a.id);
+  }
+
+  const disciplinaNome = boletim.disciplina || "Regente / Globalizado";
+  const aulasPorBimestre = Math.max(40, Math.round((boletim.aulasPrevistas || 200) / 4));
+
+  const alunoIdsAfetados: number[] = [];
+  const notasBatch: any[] = [];
+  const presencasBatch: any[] = [];
+
+  for (const al of boletim.alunos) {
+    let alunoId = porMatricula.get(al.matricula);
+    if (!alunoId) alunoId = porNome.get(al.nome);
+    if (!alunoId) {
+      alunosNaoEncontrados.push(al.nome);
+      continue;
+    }
+    alunoIdsAfetados.push(alunoId);
+
+    for (const bim of al.bimestres) {
+      const notaValStr = bim.nota !== null ? String(bim.nota) : null;
+      const mediaValStr = al.mediaFinal !== null ? String(al.mediaFinal) : notaValStr;
+      const situacao =
+        bim.nota === null
+          ? "Cursando"
+          : bim.nota >= 6
+          ? "Aprovado"
+          : "Em Recuperação";
+
+      if (bim.nota !== null || al.mediaFinal !== null) {
+        notasBatch.push({
+          alunoId,
+          bimestre: bim.bimestre,
+          disciplina: disciplinaNome,
+          nota1: notaValStr,
+          notaFinal: notaValStr,
+          mediaFinal: mediaValStr,
+          situacao,
+          dataAtualizacao: new Date(),
+        });
+      }
+
+      const freqCalc = aulasPorBimestre > 0
+        ? Math.max(0, (((aulasPorBimestre - bim.faltas) / aulasPorBimestre) * 100)).toFixed(2)
+        : String(al.percentualFrequencia);
+
+      presencasBatch.push({
+        alunoId,
+        bimestre: bim.bimestre,
+        disciplina: disciplinaNome,
+        totalAulas: aulasPorBimestre,
+        faltas: bim.faltas,
+        percentualFrequencia: freqCalc,
+        dataAtualizacao: new Date(),
+      });
+    }
+  }
+
+  if (alunoIdsAfetados.length > 0) {
+    await db.delete(notasTable).where(
+      and(inArray(notasTable.alunoId, alunoIdsAfetados), eq(notasTable.disciplina, disciplinaNome))
+    );
+    await db.delete(presencasTable).where(
+      and(inArray(presencasTable.alunoId, alunoIdsAfetados), eq(presencasTable.disciplina, disciplinaNome))
+    );
+  }
+
+  if (notasBatch.length > 0) {
+    await db.insert(notasTable).values(notasBatch);
+  }
+  if (presencasBatch.length > 0) {
+    await db.insert(presencasTable).values(presencasBatch);
+  }
+
+  return {
+    notasImportadas: notasBatch.length,
+    presencasBimestraisImportadas: presencasBatch.length,
+    alunosNaoEncontrados,
+  };
+}
 
 export default router;

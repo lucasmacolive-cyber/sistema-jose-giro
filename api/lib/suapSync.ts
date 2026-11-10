@@ -3,7 +3,7 @@ import * as https from "https";
 import * as http from "http";
 import * as XLSX from "xlsx";
 import * as cheerio from "cheerio";
-import { parseDiarioPDF, type SecaoDiario } from "./parseDiario.js";
+import { parseDiarioPDF, parseBoletimPDF, normalizarTurmaLocal, type SecaoDiario, type BoletimParsed } from "./parseDiario.js";
 
 /* ═══════════════════════════════════════════════════════════
    SUAP HTTP Client — Sincronização server-side sem browser
@@ -516,15 +516,17 @@ export type DiarioSyncResultado = {
   erro?: string;
 };
 
-/** Normaliza nome de turma do SUAP para o formato interno (ex: "6A") */
-function normalizarTurma(suapNome: string): string {
+/** Normaliza nome de turma do SUAP para o formato interno (ex: "1AM01", "G2T01", "NIT01") */
+export function normalizarTurma(suapNome: string): string {
+  const norm = normalizarTurmaLocal(suapNome);
+  if (norm && norm !== suapNome) return norm;
   if (/\bNI\b|INCLUS[AÃ]O/i.test(suapNome)) {
     return "NIT01";
   }
   const m = suapNome.match(/(\d+)\s*[°º]\s*[Aa]no\s+([A-Z])/i);
   if (m) return `${m[1]}${m[2].toUpperCase()}`;
   const m2 = suapNome.match(/^(\d+)\s*([A-Z])$/i);
-  if (m2) return `${m2[1]}${m2[2].toUpperCase()}`;
+  if (m2) return `${m[1]}${m2[2].toUpperCase()}`;
   return suapNome.replace(/\s+/g, "").toUpperCase();
 }
 
@@ -555,7 +557,11 @@ async function suapLogin(usuario: string, senha: string, onProgress: ProgressCal
     next: "/",
     username: usuario,
     password: senha,
-  }).toString(), { Referer: `${SUAP_BASE}/accounts/login/` });
+  }).toString(), {
+    Referer: `${SUAP_BASE}/accounts/login/`,
+    Origin: SUAP_BASE,
+    "X-CSRFToken": csrf,
+  });
 
   if (loginResp.text.includes("accounts/login") && loginResp.status !== 302) {
     throw new Error("Falha no login do SUAP. Verifique as credenciais.");
@@ -568,6 +574,8 @@ async function suapLogin(usuario: string, senha: string, onProgress: ProgressCal
 ════════════════════════════════════════════════════════════ */
 async function _listarDiarios(jar: CookieJar, onProgress: ProgressCallback): Promise<DiarioEncontrado[]> {
   const urlsParaTentar = [
+    "/admin/edu/diario/?ano_letivo__id__exact=9&all=",
+    "/admin/edu/diario/?ano_letivo__id__exact=9",
     "/edu/meus_diarios/",
     "/edu/diarios/?ano_letivo=9",
     "/edu/diarios/",
@@ -585,10 +593,10 @@ async function _listarDiarios(jar: CookieJar, onProgress: ProgressCallback): Pro
 
       const $ = cheerio.load(resp.text);
 
-      // Busca links /edu/diario/{id}/
+      // Busca links /edu/diario/{id}/ ou /edu/diario_pdf/{id}/
       $("a[href]").each((_, el) => {
         const href = $(el).attr("href") ?? "";
-        const m = href.match(/\/edu\/diario\/(\d+)\//);
+        const m = href.match(/\/edu\/diario(?:_pdf)?\/(\d+)\//);
         if (!m || vistos.has(m[1])) return;
         vistos.add(m[1]);
 
@@ -597,20 +605,19 @@ async function _listarDiarios(jar: CookieJar, onProgress: ProgressCallback): Pro
 
         // Subir na árvore para capturar contexto da linha
         const row = $(el).closest("tr");
-        const rowText = row.text();
+        const rowText = row.text().replace(/\s+/g, " ").trim();
         const context = rowText || linkText;
 
-        // Extrair turma
-        const turmaMatch = context.match(/(\d+)\s*[°º]\s*[Aa]no\s+([A-Z])/i)
-          ?? linkText.match(/(\d+)\s*[°º]\s*[Aa]no\s+([A-Z])/i);
-        const turmaSuap = turmaMatch
-          ? `${turmaMatch[1]}° Ano ${turmaMatch[2].toUpperCase()}`
+        // Extrair código oficial da turma entre parênteses ex: "(1AM01)" ou "(G2T01)"
+        const mParen = context.match(/\(([A-Z0-9]{4,7})\)/);
+        const turmaSuap = mParen
+          ? mParen[1]
           : linkText.split(" - ")[0]?.trim() || `ID ${suapId}`;
-        const turmaLocal = normalizarTurma(turmaSuap);
+        const turmaLocal = normalizarTurmaLocal(context) || normalizarTurma(turmaSuap);
 
         // Extrair disciplina
-        const discMatch = context.match(/(?:-)?\s*(Língua Portuguesa|Matemática|Ciências|História|Geografia|Arte|Educação Física|Ed\.\s*Física|Inglês|Religião|Complementar|[A-ZÁÉÍÓÚ][a-záéíóúâêôç]{3,})/);
-        const disciplina = discMatch?.[1]?.trim() ?? "";
+        const mComp = context.match(/(?:INF\.\d+|FUND\.\d+)\s*-\s*([^-]+(?:-\s*[^-\[]+)?)/i);
+        const disciplina = mComp?.[1]?.trim() || "Regente / Globalizado";
 
         diarios.push({ suapId, turmaSuap, turmaLocal, disciplina });
       });
@@ -755,7 +762,7 @@ export async function sincronizarDiariosSUAP(
   usuario: string,
   senha: string,
   onProgress: ProgressCallback
-): Promise<{ secoes: SecaoDiario[]; erros: { suapId: string; turma: string; erro: string }[] }> {
+): Promise<{ secoes: SecaoDiario[]; boletins: BoletimParsed[]; erros: { suapId: string; turma: string; erro: string }[] }> {
   const jar = await suapLogin(usuario, senha, onProgress);
   onProgress(20, "Buscando lista de diários...");
 
@@ -769,52 +776,40 @@ export async function sincronizarDiariosSUAP(
     porTurmaLocal.set(d.turmaLocal, lista);
   }
 
-  // Para turmas com UM único diário: pegar o regente/Portuguesa (comportamento anterior)
-  // Para turmas com MÚLTIPLOS diários (ex: NI = 3 diários, um por ano): baixar TODOS
-  //   pois cada diário tem alunos diferentes → precisamos mesclar via upsert
   const turmasParaSync: DiarioEncontrado[] = [];
   for (const [, diarios] of porTurmaLocal) {
-    if (diarios.length === 1) {
-      turmasParaSync.push(diarios[0]);
-    } else {
-      // Múltiplos diários para mesma turmaLocal → baixar todos (ex: NI tem 3 subgrupos)
-      // Deduplicar por suapId caso a listagem retorne duplicatas
-      const vistosId = new Set<string>();
-      for (const d of diarios) {
-        if (!vistosId.has(d.suapId)) {
-          vistosId.add(d.suapId);
-          turmasParaSync.push(d);
-        }
+    const vistosId = new Set<string>();
+    for (const d of diarios) {
+      if (!vistosId.has(d.suapId)) {
+        vistosId.add(d.suapId);
+        turmasParaSync.push(d);
       }
     }
   }
   const todasSecoes: SecaoDiario[] = [];
+  const todosBoletins: BoletimParsed[] = [];
   const erros: { suapId: string; turma: string; erro: string }[] = [];
 
   for (let i = 0; i < turmasParaSync.length; i++) {
     const diario = turmasParaSync[i];
     onProgress(
       40 + Math.floor(((i + 1) / turmasParaSync.length) * 55),
-      `Baixando PDF ${i + 1}/${turmasParaSync.length}: turma ${diario.turmaLocal}...`
+      `Baixando PDF e Boletim ${i + 1}/${turmasParaSync.length}: turma ${diario.turmaLocal} (${diario.suapId})...`
     );
 
     try {
-      // Baixar o PDF do diário
+      // 1. Baixar o PDF do diário (presenças diárias + aulas)
       const pdfResp = await request("GET", `/edu/diario_pdf/${diario.suapId}/0/`, jar);
       if (pdfResp.status !== 200) {
         erros.push({ suapId: diario.suapId, turma: diario.turmaLocal, erro: `HTTP ${pdfResp.status}` });
         continue;
       }
 
-      // Parsear o PDF com o parser de diários
       const { secoes, erros: errsPDF } = await parseDiarioPDF(pdfResp.body);
 
-      // Sobrescrever turmaLocal de cada seção com o valor já conhecido do SUAP HTML.
-      // Isso garante que códigos como "NIAM01" ou "NIM01" sejam corretamente
-      // mapeados para "NI" (ou qualquer outro nome normalizado vindo do listing).
       for (const secao of secoes) {
         secao.turmaLocal = diario.turmaLocal;
-        if (diario.disciplina) {
+        if (diario.disciplina && !secao.disciplina) {
           secao.disciplina = diario.disciplina;
         }
       }
@@ -823,18 +818,32 @@ export async function sincronizarDiariosSUAP(
       for (const e of errsPDF) {
         erros.push({ suapId: diario.suapId, turma: diario.turmaLocal, erro: e });
       }
+
+      // 2. Baixar o Boletim de Notas e Faltas do Diário (todos os 4 bimestres)
+      try {
+        const bolResp = await request("GET", `/edu/emitir_boletins_pdf/${diario.suapId}/`, jar);
+        if (bolResp.status === 200 && bolResp.body.length > 500) {
+          const bolParsed = await parseBoletimPDF(bolResp.body);
+          bolParsed.turmaLocal = diario.turmaLocal;
+          if ( bolParsed.alunos.length > 0 ) {
+            todosBoletins.push(bolParsed);
+          }
+        }
+      } catch (_) {
+        // Ignora falha opcional no boletim se o diário já foi baixado
+      }
     } catch (e: any) {
       erros.push({ suapId: diario.suapId, turma: diario.turmaLocal, erro: e.message });
     }
 
-    await sleep(400);
+    await sleep(300);
   }
 
   onProgress(98, "Finalizando importação...");
-  return { secoes: todasSecoes, erros };
+  return { secoes: todasSecoes, boletins: todosBoletins, erros };
 }
 
-export type { SecaoDiario };
+export type { SecaoDiario, BoletimParsed };
 
 /* ═══════════════════════════════════════════════════════════
    Baixar PDF de um único diário dado o link da página
@@ -845,12 +854,67 @@ export async function baixarDiarioPorLink(
   link: string,
 ): Promise<Buffer> {
   const jar = await suapLogin(usuario, senha, () => {});
-  const m = link.match(/\/edu\/diario\/(\d+)\//);
-  if (!m) throw new Error(`Link inválido: "${link}". Use o formato .../edu/diario/ID/`);
+  const m =
+    link.match(/\/edu\/diario_pdf\/(\d+)\//) ??
+    link.match(/\/edu\/diario\/(\d+)\//) ??
+    link.match(/\/edu\/emitir_boletins_pdf\/(\d+)\//);
+  if (!m) throw new Error(`Link inválido: "${link}". Use o formato .../edu/diario/ID/ ou .../edu/diario_pdf/ID/0/`);
+
   const suapId = m[1];
   const resp = await request("GET", `/edu/diario_pdf/${suapId}/0/`, jar);
   if (resp.status !== 200) {
     throw new Error(`Erro HTTP ${resp.status} ao baixar o PDF do diário (ID ${suapId})`);
+  }
+  return resp.body;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Baixar Diário PDF + Boletim PDF em uma única sessão SUAP
+════════════════════════════════════════════════════════════ */
+export async function baixarDiarioEBoletimPorLink(
+  usuario: string,
+  senha: string,
+  link: string,
+): Promise<{ diarioPdf: Buffer; boletimPdf: Buffer | null; suapId: string }> {
+  const jar = await suapLogin(usuario, senha, () => {});
+  const m =
+    link.match(/\/edu\/diario_pdf\/(\d+)\//) ??
+    link.match(/\/edu\/diario\/(\d+)\//) ??
+    link.match(/\/edu\/emitir_boletins_pdf\/(\d+)\//);
+  if (!m) throw new Error(`Link inválido: "${link}". Use o formato .../edu/diario/ID/ ou .../edu/diario_pdf/ID/0/`);
+
+  const suapId = m[1];
+  const resp = await request("GET", `/edu/diario_pdf/${suapId}/0/`, jar);
+  if (resp.status !== 200) {
+    throw new Error(`Erro HTTP ${resp.status} ao baixar o PDF do diário (ID ${suapId})`);
+  }
+
+  let boletimPdf: Buffer | null = null;
+  try {
+    const bolResp = await request("GET", `/edu/emitir_boletins_pdf/${suapId}/`, jar);
+    if (bolResp.status === 200 && bolResp.body.length > 500) {
+      boletimPdf = bolResp.body;
+    }
+  } catch {
+    boletimPdf = null;
+  }
+
+  return { diarioPdf: resp.body, boletimPdf, suapId };
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Baixar planilha XLS de alunos de uma turma autenticada no SUAP
+════════════════════════════════════════════════════════════ */
+export async function baixarXlsTurmaPorLink(
+  usuario: string,
+  senha: string,
+  link: string,
+): Promise<Buffer> {
+  const jar = await suapLogin(usuario, senha, () => {});
+  const pathUrl = resolverPath(link);
+  const resp = await request("GET", pathUrl, jar);
+  if (resp.status !== 200) {
+    throw new Error(`Erro HTTP ${resp.status} ao baixar XLS da turma (${pathUrl})`);
   }
   return resp.body;
 }
@@ -868,7 +932,7 @@ export async function identificarDiarioPorLinks(
   const diarios = await _listarDiarios(jar, () => {});
   const resultado: { link: string; suapId: string; turmaLocal: string; disciplina: string }[] = [];
   for (const link of links) {
-    const m = link.match(/\/edu\/diario\/(\d+)\//);
+    const m = link.match(/\/edu\/diario(?:_pdf)?\/(\d+)/i);
     if (!m) continue;
     const suapId = m[1];
     const diario = diarios.find(d => d.suapId === suapId);

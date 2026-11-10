@@ -1,12 +1,12 @@
 // @ts-nocheck
 import { Router } from "express";
-import { db } from "../lib/db/index.js";
+import { db } from "../lib/db/index.ts";
 import {
   diarioAulasTable, diarioPresencasTable, diarioConfiguracoesTable,
-  turmasTable, alunosTable,
-} from "../lib/db/index.js";
+  turmasTable, alunosTable, professoresTable
+} from "../lib/db/index.ts";
 import { eq, and, inArray, or, sql } from "drizzle-orm";
-import { parseDiarioTexto } from "../lib/parseDiario.js";
+import { parseDiarioTexto } from "../lib/parseDiario";
 
 const router = Router();
 
@@ -572,7 +572,6 @@ router.get("/diario/turmas", async (req, res) => {
       if (r.turmaAtual) countMap[r.turmaAtual] = r.total;
     }
 
-    const { professoresTable } = await import("../lib/db/index.js");
     const profs = await db.select().from(professoresTable);
     const profsMap: Record<string, string> = {};
     for (const p of profs) {
@@ -593,7 +592,7 @@ router.get("/diario/turmas", async (req, res) => {
 });
 
 /* ─── PATCH /diario/turmas/:id/link-suap ─── */
-router.patch("/diario/turmas/:id/link-suap", requireAuth, async (req, res) => {
+router.patch("/diario/turmas/:id/link-suap", async (req, res) => {
   try {
     const id = parseInt(req.params.id);
     if (isNaN(id)) return res.status(400).json({ ok: false, mensagem: "ID inválido" });
@@ -608,9 +607,8 @@ router.patch("/diario/turmas/:id/link-suap", requireAuth, async (req, res) => {
 });
 
 /* ─── POST /diario/turmas/salvar-links-suap ─── salva todos de vez */
-router.post("/diario/turmas/salvar-links-suap", requireAuth, async (req, res) => {
+router.post("/diario/turmas/salvar-links-suap", async (req, res) => {
   try {
-    // body: { links: Array<{ turmaId: number; linkSuap: string }> }
     const { links } = req.body as { links: Array<{ turmaId: number; linkSuap: string }> };
     if (!Array.isArray(links)) return res.status(400).json({ ok: false, mensagem: "links deve ser um array" });
 
@@ -621,13 +619,11 @@ router.post("/diario/turmas/salvar-links-suap", requireAuth, async (req, res) =>
         .where(eq(turmasTable.id, entry.turmaId));
     }
 
-    // Também salva na tabela sync/diario-links para compatibilidade
     const linksValidos = links.filter(e => e.linkSuap?.includes("suap")).map(e => e.linkSuap);
     if (linksValidos.length > 0) {
-      const { configuracoesTable: cfgTable } = await import("../lib/db/index.js");
-      await db.insert(cfgTable)
+      await db.insert(configuracoesTable)
         .values({ chave: "diario_links_salvos", valor: JSON.stringify(linksValidos), atualizadoEm: new Date() })
-        .onConflictDoUpdate({ target: cfgTable.chave, set: { valor: JSON.stringify(linksValidos), atualizadoEm: new Date() } });
+        .onConflictDoUpdate({ target: configuracoesTable.chave, set: { valor: JSON.stringify(linksValidos), atualizadoEm: new Date() } });
     }
 
     res.json({ ok: true, salvos: links.length });
@@ -635,7 +631,6 @@ router.post("/diario/turmas/salvar-links-suap", requireAuth, async (req, res) =>
     res.status(500).json({ ok: false, mensagem: e.message });
   }
 });
-
 
 /* ─── GET /diario/configuracoes ─── */
 router.get("/diario/configuracoes", requireAuth, async (req, res) => {
@@ -672,7 +667,8 @@ router.get("/diario/:turma/mes/:ano/:mes", requireAuth, async (req, res) => {
   try {
     const { turma, ano, mes } = req.params;
     const mesFormatado = mes.padStart(2, "0");
-    const pattern = `__/${mesFormatado}/${ano}`;
+    const patternBR = `%/${mesFormatado}/${ano}`;
+    const patternISO = `${ano}-${mesFormatado}-%`;
 
     // Busca alunos: ativos + transferidos externos na turma + vindos de outra turma para esta
     const alunos = await db
@@ -702,20 +698,40 @@ router.get("/diario/:turma/mes/:ano/:mes", requireAuth, async (req, res) => {
       )
       .orderBy(alunosTable.nomeCompleto);
 
-    const aulas = await db
+    const aulasRaw = await db
       .select()
       .from(diarioAulasTable)
       .where(and(
         eq(diarioAulasTable.turmaNome, turma),
-        sql`${diarioAulasTable.data} LIKE ${pattern}`
+        sql`(${diarioAulasTable.data} LIKE ${patternBR} OR ${diarioAulasTable.data} LIKE ${patternISO})`
       ))
       .orderBy(diarioAulasTable.data);
 
-    if (aulas.length === 0) {
+    if (aulasRaw.length === 0) {
       return res.json({ alunos, aulas: [], presencas: {} });
     }
 
-    const aulaIds = aulas.map((a) => a.id);
+    // Normalizar datas para DD/MM/YYYY para renderização perfeita no grid
+    const aulasMap = new Map<string, typeof aulasRaw[0]>();
+    for (const a of aulasRaw) {
+      let dataBR = a.data;
+      if (a.data && a.data.includes("-")) {
+        const parts = a.data.split("-");
+        if (parts.length === 3) {
+          dataBR = `${parts[2].padStart(2, "0")}/${parts[1].padStart(2, "0")}/${parts[0]}`;
+        }
+      }
+      if (!aulasMap.has(dataBR)) {
+        aulasMap.set(dataBR, { ...a, data: dataBR });
+      }
+    }
+    const aulas = Array.from(aulasMap.values()).sort((a, b) => {
+      const [dA, mA, yA] = a.data.split("/").map(Number);
+      const [dB, mB, yB] = b.data.split("/").map(Number);
+      return new Date(yA, mA - 1, dA).getTime() - new Date(yB, mB - 1, dB).getTime();
+    });
+
+    const aulaIds = aulasRaw.map((a) => a.id);
     const presencasRows = await db
       .select()
       .from(diarioPresencasTable)
@@ -813,9 +829,34 @@ router.get("/diario/ficai", requireAuth, async (req, res) => {
     const thresholdMensais = Number(cfgMap["ficai_faltas_mensais"]      ?? 5);
 
     const hoje = new Date();
-    const hojeStr = `${String(hoje.getDate()).padStart(2,"0")}/${String(hoje.getMonth()+1).padStart(2,"0")}/${hoje.getFullYear()}`;
-    const mesAtual = hoje.getMonth() + 1;
-    const anoAtual = hoje.getFullYear();
+    
+    // Mapeamento de meses por nome
+    const MESES_MAPA: Record<string, number> = {
+      "janeiro": 1, "fevereiro": 2, "marco": 3, "março": 3, "abril": 4, "maio": 5, "junho": 6,
+      "julho": 7, "agosto": 8, "setembro": 9, "outubro": 10, "novembro": 11, "dezembro": 12
+    };
+
+    let mesAtual = hoje.getMonth() + 1;
+    if (req.query.mes) {
+      const mStr = String(req.query.mes).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      if (MESES_MAPA[mStr]) {
+        mesAtual = MESES_MAPA[mStr];
+      } else if (!isNaN(Number(req.query.mes))) {
+        mesAtual = Number(req.query.mes);
+      }
+    }
+
+    let anoAtual = req.query.ano ? Number(req.query.ano) : hoje.getFullYear();
+    
+    // Data limite: fim do mês selecionado se for mês diferente do atual, senão hoje.
+    let hojeStr = `${String(hoje.getDate()).padStart(2,"0")}/${String(hoje.getMonth()+1).padStart(2,"0")}/${hoje.getFullYear()}`;
+    if (req.query.mes || req.query.ano) {
+      const isMesAtual = mesAtual === (hoje.getMonth() + 1) && anoAtual === hoje.getFullYear();
+      if (!isMesAtual) {
+        const ultimoDia = new Date(anoAtual, mesAtual, 0).getDate();
+        hojeStr = `${String(ultimoDia).padStart(2,"0")}/${String(mesAtual).padStart(2,"0")}/${anoAtual}`;
+      }
+    }
 
     function parseDate(s: string) {
       const [d, m, y] = s.split("/").map(Number);
@@ -845,7 +886,7 @@ router.get("/diario/ficai", requireAuth, async (req, res) => {
     type AlertaFicai = {
       alunoId: number; nome: string; turma: string;
       maxConsecutivo: number; faltasMensais: number;
-      motivos: string[];
+      motivos: string[]; datasFaltas: string[];
     };
     const alertas: AlertaFicai[] = [];
 
@@ -856,22 +897,32 @@ router.get("/diario/ficai", requireAuth, async (req, res) => {
         .sort((a, b) => parseDate(a.data).getTime() - parseDate(b.data).getTime());
       if (!aulasAluno.length) continue;
 
-      // ── 1) Faltas consecutivas (qualquer sequência de dias letivos) ──
+      // ── 1) Faltas consecutivas (qualquer sequência de dias letivos que afeta o mês selecionado) ──
       let maxConsec = 0, currentConsec = 0;
+      let sequenceHasSelectedMonth = false;
       for (const aula of aulasAluno) {
         const status = presMap[aula.id]?.[aluno.id] ?? "P";
+        const [, m, y] = aula.data.split("/").map(Number);
+        
         if (status === "F") {
           currentConsec++;
-          if (currentConsec > maxConsec) maxConsec = currentConsec;
+          if (m === mesAtual && y === anoAtual) {
+            sequenceHasSelectedMonth = true;
+          }
+          if (sequenceHasSelectedMonth && currentConsec > maxConsec) {
+            maxConsec = currentConsec;
+          }
         } else {
           currentConsec = 0;
+          sequenceHasSelectedMonth = false;
         }
       }
 
-      // ── 2) Total de faltas no mês atual ──
-      const faltasMensais = aulasAluno
-        .filter(a => ehMesAtual(a.data) && (presMap[a.id]?.[aluno.id] ?? "P") === "F")
-        .length;
+      // ── 2) Total de faltas no mês selecionado ──
+      const aulasComFalta = aulasAluno
+        .filter(a => ehMesAtual(a.data) && (presMap[a.id]?.[aluno.id] ?? "P") === "F");
+      const faltasMensais = aulasComFalta.length;
+      const datasFaltas = aulasComFalta.map(a => a.data);
 
       const motivos: string[] = [];
       if (maxConsec  >= thresholdConsec)  motivos.push(`${maxConsec} dias consecutivos`);
@@ -885,6 +936,7 @@ router.get("/diario/ficai", requireAuth, async (req, res) => {
           maxConsecutivo: maxConsec,
           faltasMensais,
           motivos,
+          datasFaltas,
         });
       }
     }
@@ -917,6 +969,23 @@ router.put("/diario/aula/:id", requireAuth, async (req, res) => {
   }
 });
 
+/* ─── PUT /diario/aula/:id/tipo ─── */
+router.put("/diario/aula/:id/tipo", requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { tipo } = req.body;
+    if (!tipo) return res.status(400).json({ ok: false, mensagem: "tipo é obrigatório" });
+    
+    await db
+      .update(diarioAulasTable)
+      .set({ tipo })
+      .where(eq(diarioAulasTable.id, Number(id)));
+    res.json({ ok: true });
+  } catch (e: any) {
+    res.status(500).json({ ok: false, mensagem: e.message });
+  }
+});
+
 /* ─── GET /diario/:turma/atividades — todas as aulas com conteúdo ─── */
 router.get("/diario/:turma/atividades", requireAuth, async (req, res) => {
   try {
@@ -935,12 +1004,12 @@ router.get("/diario/:turma/atividades", requireAuth, async (req, res) => {
 /* ─── POST /diario/aula ─── */
 router.post("/diario/aula", requireAuth, async (req, res) => {
   try {
-    const { turmaNome, data } = req.body;
+    const { turmaNome, data, tipo = "normal" } = req.body;
     if (!turmaNome || !data) return res.status(400).json({ ok: false, mensagem: "turmaNome e data são obrigatórios" });
 
     const [aula] = await db
       .insert(diarioAulasTable)
-      .values({ turmaNome, data })
+      .values({ turmaNome, data, tipo })
       .onConflictDoNothing()
       .returning();
 

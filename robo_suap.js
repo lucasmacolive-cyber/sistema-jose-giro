@@ -1,6 +1,8 @@
 require("dotenv").config();
 const { Pool } = require("pg");
 const https = require("https");
+const fs = require("fs");
+const path = require("path");
 
 const VERCEL_URL = "https://sistema-jose-giro-escola.vercel.app";
 const SUAP_HOST = "suap.campos.rj.gov.br";
@@ -35,16 +37,16 @@ class CookieJar {
   }
 }
 
-function request(method, path, jar, body, extraHeaders) {
+function request(method, pathUrl, jar, body, extraHeaders) {
   return new Promise((resolve, reject) => {
     const bodyBuf = body ? Buffer.from(body, "utf8") : undefined;
     const options = {
       hostname: SUAP_HOST,
-      path,
+      path: pathUrl,
       method,
-      timeout: 60000,
+      timeout: 120000, // 2 mins timeout
       headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language": "pt-BR,pt;q=0.9",
         "Cookie": jar.header(),
@@ -103,32 +105,14 @@ function encontrarLinkExport(html) {
 
 function encontrarLinkDownload(html) {
   const allLinks = [...html.matchAll(/href="([^"]+)"/g)].map((m) => m[1]);
-
-  // Prioridade 1: link com .xls no href
   const byXls = allLinks.find((h) => h.toLowerCase().includes(".xls"));
   if (byXls) return byXls;
-
-  // Prioridade 2: link de download do djtools ou padrões do SUAP
-  const byDjtools = allLinks.find((h) => {
-    const l = h.toLowerCase();
-    return l.includes("/djtools/download/") || l.includes("/djtools/files/") || l.includes("/djtools/result/");
-  });
-  if (byDjtools) return byDjtools;
-
-  // Prioridade 3: link genérico com "download" ou "arquivo" ou "continuar"
-  const byDl = allLinks.find((h) => {
-    const l = h.toLowerCase();
-    return l.includes("download") || l.includes("arquivo") || l.includes("continuar");
-  });
+  const byDl = allLinks.find((h) => h.toLowerCase().includes("download") || h.toLowerCase().includes("arquivo") || h.toLowerCase().includes("continuar"));
   if (byDl) return byDl;
-
-  // Prioridade 4: link com texto "baixar", "download", "aqui", etc.
   const byText = html.match(/<a[^>]+href="([^"]+)"[^>]*>[^<]*(baixar|download|clique aqui|aqui|arquivo)[^<]*<\/a>/i)?.[1];
   if (byText) return byText;
-
   return null;
 }
-
 
 function encontrarMetaRefresh(html) {
   const m = html.match(/<meta[^>]+http-equiv=["']refresh["'][^>]+content=["'][^"']*url=([^"'\s]+)/i);
@@ -146,219 +130,155 @@ function resolverPath(href) {
   return href;
 }
 
-function sleep(ms) {
-  return new Promise((r) => setTimeout(r, ms));
-}
-
-const SUAP_RELATORIO_URL =
-  "/edu/relatorio/?uo=205&diretoria=&estrutura_curso=&modalidade=&convenio=&polo=" +
-  "&ano_letivo=&periodo_letivo=0&periodo_matriz=0&periodo_referencia=0&ano_conclusao=" +
-  "&situacao_diario=0&turno=&situacao_matricula=&situacao_matricula_periodo=" +
-  "&ano_ingresso_inicio=&periodo_ingresso_inicio=0&ano_ingresso_fim=&periodo_ingresso_fim=0" +
-  "&aluno_especial=&forma_ingresso=&situacao_sistema=TODOS&medida_disciplinar=0" +
-  "&percentual_conclusao_curso_inicial=&percentual_conclusao_curso_final=" +
-  "&tipo_necessidade_especial=0&tipo_transtorno=0&superdotacao=0&pendencias=" +
-  "&formatacao=simples&quantidade_itens=25&ordenacao=Nome&agrupamento=Campus" +
-  "&exibicao=ano_letivo_integralizacao&exibicao=ano_let_prev_conclusao&exibicao=ano_conclusao" +
-  "&exibicao=ano_letivo&exibicao=pessoa_fisica.cpf&exibicao=cpf_responsavel" +
-  "&exibicao=curso_campus.diretoria.setor.uo&exibicao=get_chave_responsavel" +
-  "&exibicao=cidade.nome&exibicao=convenio&exibicao=cota_mec&exibicao=cota_sistec" +
-  "&exibicao=curso_campus.codigo&exibicao=codigo_educacenso" +
-  "&exibicao=get_projeto_final_aprovado.data_defesa&exibicao=dt_conclusao_curso" +
-  "&exibicao=data_conclusao_intercambio&exibicao=data_integralizacao&exibicao=data_matricula" +
-  "&exibicao=pessoa_fisica.nascimento_data&exibicao=get_data_ultimo_procedimento_periodo_referencia" +
-  "&exibicao=get_tipo_necessidade_especial_display&exibicao=curso_campus.descricao" +
-  "&exibicao=curso_campus.diretoria&exibicao=candidato_vaga.candidato.edital" +
-  "&exibicao=pessoa_fisica.email&exibicao=email_google_classroom" +
-  "&exibicao=pessoa_fisica.email_secundario&exibicao=email_responsavel" +
-  "&exibicao=get_endereco&exibicao=cidade.estado.get_sigla&exibicao=estado_civil" +
-  "&exibicao=pessoa_fisica.raca&exibicao=forma_ingresso" +
-  "&exibicao=get_frequencia_periodo_referencia&exibicao=ira&exibicao=matriz" +
-  "&exibicao=curso_campus.modalidade&exibicao=cidade&exibicao=cidade.codigo" +
-  "&exibicao=nacionalidade&exibicao=naturalidade&exibicao=naturalidade.codigo" +
-  "&exibicao=curso_campus.natureza_participacao&exibicao=nome_mae&exibicao=nome_pai" +
-  "&exibicao=numero_pasta&exibicao=curso_campus.modalidade.nivel_ensino" +
-  "&exibicao=observacao_historico&exibicao=get_observacoes&exibicao=pais_origem" +
-  "&exibicao=pendencias&exibicao=percentual_ch_cumprida&exibicao=periodo_atual" +
-  "&exibicao=periodo_letivo_integralizacao&exibicao=periodo_letivo&exibicao=periodo_ano_consulta" +
-  "&exibicao=polo&exibicao=get_rg&exibicao=caracterizacao.renda_per_capita&exibicao=responsavel" +
-  "&exibicao=pessoa_fisica.sexo&exibicao=situacao_ano_consulta&exibicao=situacao" +
-  "&exibicao=get_situacao_periodo_referencia&exibicao=get_superdotacao_display" +
-  "&exibicao=get_telefones&exibicao=tipo_instituicao_origem" +
-  "&exibicao=get_poder_publico_responsavel_transporte_display&exibicao=get_tipo_veiculo_display" +
-  "&exibicao=get_tipo_transtorno_display&exibicao=get_ultima_matricula_periodo.turma" +
-  "&exibicao=turma_ano_consulta&exibicao=turno&exibicao=get_tipo_zona_residencial_display" +
-  "&relatorio_form=Aguarde...";
-
-async function sincronizarSUAP(usuario, senha) {
+async function suapLogin(usuario, senha) {
   const jar = new CookieJar();
-  console.log("[Robo SUAP] Abrindo página de login...");
+  console.log("[Robo SUAP] Abrindo página de login do SUAP...");
   const loginGet = await request("GET", "/accounts/login/", jar);
-  const csrfLogin = extractCsrf(loginGet.text, jar);
-
-  if (!csrfLogin) throw new Error("Não foi possível obter token CSRF do SUAP.");
+  const csrf = extractCsrf(loginGet.text, jar);
+  if (!csrf) throw new Error("Não foi possível obter token CSRF do SUAP.");
 
   console.log("[Robo SUAP] Autenticando...");
-  const loginBody = new URLSearchParams({
-    csrfmiddlewaretoken: csrfLogin,
+  const loginResp = await request("POST", "/accounts/login/", jar, new URLSearchParams({
+    csrfmiddlewaretoken: csrf,
     this_is_the_login_form: "1",
     next: "/",
     username: usuario,
     password: senha,
-  }).toString();
-
-  const loginResp = await request("POST", "/accounts/login/", jar, loginBody, { Referer: `${SUAP_BASE}/accounts/login/` });
+  }).toString(), { Referer: `${SUAP_BASE}/accounts/login/` });
 
   if (loginResp.text.includes("accounts/login") && loginResp.status !== 302) {
-    throw new Error("Falha no login do SUAP. Credenciais inválidas.");
+    throw new Error("Falha no login do SUAP. Verifique as credenciais.");
+  }
+  return jar;
+}
+
+async function sincronizarSUAP(jar) {
+  console.log("[Robo SUAP] Acessando lista de alunos...");
+  const page1 = await request("GET", "/edu/aluno/", jar);
+
+  let exportLink = encontrarLinkExport(page1.text);
+
+  if (!exportLink && page1.text.includes("Meus Relatórios")) {
+    console.log("[Robo SUAP] Tentando via Relatórios Personalizados...");
+    const rels = await request("GET", "/edu/relatorio/", jar);
+    
+    let urlAlunos = null;
+    const regexRel = /<a[^>]+href="([^"]+)"[^>]*>[^<]*(Alunos|Relat.rio de Alunos)[^<]*<\/a>/gi;
+    let m;
+    while ((m = regexRel.exec(rels.text)) !== null) {
+      if (!m[1].includes("delete") && !m[1].includes("update")) {
+        urlAlunos = m[1];
+        break;
+      }
+    }
+    
+    if (!urlAlunos) {
+      const allLinks = [...rels.text.matchAll(/href="(\/edu\/relatorio\/\d+\/)"/g)].map(x => x[1]);
+      if (allLinks.length > 0) urlAlunos = allLinks[0];
+    }
+
+    if (urlAlunos) {
+      console.log(`[Robo SUAP] Acessando relatório: ${urlAlunos}`);
+      const relPage = await request("GET", urlAlunos, jar);
+      exportLink = encontrarLinkExport(relPage.text);
+    }
   }
 
-  console.log("[Robo SUAP] Login ok. Acessando relatório...");
-  const reportResp = await request("GET", SUAP_RELATORIO_URL, jar, undefined, { Referer: `${SUAP_BASE}/edu/relatorio/` });
-
-  console.log("[Robo SUAP] Solicitando geração do arquivo XLS via POST...");
-  const reportCsrf = extractCsrf(reportResp.text, jar);
-  const exportBody = new URLSearchParams({
-    csrfmiddlewaretoken: reportCsrf,
-    xls: "1",
-  }).toString();
-
-  const exportResp = await request("POST", SUAP_RELATORIO_URL + "&xls=1", jar, exportBody, {
-    Referer: `${SUAP_BASE}${SUAP_RELATORIO_URL}`,
-    "X-CSRFToken": reportCsrf,
-    Accept: "application/vnd.ms-excel,application/octet-stream,text/html,*/*",
-  });
-
-  const ct = exportResp.headers["content-type"] || "";
-  if (isXlsBuffer(exportResp.body, ct)) {
-    console.log("[Robo SUAP] ✓ Arquivo XLS recebido diretamente!");
-    return exportResp.body;
+  if (!exportLink) {
+    throw new Error("Não foi possível encontrar o link para exportar XLS.");
   }
 
-  // ── Detectar UUID da tarefa do djtools ─────────────────────────────────────
-  // O SUAP redireciona para /djtools/process2/{UUID}/ e emite JavaScript com
-  //   $.get("/djtools/process_progress2/0/{UUID}/", ...)
-  // Precisamos extrair o UUID para usar a API de polling
-  let taskUuid = null;
-  let process2Html = exportResp.text;
-
-  // Tentar extrair UUID diretamente da resposta do POST
-  let uuidMatch = process2Html.match(/\/djtools\/process(?:_progress)?2\/(?:0\/)?([a-f0-9-]{36})\//i);
+  console.log(`[Robo SUAP] Solicitando exportação XLS: ${exportLink}`);
+  let currentUrl = resolverPath(exportLink);
+  let attempts = 0;
   
-  // Se não encontrou, seguir redirect para página /djtools/process2/...
-  if (!uuidMatch) {
-    let followPath = null;
-    if (exportResp.headers.location) {
-      followPath = resolverPath(exportResp.headers.location);
-    } else {
-      const metaUrl = encontrarMetaRefresh(exportResp.text);
-      if (metaUrl) followPath = resolverPath(metaUrl);
+  while (attempts < 10) {
+    attempts++;
+    const resp = await request("GET", currentUrl, jar);
+    
+    if (isXlsBuffer(resp.body, resp.headers["content-type"] || "")) {
+      return resp.body; // Retorna o buffer XLS
     }
     
-    if (followPath) {
-      console.log(`[Robo SUAP] Seguindo redirect para: ${followPath}`);
-      const followResp = await request("GET", followPath, jar);
-      process2Html = followResp.text;
-      
-      // Verificar se já é XLS
-      const fct = followResp.headers["content-type"] || "";
-      if (isXlsBuffer(followResp.body, fct)) return followResp.body;
-      
-      uuidMatch = process2Html.match(/\/djtools\/process(?:_progress)?2\/(?:0\/)?([a-f0-9-]{36})\//i);
+    const refreshUrl = encontrarMetaRefresh(resp.text);
+    if (refreshUrl) {
+      currentUrl = resolverPath(refreshUrl);
+      console.log(`[Robo SUAP] Redirecionamento Meta Refresh para: ${currentUrl}`);
+      await new Promise(r => setTimeout(r, 2000));
+      continue;
+    }
+
+    const dlLink = encontrarLinkDownload(resp.text);
+    if (dlLink) {
+      currentUrl = resolverPath(dlLink);
+      console.log(`[Robo SUAP] Link de download direto encontrado: ${currentUrl}`);
+      continue;
+    }
+    
+    break;
+  }
+
+  // Se for página de "Tarefa Assíncrona" (/tarefa/1234/)
+  if (currentUrl.includes("/tarefa/")) {
+    const taskIdMatch = currentUrl.match(/\/tarefa\/([a-zA-Z0-9-]+)/);
+    if (taskIdMatch) {
+      console.log(`[Robo SUAP] Tarefa assíncrona detectada: ${taskIdMatch[1]}`);
+      return await aguardarTarefaAssincrona(jar, taskIdMatch[1], currentUrl);
     }
   }
 
-  if (!uuidMatch) {
-    throw new Error("Não foi possível detectar o UUID da tarefa de geração do relatório SUAP. Estrutura inesperada.");
-  }
+  throw new Error("Não foi possível baixar o XLS (formato desconhecido ou falha na exportação).");
+}
 
-  taskUuid = uuidMatch[1];
-  console.log(`[Robo SUAP] Tarefa detectada! UUID: ${taskUuid}`);
-  console.log("[Robo SUAP] Usando API djtools/process_progress2 para monitorar conclusão...");
+async function aguardarTarefaAssincrona(jar, taskId, baseUrl) {
+  const checkUrl = `/tarefa/status/${taskId}/`;
+  let tentativas = 0;
+  const maxTentativas = 60; // 60 * 20s = 20 mins
 
-  // ── Polling via API AJAX do SUAP ───────────────────────────────────────────
-  // A API retorna: "percentual::message::file::url"
-  //   - Enquanto processa: "75:::: " (message vazio, file vazio)
-  //   - Quando conclui:    "100::Relatório gerado com sucesso.::1::url_ou_vazio"
-  //   - Se file != "": baixar via /djtools/process_progress2/1/{UUID}/
-  const statusUrl = `/djtools/process_progress2/0/${taskUuid}/`;
-  const downloadUrl = `/djtools/process_progress2/1/${taskUuid}/`;
+  while (tentativas < maxTentativas) {
+    tentativas++;
+    await new Promise(r => setTimeout(r, 20000)); // Espera 20s
 
-  for (let tentativa = 0; tentativa < 240; tentativa++) {
-    await sleep(5000);
-    
-    console.log(`[Robo SUAP] Poll ${tentativa+1}/240 — Verificando status da tarefa...`);
-    
-    const statusResp = await request("GET", statusUrl, jar, undefined, {
-      Accept: "text/plain,*/*",
-      "X-Requested-With": "XMLHttpRequest",
-    });
-    
-    const statusText = statusResp.text.trim();
-    console.log(`[Robo SUAP]   → Status: "${statusText.slice(0, 120)}"`);
+    console.log(`[Robo SUAP] Checando status da tarefa... (tentativa ${tentativas})`);
+    const statusResp = await request("GET", checkUrl, jar);
+    const statusText = statusResp.text;
 
-    // Verificar se a resposta é diretamente um XLS
     if (isXlsBuffer(statusResp.body, statusResp.headers["content-type"] || "")) {
-      console.log("[Robo SUAP] ✓ XLS recebido diretamente da API de status!");
       return statusResp.body;
     }
 
-    // Parsear resposta "percentual::message::file::url"
     const tokens = statusText.split("::");
     const percentual = tokens[0] || "";
     const message = tokens[1] || "";
     const file = tokens[2] || "";
     const urlToken = tokens[3] || "";
 
-    console.log(`[Robo SUAP]   → Progresso: ${percentual}% | Mensagem: "${message.slice(0,60)}" | File: "${file}"`);
+    console.log(`[Robo SUAP]   → Progresso: ${percentual}% | Mensagem: "${message.slice(0,60)}"`);
 
-    // Se message não está vazio, a tarefa concluiu
     if (message && message.trim().length > 0) {
+      let downloadUrl = file ? `/tarefa/download/${file}/` : (urlToken && urlToken !== ".." ? resolverPath(urlToken) : baseUrl);
       console.log(`[Robo SUAP] ✓ Tarefa concluída! Baixando arquivo via ${downloadUrl}`);
-      const dlResp = await request("GET", downloadUrl, jar, undefined, {
-        Accept: "application/vnd.ms-excel,application/octet-stream,*/*",
-      });
       
-      const dlCt = dlResp.headers["content-type"] || "";
-      console.log(`[Robo SUAP]   → Download: status=${dlResp.status} | ct=${dlCt} | size=${dlResp.body.length}b`);
-
-      if (isXlsBuffer(dlResp.body, dlCt) || dlResp.body.length > 5000) {
-        console.log(`[Robo SUAP] ✓ Arquivo baixado com sucesso! ${dlResp.body.length} bytes`);
-        return dlResp.body;
-      }
-
-      // Se urlToken tem uma URL alternativa
-      if (urlToken && urlToken !== ".." && urlToken.length > 5) {
-        console.log(`[Robo SUAP]   → Tentando URL alternativa: ${urlToken}`);
-        const altResp = await request("GET", resolverPath(urlToken), jar, undefined, {
-          Accept: "application/vnd.ms-excel,application/octet-stream,*/*",
-        });
-        if (altResp.body.length > 5000) return altResp.body;
-      }
-
-      throw new Error(`Tarefa concluída mas o arquivo não foi encontrado. Resposta do download: ${dlResp.text.slice(0, 200)}`);
-    }
-
-    // Se file está preenchido mas message está vazio
-    if (file && file !== ".." && file.length > 0) {
-      console.log(`[Robo SUAP] ✓ Arquivo sinalizado como pronto (file=${file})! Baixando...`);
       const dlResp = await request("GET", downloadUrl, jar, undefined, {
         Accept: "application/vnd.ms-excel,application/octet-stream,*/*",
       });
       if (isXlsBuffer(dlResp.body, dlResp.headers["content-type"] || "") || dlResp.body.length > 5000) {
         return dlResp.body;
       }
+      
+      if (urlToken && urlToken !== ".." && urlToken.length > 5) {
+        const altResp = await request("GET", resolverPath(urlToken), jar, undefined, {
+          Accept: "application/vnd.ms-excel,application/octet-stream,*/*",
+        });
+        if (altResp.body.length > 5000) return altResp.body;
+      }
+      throw new Error("Tarefa concluída mas o arquivo não foi encontrado.");
     }
   }
-
-  throw new Error("Timeout: o SUAP não concluiu a exportação XLS em 20 minutos.");
+  throw new Error("Timeout: o SUAP não concluiu a exportação XLS.");
 }
 
-
-
-
-
-async function uploadToVercel(xlsBuffer) {
+async function uploadAlunosToVercel(xlsBuffer) {
   return new Promise((resolve, reject) => {
     const base64 = xlsBuffer.toString("base64");
     const payload = JSON.stringify({ arquivo: base64, substituirTudo: true });
@@ -373,17 +293,149 @@ async function uploadToVercel(xlsBuffer) {
       }
     };
 
-    console.log("[Robo SUAP] Enviando arquivo para Vercel para importação no banco...");
+    console.log("[Robo SUAP] Enviando arquivo de alunos para Vercel...");
     const req = https.request(options, (res) => {
       let data = "";
       res.on("data", (chunk) => data += chunk);
       res.on("end", () => resolve(data));
     });
-
     req.on("error", reject);
     req.write(payload);
     req.end();
   });
+}
+
+async function uploadDiarioToVercel(pdfBuffer) {
+  return new Promise((resolve, reject) => {
+    const base64 = pdfBuffer.toString("base64");
+    const payload = JSON.stringify({ arquivo: base64 });
+
+    const options = {
+      hostname: "sistema-jose-giro-escola.vercel.app",
+      path: "/api/sync/diario-pdf",
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Content-Length": Buffer.byteLength(payload)
+      }
+    };
+
+    const req = https.request(options, (res) => {
+      let data = "";
+      res.on("data", (chunk) => data += chunk);
+      res.on("end", () => resolve(data));
+    });
+    req.on("error", reject);
+    req.write(payload);
+    req.end();
+  });
+}
+
+async function uploadBoletimToVercel(pdfBuffer) {
+  return new Promise((resolve, reject) => {
+    const base64 = pdfBuffer.toString("base64");
+    const payload = JSON.stringify({ arquivo: base64 });
+
+    const options = {
+      hostname: "sistema-jose-giro-escola.vercel.app",
+      path: "/api/sync/boletim-pdf",
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Content-Length": Buffer.byteLength(payload)
+      }
+    };
+
+    const req = https.request(options, (res) => {
+      let data = "";
+      res.on("data", (chunk) => data += chunk);
+      res.on("end", () => resolve(data));
+    });
+    req.on("error", reject);
+    req.write(payload);
+    req.end();
+  });
+}
+
+// ==========================================
+// NOVA FUNÇÃO: SINCRONIZAR DIÁRIOS E BOLETINS PDFs
+// ==========================================
+async function sincronizarDiarios(jar) {
+  console.log("[Robo SUAP] Buscando lista de diários do SUAP...");
+  const urlsParaTentar = [
+    "/admin/edu/diario/?ano_letivo__id__exact=9&all=",
+    "/admin/edu/diario/?ano_letivo__id__exact=9",
+    "/edu/meus_diarios/",
+    "/edu/diarios/?ano_letivo=9",
+    "/edu/diarios/",
+    "/edu/meu_diario/",
+  ];
+  
+  let htmlLista = "";
+  for (const url of urlsParaTentar) {
+    const resp = await request("GET", url, jar);
+    if (resp.status === 200 && !resp.text.toLowerCase().includes("this_is_the_login_form")) {
+      const mCheck = resp.text.match(/\/edu\/diario(?:_pdf)?\/(\d+)\//);
+      if (mCheck) {
+        htmlLista = resp.text;
+        console.log(`[Robo SUAP] Lista de diários obtida em: ${url}`);
+        break;
+      }
+    }
+  }
+
+  if (!htmlLista) {
+    console.log("[Robo SUAP] Nenhum diário encontrado ou página não acessível.");
+    return;
+  }
+
+  // Usar RegExp simples para encontrar todos os IDs de diários
+  const regex = /\/edu\/diario(?:_pdf)?\/(\d+)\//g;
+  const idsVistos = new Set();
+  let match;
+  
+  while ((match = regex.exec(htmlLista)) !== null) {
+    idsVistos.add(match[1]);
+  }
+
+  const diarios = Array.from(idsVistos);
+  console.log(`[Robo SUAP] Foram encontrados ${diarios.length} diários no SUAP.`);
+
+  // Para cada diário, baixar o PDF de presenças + PDF de boletim e enviar para a API da Vercel
+  for (let i = 0; i < diarios.length; i++) {
+    const id = diarios[i];
+    console.log(`[Robo SUAP] Baixando PDF do diário ${id} (${i + 1}/${diarios.length})...`);
+    try {
+      const pdfResp = await request("GET", `/edu/diario_pdf/${id}/0/`, jar);
+      if (pdfResp.status === 200 && pdfResp.body.length > 1000) {
+        console.log(`[Robo SUAP] PDF ${id} baixado! Enviando para o sistema...`);
+        const result = await uploadDiarioToVercel(pdfResp.body);
+        try {
+          const js = JSON.parse(result);
+          if (js.ok) {
+            console.log(`[Robo SUAP] ✓ Diário ${id} sincronizado com sucesso!`);
+          } else {
+            console.log(`[Robo SUAP] ⚠️ Erro da API ao sincronizar diário ${id}:`, js.mensagem);
+          }
+        } catch(e) {
+          console.log(`[Robo SUAP] ⚠️ Resposta da API não parseável para diário ${id}:`, result.slice(0, 100));
+        }
+      } else {
+        console.log(`[Robo SUAP] ⚠️ Falha ao baixar PDF ${id} (Status ${pdfResp.status}).`);
+      }
+
+      // Também baixar o Boletim de Notas e Faltas (/edu/emitir_boletins_pdf/{id}/)
+      const bolResp = await request("GET", `/edu/emitir_boletins_pdf/${id}/`, jar);
+      if (bolResp.status === 200 && bolResp.body.length > 500) {
+        await uploadBoletimToVercel(bolResp.body);
+        console.log(`[Robo SUAP] ✓ Boletim de notas/faltas ${id} sincronizado!`);
+      }
+    } catch(e) {
+      console.log(`[Robo SUAP] ⚠️ Erro ao processar diário ${id}:`, e.message);
+    }
+    // Aguarda 500ms entre PDFs para não sobrecarregar
+    await new Promise(r => setTimeout(r, 500));
+  }
 }
 
 async function runAutoSync() {
@@ -403,14 +455,30 @@ async function runAutoSync() {
       return;
     }
 
-    const xlsBuffer = await sincronizarSUAP(usuario, senha);
-    console.log("[Robo SUAP] XLS baixado com sucesso! Tamanho:", xlsBuffer.length, "bytes");
+    // 1. Fazer Login
+    const jar = await suapLogin(usuario, senha);
+    console.log("[Robo SUAP] ✓ Autenticado no SUAP!");
 
-    const result = await uploadToVercel(xlsBuffer);
-    console.log("[Robo SUAP] Resposta da Vercel:", result);
+    // 2. Sincronizar Alunos (XLS)
+    try {
+      const xlsBuffer = await sincronizarSUAP(jar);
+      console.log("[Robo SUAP] XLS baixado com sucesso! Tamanho:", xlsBuffer.length, "bytes");
+      const result = await uploadAlunosToVercel(xlsBuffer);
+      console.log("[Robo SUAP] Sincronização de alunos:", result);
+    } catch(e) {
+      console.error("[Robo SUAP] ❌ Erro ao sincronizar Alunos (XLS):", e.message);
+    }
 
+    // 3. Sincronizar Diários (PDFs)
+    try {
+      await sincronizarDiarios(jar);
+    } catch(e) {
+      console.error("[Robo SUAP] ❌ Erro ao sincronizar Diários (PDFs):", e.message);
+    }
+
+    console.log("[Robo SUAP] ✓ Ciclo de sincronização concluído!");
   } catch (err) {
-    console.error("[Robo SUAP] Erro na sincronização:", err.message);
+    console.error("[Robo SUAP] Erro geral na sincronização:", err.message);
   }
 }
 

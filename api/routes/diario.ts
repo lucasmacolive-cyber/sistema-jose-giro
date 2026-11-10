@@ -667,7 +667,8 @@ router.get("/diario/:turma/mes/:ano/:mes", requireAuth, async (req, res) => {
   try {
     const { turma, ano, mes } = req.params;
     const mesFormatado = mes.padStart(2, "0");
-    const pattern = `__/${mesFormatado}/${ano}`;
+    const patternBR = `%/${mesFormatado}/${ano}`;
+    const patternISO = `${ano}-${mesFormatado}-%`;
 
     // Busca alunos: ativos + transferidos externos na turma + vindos de outra turma para esta
     const alunos = await db
@@ -697,20 +698,40 @@ router.get("/diario/:turma/mes/:ano/:mes", requireAuth, async (req, res) => {
       )
       .orderBy(alunosTable.nomeCompleto);
 
-    const aulas = await db
+    const aulasRaw = await db
       .select()
       .from(diarioAulasTable)
       .where(and(
         eq(diarioAulasTable.turmaNome, turma),
-        sql`${diarioAulasTable.data} LIKE ${pattern}`
+        sql`(${diarioAulasTable.data} LIKE ${patternBR} OR ${diarioAulasTable.data} LIKE ${patternISO})`
       ))
       .orderBy(diarioAulasTable.data);
 
-    if (aulas.length === 0) {
+    if (aulasRaw.length === 0) {
       return res.json({ alunos, aulas: [], presencas: {} });
     }
 
-    const aulaIds = aulas.map((a) => a.id);
+    // Normalizar datas para DD/MM/YYYY para renderização perfeita no grid
+    const aulasMap = new Map<string, typeof aulasRaw[0]>();
+    for (const a of aulasRaw) {
+      let dataBR = a.data;
+      if (a.data && a.data.includes("-")) {
+        const parts = a.data.split("-");
+        if (parts.length === 3) {
+          dataBR = `${parts[2].padStart(2, "0")}/${parts[1].padStart(2, "0")}/${parts[0]}`;
+        }
+      }
+      if (!aulasMap.has(dataBR)) {
+        aulasMap.set(dataBR, { ...a, data: dataBR });
+      }
+    }
+    const aulas = Array.from(aulasMap.values()).sort((a, b) => {
+      const [dA, mA, yA] = a.data.split("/").map(Number);
+      const [dB, mB, yB] = b.data.split("/").map(Number);
+      return new Date(yA, mA - 1, dA).getTime() - new Date(yB, mB - 1, dB).getTime();
+    });
+
+    const aulaIds = aulasRaw.map((a) => a.id);
     const presencasRows = await db
       .select()
       .from(diarioPresencasTable)

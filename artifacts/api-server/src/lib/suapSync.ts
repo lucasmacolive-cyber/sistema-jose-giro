@@ -3,7 +3,7 @@ import * as https from "https";
 import * as http from "http";
 import * as XLSX from "xlsx";
 import * as cheerio from "cheerio";
-import { parseDiarioPDF, type SecaoDiario } from "./parseDiario.js";
+import { parseDiarioPDF, parseBoletimPDF, normalizarTurmaLocal, type SecaoDiario, type BoletimParsed } from "./parseDiario.js";
 
 /* ═══════════════════════════════════════════════════════════
    SUAP HTTP Client — Sincronização server-side sem browser
@@ -253,48 +253,44 @@ export async function sincronizarSUAP(
 ): Promise<Buffer> {
   const jar = new CookieJar();
 
-  /* ── 1. Login com Persistência ── */
-  let loginSucesso = false;
-  for (let t = 1; t <= 3; t++) {
-    try {
-      onProgress(5, `Tentativa de login ${t}/3 no SUAP...`);
-      const loginGet = await request("GET", "/accounts/login/", jar);
-      const csrfLogin = extractCsrf(loginGet.text, jar);
+  /* ── 1. Login ── */
+  onProgress(5, "Abrindo página de login do SUAP...");
+  const loginGet = await request("GET", "/accounts/login/", jar);
+  const csrfLogin = extractCsrf(loginGet.text, jar);
 
-      if (!csrfLogin) throw new Error("Token CSRF não encontrado.");
-
-      const loginBody = new URLSearchParams({
-        csrfmiddlewaretoken: csrfLogin,
-        this_is_the_login_form: "1",
-        next: "/",
-        username: usuario,
-        password: senha,
-      }).toString();
-
-      const loginResp = await request("POST", "/accounts/login/", jar, loginBody, {
-        Referer: `${SUAP_BASE}/accounts/login/`,
-      });
-
-      if (loginResp.status === 302 || !loginResp.text.includes("accounts/login")) {
-        loginSucesso = true;
-        break;
-      }
-    } catch (e) {
-      if (t === 3) throw e;
-      await sleep(2000);
-    }
+  if (!csrfLogin) {
+    throw new Error("Não foi possível obter token CSRF do SUAP.");
   }
 
-  if (!loginSucesso) throw new Error("Falha ao autenticar no SUAP após 3 tentativas.");
+  onProgress(10, "Autenticando no SUAP...");
+  const loginBody = new URLSearchParams({
+    csrfmiddlewaretoken: csrfLogin,
+    this_is_the_login_form: "1",
+    next: "/",
+    username: usuario,
+    password: senha,
+  }).toString();
+
+  const loginResp = await request("POST", "/accounts/login/", jar, loginBody, {
+    Referer: `${SUAP_BASE}/accounts/login/`,
+  });
+
+  if (loginResp.text.includes("accounts/login") && loginResp.status !== 302) {
+    throw new Error("Falha no login do SUAP. Verifique as credenciais.");
+  }
 
   onProgress(20, "Login realizado. Acessando relatório de alunos...");
 
-  /* ── 2. Acessar o relatório ── */
+  /* ── 2. Acessar o relatório com URL pré-configurada (GET) ── */
   const reportResp = await request("GET", SUAP_RELATORIO_URL, jar, undefined, {
     Referer: `${SUAP_BASE}/edu/relatorio/`,
   });
 
-  onProgress(35, "Relatório carregado. Iniciando exportação para XLS...");
+  if (reportResp.status !== 200) {
+    throw new Error(`Falha ao acessar relatório SUAP (status ${reportResp.status}).`);
+  }
+
+  onProgress(35, "Relatório carregado. Iniciando exportação para XLS via POST...");
 
   /* ── 3. Disparar Exportação via POST ── */
   const reportCsrf = reportResp.text.match(/name="csrfmiddlewaretoken"\s+value="([^"]+)"/)?.[1] || jar.get("__Host-csrftoken") || jar.get("csrftoken") || "";
@@ -311,19 +307,29 @@ export async function sincronizarSUAP(
     Accept: "application/vnd.ms-excel,application/octet-stream,text/html,*/*",
   });
 
+  console.log("[DEBUG exportResp] Status:", exportResp.status);
+  console.log("[DEBUG exportResp] Location:", exportResp.headers.location);
+  console.log("[DEBUG exportResp] Content-Type:", exportResp.headers["content-type"]);
+  const inputs = [...exportResp.text.matchAll(/<(?:input|button)[^>]+>/gi)].map(m => m[0]);
+  console.log("[DEBUG exportResp] Inputs/Buttons count:", inputs.length);
+  console.log("[DEBUG exportResp] Inputs with xls/export/gerar:", inputs.filter(i => /xls|export|gerar/i.test(i)));
+  const matchesDjt = exportResp.text.match(/\/djtools\/[^\s"']+/gi);
+  console.log("[DEBUG exportResp] djtools matches:", matchesDjt);
+
   /* ── 4. Verificar se já é o arquivo XLS ── */
   const ct = exportResp.headers["content-type"] ?? "";
+
   if (isXlsBuffer(exportResp.body, ct)) {
-    onProgress(95, "Arquivo XLS recebido diretamente!");
+    onProgress(85, "Arquivo XLS obtido diretamente!");
     return exportResp.body;
   }
 
   /* ── 5. Detectar UUID da tarefa djtools e usar API process_progress2 ── */
-  // O SUAP usa a URL /djtools/process2/{UUID}/ e JavaScript com polling via
-  // GET /djtools/process_progress2/0/{UUID}/ que retorna "percentual::message::file::url"
-  // Quando message != '', a tarefa concluiu e o arquivo está em /djtools/process_progress2/1/{UUID}/
+  // O SUAP usa /djtools/process2/{UUID}/ com JavaScript fazendo polling via
+  // GET /djtools/process_progress2/0/{UUID}/ → "percentual::message::file::url"
+  // Quando message != '', baixar via /djtools/process_progress2/1/{UUID}/
 
-  onProgress(42, "Detectando tarefa de geração do XLS no SUAP...");
+  onProgress(42, "Detectando tarefa djtools de geração do XLS...");
 
   let taskUuid: string | null = null;
   let process2Html = exportResp.text;
@@ -359,7 +365,7 @@ export async function sincronizarSUAP(
 
       const fct = followResp.headers["content-type"] ?? "";
       if (isXlsBuffer(followResp.body, fct)) {
-        onProgress(95, "Arquivo XLS recebido após redirect!");
+        onProgress(85, "Arquivo XLS recebido após redirect!");
         return followResp.body;
       }
 
@@ -368,13 +374,14 @@ export async function sincronizarSUAP(
   }
 
   if (!uuidMatchStr) {
+    // Tentar buscar diretamente por qualquer link XLS retornado na página
     const directDl = encontrarLinkDownload(process2Html) || encontrarLinkExport(process2Html);
     if (directDl) {
       onProgress(46, `Tentando download direto do relatório: ${directDl}`);
       const directResp = await request("GET", resolverPath(directDl), jar);
       const fct = directResp.headers["content-type"] ?? "";
       if (isXlsBuffer(directResp.body, fct) || directResp.body.length > 5000) {
-        onProgress(95, "Arquivo XLS obtido via download direto!");
+        onProgress(85, "Arquivo XLS obtido via download direto!");
         return directResp.body;
       }
     }
@@ -382,23 +389,14 @@ export async function sincronizarSUAP(
   }
 
   taskUuid = uuidMatchStr;
-  onProgress(45, `Tarefa SUAP detectada (UUID: ${taskUuid.slice(0, 8)}...). Monitorando via API...`);
+  onProgress(45, `Tarefa detectada (${taskUuid.slice(0, 8)}...). Monitorando via API djtools...`);
 
-  // ── Polling via API AJAX do SUAP ───────────────────────────────────────────
-  // Retorna: "percentual::message::file::url"
-  //   - Enquanto processa: "75::: " (message vazio)
-  //   - Quando conclui:    "100::Relatório gerado.::"
   const statusUrl = `/djtools/process_progress2/0/${taskUuid}/`;
   const downloadUrl = `/djtools/process_progress2/1/${taskUuid}/`;
 
-  const MAX_ATTEMPTS = 240; // 240 × 5s = 20 minutos
-  for (let tentativa = 0; tentativa < MAX_ATTEMPTS; tentativa++) {
+  const MAX_POLLS = 240; // 240 × 5s = 20 minutos
+  for (let tentativa = 0; tentativa < MAX_POLLS; tentativa++) {
     await sleep(5000);
-
-    onProgress(
-      45 + Math.min(48, Math.round((tentativa / MAX_ATTEMPTS) * 48)),
-      `Aguardando geração do XLS... (tentativa ${tentativa + 1}/${MAX_ATTEMPTS})`
-    );
 
     const statusResp = await request("GET", statusUrl, jar, undefined, {
       Accept: "text/plain,*/*",
@@ -407,7 +405,7 @@ export async function sincronizarSUAP(
 
     // Se a resposta for o próprio arquivo XLS
     if (isXlsBuffer(statusResp.body, statusResp.headers["content-type"] ?? "")) {
-      onProgress(95, "Arquivo XLS recebido diretamente da API de status!");
+      onProgress(85, "Arquivo XLS recebido da API de status!");
       return statusResp.body;
     }
 
@@ -421,14 +419,14 @@ export async function sincronizarSUAP(
 
     if (percentual) {
       onProgress(
-        45 + Math.min(48, Math.round(Number(percentual) / 2)),
-        `SUAP gerando XLS: ${percentual}%...`
+        45 + Math.min(40, Math.round(Number(percentual) / 2.5)),
+        `SUAP gerando XLS: ${percentual}%... (tentativa ${tentativa + 1}/${MAX_POLLS})`
       );
     }
 
-    // Se message não está vazio, a tarefa concluiu
+    // Tarefa concluída quando message não está vazio
     if (message && message.trim().length > 0) {
-      onProgress(93, "Tarefa concluída! Baixando arquivo final...");
+      onProgress(83, "Tarefa concluída! Baixando arquivo...");
 
       const dlResp = await request("GET", downloadUrl, jar, undefined, {
         Accept: "application/vnd.ms-excel,application/octet-stream,*/*",
@@ -436,18 +434,18 @@ export async function sincronizarSUAP(
 
       const dlCt = dlResp.headers["content-type"] ?? "";
       if (isXlsBuffer(dlResp.body, dlCt) || dlResp.body.length > 5000) {
-        onProgress(95, `Arquivo XLS baixado! (${dlResp.body.length} bytes)`);
+        onProgress(85, `Arquivo XLS baixado! (${dlResp.body.length} bytes)`);
         return dlResp.body;
       }
 
-      // URL alternativa via urlToken
+      // URL alternativa
       if (urlToken && urlToken !== ".." && urlToken.length > 5) {
-        onProgress(93, `Tentando URL alternativa: ${urlToken}`);
+        onProgress(83, `Tentando URL alternativa: ${urlToken}`);
         const altResp = await request("GET", resolverPath(urlToken), jar, undefined, {
           Accept: "application/vnd.ms-excel,application/octet-stream,*/*",
         });
         if (altResp.body.length > 5000) {
-          onProgress(95, `Arquivo XLS via URL alternativa! (${altResp.body.length} bytes)`);
+          onProgress(85, `Arquivo XLS via URL alternativa! (${altResp.body.length} bytes)`);
           return altResp.body;
         }
       }
@@ -455,25 +453,23 @@ export async function sincronizarSUAP(
       throw new Error(`Tarefa concluída mas o arquivo não foi obtido. Resposta: ${dlResp.text.slice(0, 200)}`);
     }
 
-    // Se file está preenchido (sinal de conclusão em algumas versões do SUAP)
+    // file preenchido (conclusão em algumas versões)
     if (file && file !== ".." && file.length > 0) {
-      onProgress(93, `Arquivo pronto (file=${file})! Baixando...`);
+      onProgress(83, `Arquivo pronto (file=${file})! Baixando...`);
       const dlResp = await request("GET", downloadUrl, jar, undefined, {
         Accept: "application/vnd.ms-excel,application/octet-stream,*/*",
       });
       if (isXlsBuffer(dlResp.body, dlResp.headers["content-type"] ?? "") || dlResp.body.length > 5000) {
-        onProgress(95, `Arquivo XLS baixado! (${dlResp.body.length} bytes)`);
+        onProgress(85, `Arquivo XLS baixado! (${dlResp.body.length} bytes)`);
         return dlResp.body;
       }
     }
   }
 
-  throw new Error("O SUAP demorou muito para gerar o arquivo (timeout de 20 minutos). Tente novamente.");
+  throw new Error(
+    "Timeout: o SUAP não concluiu a exportação XLS em 20 minutos. Tente novamente em alguns minutos."
+  );
 }
-
-
-
-
 
 function sleep(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
@@ -520,15 +516,17 @@ export type DiarioSyncResultado = {
   erro?: string;
 };
 
-/** Normaliza nome de turma do SUAP para o formato interno (ex: "6A") */
-function normalizarTurma(suapNome: string): string {
+/** Normaliza nome de turma do SUAP para o formato interno (ex: "1AM01", "G2T01", "NIT01") */
+export function normalizarTurma(suapNome: string): string {
+  const norm = normalizarTurmaLocal(suapNome);
+  if (norm && norm !== suapNome) return norm;
   if (/\bNI\b|INCLUS[AÃ]O/i.test(suapNome)) {
     return "NIT01";
   }
   const m = suapNome.match(/(\d+)\s*[°º]\s*[Aa]no\s+([A-Z])/i);
   if (m) return `${m[1]}${m[2].toUpperCase()}`;
   const m2 = suapNome.match(/^(\d+)\s*([A-Z])$/i);
-  if (m2) return `${m2[1]}${m2[2].toUpperCase()}`;
+  if (m2) return `${m[1]}${m2[2].toUpperCase()}`;
   return suapNome.replace(/\s+/g, "").toUpperCase();
 }
 
@@ -559,7 +557,11 @@ async function suapLogin(usuario: string, senha: string, onProgress: ProgressCal
     next: "/",
     username: usuario,
     password: senha,
-  }).toString(), { Referer: `${SUAP_BASE}/accounts/login/` });
+  }).toString(), {
+    Referer: `${SUAP_BASE}/accounts/login/`,
+    Origin: SUAP_BASE,
+    "X-CSRFToken": csrf,
+  });
 
   if (loginResp.text.includes("accounts/login") && loginResp.status !== 302) {
     throw new Error("Falha no login do SUAP. Verifique as credenciais.");
@@ -572,6 +574,8 @@ async function suapLogin(usuario: string, senha: string, onProgress: ProgressCal
 ════════════════════════════════════════════════════════════ */
 async function _listarDiarios(jar: CookieJar, onProgress: ProgressCallback): Promise<DiarioEncontrado[]> {
   const urlsParaTentar = [
+    "/admin/edu/diario/?ano_letivo__id__exact=9&all=",
+    "/admin/edu/diario/?ano_letivo__id__exact=9",
     "/edu/meus_diarios/",
     "/edu/diarios/?ano_letivo=9",
     "/edu/diarios/",
@@ -589,10 +593,10 @@ async function _listarDiarios(jar: CookieJar, onProgress: ProgressCallback): Pro
 
       const $ = cheerio.load(resp.text);
 
-      // Busca links /edu/diario/{id}/
+      // Busca links /edu/diario/{id}/ ou /edu/diario_pdf/{id}/
       $("a[href]").each((_, el) => {
         const href = $(el).attr("href") ?? "";
-        const m = href.match(/\/edu\/diario\/(\d+)\//);
+        const m = href.match(/\/edu\/diario(?:_pdf)?\/(\d+)\//);
         if (!m || vistos.has(m[1])) return;
         vistos.add(m[1]);
 
@@ -601,20 +605,19 @@ async function _listarDiarios(jar: CookieJar, onProgress: ProgressCallback): Pro
 
         // Subir na árvore para capturar contexto da linha
         const row = $(el).closest("tr");
-        const rowText = row.text();
+        const rowText = row.text().replace(/\s+/g, " ").trim();
         const context = rowText || linkText;
 
-        // Extrair turma
-        const turmaMatch = context.match(/(\d+)\s*[°º]\s*[Aa]no\s+([A-Z])/i)
-          ?? linkText.match(/(\d+)\s*[°º]\s*[Aa]no\s+([A-Z])/i);
-        const turmaSuap = turmaMatch
-          ? `${turmaMatch[1]}° Ano ${turmaMatch[2].toUpperCase()}`
+        // Extrair código oficial da turma entre parênteses ex: "(1AM01)" ou "(G2T01)"
+        const mParen = context.match(/\(([A-Z0-9]{4,7})\)/);
+        const turmaSuap = mParen
+          ? mParen[1]
           : linkText.split(" - ")[0]?.trim() || `ID ${suapId}`;
-        const turmaLocal = normalizarTurma(turmaSuap);
+        const turmaLocal = normalizarTurmaLocal(context) || normalizarTurma(turmaSuap);
 
         // Extrair disciplina
-        const discMatch = context.match(/(?:-)?\s*(Língua Portuguesa|Matemática|Ciências|História|Geografia|Arte|Educação Física|Ed\.\s*Física|Inglês|Religião|Complementar|[A-ZÁÉÍÓÚ][a-záéíóúâêôç]{3,})/);
-        const disciplina = discMatch?.[1]?.trim() ?? "";
+        const mComp = context.match(/(?:INF\.\d+|FUND\.\d+)\s*-\s*([^-]+(?:-\s*[^-\[]+)?)/i);
+        const disciplina = mComp?.[1]?.trim() || "Regente / Globalizado";
 
         diarios.push({ suapId, turmaSuap, turmaLocal, disciplina });
       });
@@ -759,7 +762,7 @@ export async function sincronizarDiariosSUAP(
   usuario: string,
   senha: string,
   onProgress: ProgressCallback
-): Promise<{ secoes: SecaoDiario[]; erros: { suapId: string; turma: string; erro: string }[] }> {
+): Promise<{ secoes: SecaoDiario[]; boletins: BoletimParsed[]; erros: { suapId: string; turma: string; erro: string }[] }> {
   const jar = await suapLogin(usuario, senha, onProgress);
   onProgress(20, "Buscando lista de diários...");
 
@@ -773,69 +776,74 @@ export async function sincronizarDiariosSUAP(
     porTurmaLocal.set(d.turmaLocal, lista);
   }
 
-  // Para turmas com UM único diário: pegar o regente/Portuguesa (comportamento anterior)
-  // Para turmas com MÚLTIPLOS diários (ex: NI = 3 diários, um por ano): baixar TODOS
-  //   pois cada diário tem alunos diferentes → precisamos mesclar via upsert
   const turmasParaSync: DiarioEncontrado[] = [];
   for (const [, diarios] of porTurmaLocal) {
-    if (diarios.length === 1) {
-      turmasParaSync.push(diarios[0]);
-    } else {
-      // Múltiplos diários para mesma turmaLocal → baixar todos (ex: NI tem 3 subgrupos)
-      // Deduplicar por suapId caso a listagem retorne duplicatas
-      const vistosId = new Set<string>();
-      for (const d of diarios) {
-        if (!vistosId.has(d.suapId)) {
-          vistosId.add(d.suapId);
-          turmasParaSync.push(d);
-        }
+    const vistosId = new Set<string>();
+    for (const d of diarios) {
+      if (!vistosId.has(d.suapId)) {
+        vistosId.add(d.suapId);
+        turmasParaSync.push(d);
       }
     }
   }
   const todasSecoes: SecaoDiario[] = [];
+  const todosBoletins: BoletimParsed[] = [];
   const erros: { suapId: string; turma: string; erro: string }[] = [];
 
   for (let i = 0; i < turmasParaSync.length; i++) {
     const diario = turmasParaSync[i];
     onProgress(
       40 + Math.floor(((i + 1) / turmasParaSync.length) * 55),
-      `Baixando PDF ${i + 1}/${turmasParaSync.length}: turma ${diario.turmaLocal}...`
+      `Baixando PDF e Boletim ${i + 1}/${turmasParaSync.length}: turma ${diario.turmaLocal} (${diario.suapId})...`
     );
 
     try {
-      // Baixar o PDF do diário
+      // 1. Baixar o PDF do diário (presenças diárias + aulas)
       const pdfResp = await request("GET", `/edu/diario_pdf/${diario.suapId}/0/`, jar);
       if (pdfResp.status !== 200) {
         erros.push({ suapId: diario.suapId, turma: diario.turmaLocal, erro: `HTTP ${pdfResp.status}` });
         continue;
       }
 
-      // Parsear o PDF com o parser de diários
       const { secoes, erros: errsPDF } = await parseDiarioPDF(pdfResp.body);
 
-      // Sobrescrever turmaLocal de cada seção com o valor já conhecido do SUAP HTML.
-      // Isso garante que códigos como "NIAM01" ou "NIM01" sejam corretamente
-      // mapeados para "NI" (ou qualquer outro nome normalizado vindo do listing).
       for (const secao of secoes) {
         secao.turmaLocal = diario.turmaLocal;
+        if (diario.disciplina && !secao.disciplina) {
+          secao.disciplina = diario.disciplina;
+        }
       }
 
       todasSecoes.push(...secoes);
       for (const e of errsPDF) {
         erros.push({ suapId: diario.suapId, turma: diario.turmaLocal, erro: e });
       }
+
+      // 2. Baixar o Boletim de Notas e Faltas do Diário (todos os 4 bimestres)
+      try {
+        const bolResp = await request("GET", `/edu/emitir_boletins_pdf/${diario.suapId}/`, jar);
+        if (bolResp.status === 200 && bolResp.body.length > 500) {
+          const bolParsed = await parseBoletimPDF(bolResp.body);
+          bolParsed.turmaLocal = diario.turmaLocal;
+          if ( bolParsed.alunos.length > 0 ) {
+            todosBoletins.push(bolParsed);
+          }
+        }
+      } catch (_) {
+        // Ignora falha opcional no boletim se o diário já foi baixado
+      }
     } catch (e: any) {
       erros.push({ suapId: diario.suapId, turma: diario.turmaLocal, erro: e.message });
     }
 
-    await sleep(400);
+    await sleep(300);
   }
 
   onProgress(98, "Finalizando importação...");
-  return { secoes: todasSecoes, erros };
+  return { secoes: todasSecoes, boletins: todosBoletins, erros };
 }
 
-export type { SecaoDiario };
+export type { SecaoDiario, BoletimParsed };
 
 /* ═══════════════════════════════════════════════════════════
    Baixar PDF de um único diário dado o link da página
@@ -846,19 +854,67 @@ export async function baixarDiarioPorLink(
   link: string,
 ): Promise<Buffer> {
   const jar = await suapLogin(usuario, senha, () => {});
-
-  // Aceita ambos os formatos:
-  //   https://suap.../edu/diario/NNNNN/
-  //   https://suap.../edu/diario_pdf/NNNNN/0/
   const m =
     link.match(/\/edu\/diario_pdf\/(\d+)\//) ??
-    link.match(/\/edu\/diario\/(\d+)\//);
+    link.match(/\/edu\/diario\/(\d+)\//) ??
+    link.match(/\/edu\/emitir_boletins_pdf\/(\d+)\//);
   if (!m) throw new Error(`Link inválido: "${link}". Use o formato .../edu/diario/ID/ ou .../edu/diario_pdf/ID/0/`);
 
   const suapId = m[1];
   const resp = await request("GET", `/edu/diario_pdf/${suapId}/0/`, jar);
   if (resp.status !== 200) {
     throw new Error(`Erro HTTP ${resp.status} ao baixar o PDF do diário (ID ${suapId})`);
+  }
+  return resp.body;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Baixar Diário PDF + Boletim PDF em uma única sessão SUAP
+════════════════════════════════════════════════════════════ */
+export async function baixarDiarioEBoletimPorLink(
+  usuario: string,
+  senha: string,
+  link: string,
+): Promise<{ diarioPdf: Buffer; boletimPdf: Buffer | null; suapId: string }> {
+  const jar = await suapLogin(usuario, senha, () => {});
+  const m =
+    link.match(/\/edu\/diario_pdf\/(\d+)\//) ??
+    link.match(/\/edu\/diario\/(\d+)\//) ??
+    link.match(/\/edu\/emitir_boletins_pdf\/(\d+)\//);
+  if (!m) throw new Error(`Link inválido: "${link}". Use o formato .../edu/diario/ID/ ou .../edu/diario_pdf/ID/0/`);
+
+  const suapId = m[1];
+  const resp = await request("GET", `/edu/diario_pdf/${suapId}/0/`, jar);
+  if (resp.status !== 200) {
+    throw new Error(`Erro HTTP ${resp.status} ao baixar o PDF do diário (ID ${suapId})`);
+  }
+
+  let boletimPdf: Buffer | null = null;
+  try {
+    const bolResp = await request("GET", `/edu/emitir_boletins_pdf/${suapId}/`, jar);
+    if (bolResp.status === 200 && bolResp.body.length > 500) {
+      boletimPdf = bolResp.body;
+    }
+  } catch {
+    boletimPdf = null;
+  }
+
+  return { diarioPdf: resp.body, boletimPdf, suapId };
+}
+
+/* ═══════════════════════════════════════════════════════════
+   Baixar planilha XLS de alunos de uma turma autenticada no SUAP
+════════════════════════════════════════════════════════════ */
+export async function baixarXlsTurmaPorLink(
+  usuario: string,
+  senha: string,
+  link: string,
+): Promise<Buffer> {
+  const jar = await suapLogin(usuario, senha, () => {});
+  const pathUrl = resolverPath(link);
+  const resp = await request("GET", pathUrl, jar);
+  if (resp.status !== 200) {
+    throw new Error(`Erro HTTP ${resp.status} ao baixar XLS da turma (${pathUrl})`);
   }
   return resp.body;
 }
@@ -876,7 +932,7 @@ export async function identificarDiarioPorLinks(
   const diarios = await _listarDiarios(jar, () => {});
   const resultado: { link: string; suapId: string; turmaLocal: string; disciplina: string }[] = [];
   for (const link of links) {
-    const m = link.match(/\/edu\/diario\/(\d+)\//);
+    const m = link.match(/\/edu\/diario(?:_pdf)?\/(\d+)/i);
     if (!m) continue;
     const suapId = m[1];
     const diario = diarios.find(d => d.suapId === suapId);

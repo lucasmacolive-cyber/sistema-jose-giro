@@ -58,8 +58,8 @@ export async function processarImportacaoAlunos(rows: AlunoRow[], options: Impor
 
   // Mapeamento de colunas (baseado na estrutura do SUAP)
   const colMatricula    = mapearColuna(["matrícula", "matricula", "mat."], 1);
-  const colNome         = mapearColuna(["nome completo", "nome do aluno", "nome"], 2);
-  const colTurma        = mapearColuna(["turma atual", "turma no ano selecionado", "turma/série", "turma", "série"], 71);
+  const colNome         = mapearColuna(["nome completo", "nome do aluno", "nome", "aluno"], 2);
+  const colTurma        = mapearColuna(["turma atual", "turma no ano selecionado", "código da turma", "codigo da turma", "turma/série", "turma", "série"], 71);
   const colTurno        = mapearColuna(["turno"]);
   const colSituacao     = mapearColuna(["situação no curso", "situacao no curso", "situação no ano selecionado", "situação", "situacao", "status"], 64);
   const colNascimento   = mapearColuna(["data de nascimento", "nascimento", "data nasc", "nascimento_data"], 22);
@@ -190,9 +190,6 @@ export async function processarImportacaoAlunos(rows: AlunoRow[], options: Impor
       const rawSituacao = val(row, colSituacao);
       const isMatriculado = String(rawSituacao).toLowerCase().includes("matriculado");
       const situacaoNormalized = isMatriculado ? "Matriculado" : (rawSituacao || "Matriculado");
-      const isSaida = ["transferido", "cancelado", "concluído", "concluido", "evadido", "jubilado", "deixou de frequentar", "desistente", "inativo"].some(s =>
-        situacaoNormalized.toLowerCase().includes(s)
-      ) || (!turmaValida && (!existingRecord?.turmaAtual || !setTurmasExistentes.has(existingRecord.turmaAtual.toLowerCase().trim())));
 
       const cpfLimpo = cleanCPF(rawCpf);
       let existingRecord: typeof existentes[0] | undefined = undefined;
@@ -245,6 +242,10 @@ export async function processarImportacaoAlunos(rows: AlunoRow[], options: Impor
           }
         }
       }
+
+      const isSaida = ["transferido", "cancelado", "concluído", "concluido", "evadido", "jubilado", "deixou de frequentar", "desistente", "inativo"].some(s =>
+        situacaoNormalized.toLowerCase().includes(s)
+      ) || (!turmaValida && (!existingRecord?.turmaAtual || !setTurmasExistentes.has(existingRecord.turmaAtual.toLowerCase().trim())));
 
       // Se a turma extraída não for válida em turmasTable, mantém a turmaAtual que o aluno já tinha
       const turmaFinal = turmaValida ? turmaExtraida : (existingRecord?.turmaAtual || null);
@@ -408,15 +409,17 @@ export async function realocarAlunosPorPlanilhaTurma(
     return undefined;
   };
 
-  const colNome = mapearColuna(["nome completo", "nome do aluno", "nome"]);
+  const colNome = mapearColuna(["nome completo", "nome do aluno", "nome", "aluno"]);
   const colMatricula = mapearColuna(["matrícula", "matricula", "mat."]);
   const colCPF = mapearColuna(["cpf"]);
+  const colSituacao = mapearColuna(["situação no período", "situacao no periodo", "situação", "situacao", "status"]);
 
   const val = (row: any, col: string | undefined): string =>
     col ? String(row[col] ?? "").trim() : "";
 
   let movidos = 0;
   let mantidos = 0;
+  let adicionados = 0;
 
   const todosAlunos = await db.select().from(alunos);
 
@@ -424,10 +427,23 @@ export async function realocarAlunosPorPlanilhaTurma(
     const nome = val(r, colNome);
     const mat = val(r, colMatricula);
     const cpfClean = cleanCPF(val(r, colCPF));
+    const sitRaw = val(r, colSituacao);
 
     if (!nome || nome.length < 3) continue;
 
-    let aluno = todosAlunos.find(a => cleanCPF(a.cpf) === cpfClean);
+    // Ignorar se o aluno foi transferido INTERNAMENTE desta turma para outra turma
+    const sitLower = sitRaw.toLowerCase();
+    if (sitLower.includes("transferido interno") || sitLower.includes("transferida interno")) {
+      continue;
+    }
+
+    const isSaidaExterna = ["transferido externo", "cancelado", "evadido", "deixou de frequentar", "desistente", "inativo"].some(s =>
+      sitLower.includes(s)
+    );
+    const situacaoFinal = isSaidaExterna ? (sitRaw || "Transferido") : "Matriculado";
+    const arquivoMortoFinal = isSaidaExterna ? 1 : 0;
+
+    let aluno = cpfClean ? todosAlunos.find(a => cleanCPF(a.cpf) === cpfClean) : undefined;
     if (!aluno && mat) aluno = todosAlunos.find(a => a.matricula === mat);
     if (!aluno) aluno = todosAlunos.find(a => normName(a.nomeCompleto) === normName(nome));
 
@@ -435,7 +451,8 @@ export async function realocarAlunosPorPlanilhaTurma(
       const jaNoLugarCerto =
         aluno.turmaAtual === nomeTurmaDestino &&
         aluno.turno === turnoDestino &&
-        aluno.arquivoMorto === 0;
+        aluno.arquivoMorto === arquivoMortoFinal &&
+        (!mat || aluno.matricula === mat);
 
       if (jaNoLugarCerto) {
         mantidos++;
@@ -443,15 +460,31 @@ export async function realocarAlunosPorPlanilhaTurma(
         await db.update(alunos).set({
           turmaAtual: nomeTurmaDestino,
           turno: turnoDestino,
-          situacao: "Matriculado",
-          arquivoMorto: 0,
+          matricula: mat || aluno.matricula,
+          situacao: situacaoFinal,
+          arquivoMorto: arquivoMortoFinal,
         }).where(eq(alunos.id, aluno.id));
 
-        console.log(`[Realocador Turmas] Aluno "${aluno.nomeCompleto}" realocado para turma ${nomeTurmaDestino} (${turnoDestino}).`);
+        aluno.turmaAtual = nomeTurmaDestino;
+        aluno.turno = turnoDestino;
+        if (mat) aluno.matricula = mat;
+        aluno.arquivoMorto = arquivoMortoFinal;
         movidos++;
       }
+    } else {
+      const [inserted] = await db.insert(alunos).values({
+        nomeCompleto: nome,
+        matricula: mat || null,
+        turmaAtual: nomeTurmaDestino,
+        turno: turnoDestino,
+        situacao: situacaoFinal,
+        arquivoMorto: arquivoMortoFinal,
+      }).returning();
+      if (inserted) todosAlunos.push(inserted);
+      adicionados++;
+      movidos++;
     }
   }
 
-  return { movidos, mantidos };
+  return { movidos, mantidos, adicionados };
 }

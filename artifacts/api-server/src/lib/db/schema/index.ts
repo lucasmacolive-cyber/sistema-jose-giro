@@ -14,3 +14,4 @@ export * from "./logins-externos.js";
 export * from "./diario.js";
 export * from "./configuracoes.js";
 export * from "./fila-whatsapp.js";
+export * from "./automatizacoes-whatsapp.js";
