@@ -1,4 +1,4 @@
-import { db, configuracoesTable, filaWhatsappTable } from "../../lib/db/index.ts";
+import { db, configuracoesTable, filaWhatsappTable } from "./db/index.ts";
 import { eq, like } from "drizzle-orm";
 
 export function initWhatsApp() {
