@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { Router, type IRouter } from "express";
-import { db } from "../lib/db/index.ts";
+import { db } from "../lib/db/index.js";
 import {
   automatizacoesWhatsappTable,
   filaWhatsappTable,
@@ -12,9 +12,9 @@ import {
   diarioPresencasTable,
   diarioConfiguracoesTable,
   turmasTable,
-} from "../lib/db/index.ts";
+} from "../lib/db/index.js";
 import { eq, and, lte, ilike, inArray, sql, asc } from "drizzle-orm";
-import { isDiaLetivo } from "../lib/calendario2026";
+import { isDiaLetivo } from "../lib/calendario2026.js";
 
 const router: IRouter = Router();
 
