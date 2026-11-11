@@ -302,31 +302,40 @@ router.post("/impressoes/heartbeat", async (req, res) => {
     const {
       ricohOnline,
       epsonOnline,
+      brotherOnline,
       ricohStatus,
       epsonStatus,
+      brotherStatus,
       ricohIp,
       epsonIp,
+      brotherIp,
       ricohPingMs,
       epsonPingMs,
+      brotherPingMs,
     } = req.body;
     const agora = new Date().toISOString();
     const nowDate = new Date();
 
     const ricohStFinal = ricohStatus || (ricohOnline ? "online" : "offline");
     const epsonStFinal = epsonStatus || (epsonOnline ? "online" : "offline");
+    const brotherStFinal = brotherStatus || (brotherOnline ? "online" : "offline");
 
     const upserts: { chave: string; valor: string }[] = [
       { chave: "last_heartbeat_impressora", valor: agora },
       { chave: "ricoh_status", valor: ricohStFinal },
       { chave: "epson_status", valor: epsonStFinal },
+      { chave: "brother_status", valor: brotherStFinal },
     ];
 
     if (ricohOnline) upserts.push({ chave: "last_heartbeat_ricoh", valor: agora });
     if (epsonOnline) upserts.push({ chave: "last_heartbeat_epson", valor: agora });
+    if (brotherOnline) upserts.push({ chave: "last_heartbeat_brother", valor: agora });
     if (ricohIp !== undefined) upserts.push({ chave: "ricoh_ip_detectado", valor: String(ricohIp || "") });
     if (epsonIp !== undefined) upserts.push({ chave: "epson_ip_detectado", valor: String(epsonIp || "") });
+    if (brotherIp !== undefined) upserts.push({ chave: "brother_ip_detectado", valor: String(brotherIp || "") });
     if (ricohPingMs !== undefined) upserts.push({ chave: "ricoh_ping_ms", valor: String(ricohPingMs ?? "") });
     if (epsonPingMs !== undefined) upserts.push({ chave: "epson_ping_ms", valor: String(epsonPingMs ?? "") });
+    if (brotherPingMs !== undefined) upserts.push({ chave: "brother_ping_ms", valor: String(brotherPingMs ?? "") });
 
     for (const item of upserts) {
       await db
@@ -340,8 +349,9 @@ router.post("/impressoes/heartbeat", async (req, res) => {
 
     const ricohLabel = ricohStFinal !== "offline" ? `LIGADA (${ricohPingMs ? ricohPingMs + "ms" : "OK"})` : "DESLIGADA";
     const epsonLabel = epsonStFinal !== "offline" ? `LIGADA (${epsonPingMs ? epsonPingMs + "ms" : "OK"})` : "DESLIGADA";
+    const brotherLabel = brotherStFinal !== "offline" ? `LIGADA (${brotherPingMs ? brotherPingMs + "ms" : "OK"})` : "DESLIGADA";
     const time = new Date().toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo" });
-    const line = `[${time}] RICOH: ${ricohLabel}${ricohIp ? ` [${ricohIp}]` : ""} | EPSON: ${epsonLabel}${epsonIp ? ` [${epsonIp}]` : ""}`;
+    const line = `[${time}] RICOH: ${ricohLabel}${ricohIp ? ` [${ricohIp}]` : ""} | EPSON: ${epsonLabel}${epsonIp ? ` [${epsonIp}]` : ""} | BROTHER: ${brotherLabel}${brotherIp ? ` [${brotherIp}]` : ""}`;
 
     try {
       const resLog = await db
@@ -383,12 +393,16 @@ router.get("/impressoes/status-agente", async (_req, res) => {
       "last_heartbeat_impressora",
       "ricoh_status",
       "epson_status",
+      "brother_status",
       "ricoh_ip_detectado",
       "epson_ip_detectado",
+      "brother_ip_detectado",
       "ricoh_ping_ms",
       "epson_ping_ms",
+      "brother_ping_ms",
       "impressora_ricoh_ip",
       "impressora_epson_ip",
+      "impressora_brother_ip",
     ];
     const rows = await db.select().from(configuracoesTable).where(inArray(configuracoesTable.chave, keys));
     const map: Record<string, string> = {};
@@ -403,9 +417,11 @@ router.get("/impressoes/status-agente", async (_req, res) => {
 
     const ricohSt = map.ricoh_status || "offline";
     const epsonSt = map.epson_status || "offline";
+    const brotherSt = map.brother_status || "offline";
 
     const ricohOnline = isAgenteOnline && ricohSt !== "offline";
     const epsonOnline = isAgenteOnline && epsonSt !== "offline";
+    const brotherOnline = isAgenteOnline && brotherSt !== "offline";
 
     res.json({
       online: isAgenteOnline,
@@ -413,20 +429,26 @@ router.get("/impressoes/status-agente", async (_req, res) => {
       secondsAgo,
       ricohOnline,
       epsonOnline,
+      brotherOnline,
       ricohStatus: isAgenteOnline ? ricohSt : "offline",
       epsonStatus: isAgenteOnline ? epsonSt : "offline",
+      brotherStatus: isAgenteOnline ? brotherSt : "offline",
       ricohIp: map.ricoh_ip_detectado || map.impressora_ricoh_ip || "192.168.18.17",
       epsonIp: map.epson_ip_detectado || map.impressora_epson_ip || "192.168.18.162",
+      brotherIp: map.brother_ip_detectado || map.impressora_brother_ip || "192.168.18.44",
       ricohPingMs: map.ricoh_ping_ms ? Number(map.ricoh_ping_ms) : null,
       epsonPingMs: map.epson_ping_ms ? Number(map.epson_ping_ms) : null,
+      brotherPingMs: map.brother_ping_ms ? Number(map.brother_ping_ms) : null,
     });
   } catch {
     res.json({
       online: false,
       ricohOnline: false,
       epsonOnline: false,
+      brotherOnline: false,
       ricohStatus: "offline",
       epsonStatus: "offline",
+      brotherStatus: "offline",
     });
   }
 });
@@ -564,8 +586,9 @@ log(f"Conectado ao servidor: {API}")
 
 DEFAULT_RICOH_IPS = ["192.168.18.17", "192.168.2.7"]
 DEFAULT_EPSON_IPS = ["192.168.18.162", "192.168.18.122", "192.168.18.90"]
+DEFAULT_BROTHER_IPS = ["192.168.18.44"]
 
-_discovered_cache = {"ts": 0, "ricoh": [], "epson": [], "usb_ricoh": False, "usb_epson": False}
+_discovered_cache = {"ts": 0, "ricoh": [], "epson": [], "brother": [], "usb_ricoh": False, "usb_epson": False, "usb_brother": False}
 
 def _extract_ips(text):
     if not text:
@@ -585,11 +608,21 @@ def discover_local_printer_endpoints():
 
     ricoh_ips = []
     epson_ips = []
+    brother_ips = []
     usb_ricoh = False
     usb_epson = False
+    usb_brother = False
 
     # 1. Hostname DNS/mDNS resolution
-    for host, target in [("RNP5838795081A5", ricoh_ips), ("EPSON3974D2", epson_ips), ("EPSON3974D2.local", epson_ips)]:
+    for host, target in [
+        ("RNP5838795081A5", ricoh_ips),
+        ("EPSON3974D2", epson_ips),
+        ("EPSON3974D2.local", epson_ips),
+        ("BRN3C2AF49672EE", brother_ips),
+        ("BRN3C2AF49672EE.local", brother_ips),
+        ("BRN30055C6285BE", brother_ips),
+        ("BRN30055C6285BE.local", brother_ips),
+    ]:
         try:
             ip = socket.gethostbyname(host)
             if ip and ip not in target:
@@ -597,7 +630,7 @@ def discover_local_printer_endpoints():
         except:
             pass
 
-    # 2. ARP table lookup by MAC suffix (Ricoh=50-81-a5, Epson=39-74-d2)
+    # 2. ARP table lookup by MAC suffix (Ricoh=50-81-a5, Epson=39-74-d2, Brother=96-72-ee / 3c-2a-f4)
     try:
         arp_out = subprocess.check_output(["arp", "-a"], text=True, creationflags=0x08000000, timeout=2)
         for line in arp_out.splitlines():
@@ -611,6 +644,9 @@ def discover_local_printer_endpoints():
             if "39-74-d2" in low:
                 if ips[0] not in epson_ips:
                     epson_ips.append(ips[0])
+            if "96-72-ee" in low or "3c-2a-f4" in low or "62-85-be" in low or "30-05-5c" in low:
+                if ips[0] not in brother_ips:
+                    brother_ips.append(ips[0])
     except:
         pass
 
@@ -635,6 +671,8 @@ def discover_local_printer_endpoints():
                         if ip not in epson_ips: epson_ips.append(ip)
                     elif "RICOH" in fn or "3710" in fn or "5081A5" in fn:
                         if ip not in ricoh_ips: ricoh_ips.append(ip)
+                    elif "BROTHER" in fn or "5652" in fn or "9672EE" in fn or "6285BE" in fn:
+                        if ip not in brother_ips: brother_ips.append(ip)
             for p in _as_list(data.get("ports")):
                 if not isinstance(p, dict): continue
                 pname = str(p.get("PSChildName") or "").upper()
@@ -644,6 +682,8 @@ def discover_local_printer_endpoints():
                         if ip not in epson_ips: epson_ips.append(ip)
                     elif "RICOH" in pname or "3710" in pname:
                         if ip not in ricoh_ips: ricoh_ips.append(ip)
+                    elif "BROTHER" in pname or "BRN" in pname or "BRW" in pname or "5652" in pname:
+                        if ip not in brother_ips: brother_ips.append(ip)
             for pr in _as_list(data.get("prns")):
                 if not isinstance(pr, dict): continue
                 name = str(pr.get("Name") or "").upper()
@@ -653,6 +693,7 @@ def discover_local_printer_endpoints():
                 if port.startswith("USB") and not offline and st in (3, 4):
                     if "RICOH" in name or "3710" in name: usb_ricoh = True
                     if "EPSON" in name or "L3250" in name: usb_epson = True
+                    if "BROTHER" in name or "5652" in name: usb_brother = True
     except:
         pass
 
@@ -660,8 +701,10 @@ def discover_local_printer_endpoints():
         "ts": now,
         "ricoh": ricoh_ips,
         "epson": epson_ips,
+        "brother": brother_ips,
         "usb_ricoh": usb_ricoh,
         "usb_epson": usb_epson,
+        "usb_brother": usb_brother,
     })
     return _discovered_cache
 
@@ -707,7 +750,7 @@ def _probe_single_ip(ip):
                 return True, ip, ms_tcp
     return False, ip, None
 
-def check_both_printers_fast(cfg_ricoh_ip, cfg_epson_ip):
+def check_both_printers_fast(cfg_ricoh_ip, cfg_epson_ip, cfg_brother_ip=""):
     disc = _discovered_cache
 
     ricoh_candidates = []
@@ -719,6 +762,11 @@ def check_both_printers_fast(cfg_ricoh_ip, cfg_epson_ip):
     for ip in _extract_ips(cfg_epson_ip) + disc["epson"] + DEFAULT_EPSON_IPS:
         if ip not in epson_candidates:
             epson_candidates.append(ip)
+
+    brother_candidates = []
+    for ip in _extract_ips(cfg_brother_ip) + disc["brother"] + DEFAULT_BROTHER_IPS:
+        if ip not in brother_candidates:
+            brother_candidates.append(ip)
 
     def check_candidates(candidates, usb_online, fallback_ip):
         if not candidates:
@@ -733,12 +781,13 @@ def check_both_printers_fast(cfg_ricoh_ip, cfg_epson_ip):
             return "online", "USB", 1
         return "offline", candidates[0], None
 
-    with ThreadPoolExecutor(max_workers=2) as ex:
+    with ThreadPoolExecutor(max_workers=3) as ex:
         f_ricoh = ex.submit(check_candidates, ricoh_candidates, disc["usb_ricoh"], "192.168.18.17")
         f_epson = ex.submit(check_candidates, epson_candidates, disc["usb_epson"], "192.168.18.162")
-        return f_ricoh.result(), f_epson.result()
+        f_brother = ex.submit(check_candidates, brother_candidates, disc["usb_brother"], "192.168.18.44")
+        return f_ricoh.result(), f_epson.result(), f_brother.result()
 
-_cached_cfg_ips = {"ts": 0, "ricoh": "", "epson": ""}
+_cached_cfg_ips = {"ts": 0, "ricoh": "", "epson": "", "brother": ""}
 def _refresh_cfg_ips():
     try:
         r = requests.get(f"{API}/api/escola/contatos", headers={"User-Agent": "RoboImpressaoGiro/3.0"}, timeout=3.5)
@@ -746,12 +795,13 @@ def _refresh_cfg_ips():
             cfg = r.json()
             _cached_cfg_ips["ricoh"] = cfg.get("impressora_ricoh_ip", "")
             _cached_cfg_ips["epson"] = cfg.get("impressora_epson_ip", "")
+            _cached_cfg_ips["brother"] = cfg.get("impressora_brother_ip", "")
             _cached_cfg_ips["ts"] = time.time()
     except Exception as e:
         log(f"Aviso ao buscar IPs: {e}")
 
 def get_ips():
-    return _cached_cfg_ips["ricoh"], _cached_cfg_ips["epson"]
+    return _cached_cfg_ips["ricoh"], _cached_cfg_ips["epson"], _cached_cfg_ips["brother"]
 
 def _bg_config_and_discovery():
     while True:
@@ -786,19 +836,24 @@ def normalize_external_url(url):
         return f"{u}{sep}dl=1", False
     return u, False
 
-def heart(ricoh_info, epson_info):
+def heart(ricoh_info, epson_info, brother_info):
     r_st, r_ip, r_ms = ricoh_info
     e_st, e_ip, e_ms = epson_info
+    b_st, b_ip, b_ms = brother_info
     try:
         SESSION.post(f"{API}/api/impressoes/heartbeat", json={
             "ricohOnline": r_st != "offline",
             "epsonOnline": e_st != "offline",
+            "brotherOnline": b_st != "offline",
             "ricohStatus": r_st,
             "epsonStatus": e_st,
+            "brotherStatus": b_st,
             "ricohIp": r_ip,
             "epsonIp": e_ip,
+            "brotherIp": b_ip,
             "ricohPingMs": r_ms,
             "epsonPingMs": e_ms,
+            "brotherPingMs": b_ms,
         }, timeout=4)
     except Exception as e:
         log(f"Falha heartbeat: {e}")
@@ -886,7 +941,7 @@ def proc(job):
                 is_color = job.get("colorida")
                 if isinstance(is_color, str):
                     is_color = is_color.lower() == "true"
-                terms = ["EPSON", "L3250"] if is_color else ["3710", "RICOH"]
+                terms = ["EPSON", "L3250"] if is_color else (["BROTHER", "5652"] if "BROTHER" in pref.upper() else ["3710", "RICOH", "BROTHER", "5652"])
                 for term in terms:
                     for p in printers:
                         if term in p.upper() and "FAX" not in p.upper():
@@ -957,17 +1012,18 @@ notified_waiting_jobs = set()
 
 while True:
     try:
-        ricoh_cfg_ip, epson_cfg_ip = get_ips()
-        ricoh_info, epson_info = check_both_printers_fast(ricoh_cfg_ip, epson_cfg_ip)
+        ricoh_cfg_ip, epson_cfg_ip, brother_cfg_ip = get_ips()
+        ricoh_info, epson_info, brother_info = check_both_printers_fast(ricoh_cfg_ip, epson_cfg_ip, brother_cfg_ip)
         r_st, r_ip, r_ms = ricoh_info
         e_st, e_ip, e_ms = epson_info
+        b_st, b_ip, b_ms = brother_info
 
-        cur_state = (r_st, r_ip, e_st, e_ip)
+        cur_state = (r_st, r_ip, e_st, e_ip, b_st, b_ip)
         if cur_state != last_log_state:
-            log(f"Status Impressoras -> RICOH={r_st.upper()} ({r_ip}, {r_ms or '-'}ms) | EPSON={e_st.upper()} ({e_ip}, {e_ms or '-'}ms)")
+            log(f"Status Impressoras -> RICOH={r_st.upper()} ({r_ip}, {r_ms or '-'}ms) | EPSON={e_st.upper()} ({e_ip}, {e_ms or '-'}ms) | BROTHER={b_st.upper()} ({b_ip}, {b_ms or '-'}ms)")
             last_log_state = cur_state
 
-        heart(ricoh_info, epson_info)
+        heart(ricoh_info, epson_info, brother_info)
 
         try:
             r = SESSION.get(f"{API}/api/impressoes/pendentes", timeout=5)
@@ -980,7 +1036,16 @@ while True:
                         is_color = is_color.lower() == "true"
                     pref = (j.get("impressoraNome") or "").upper()
                     wants_epson = ("EPSON" in pref) or (not pref and bool(is_color))
-                    printer_ready = (e_st != "offline") if wants_epson else (r_st != "offline")
+                    wants_brother = ("BROTHER" in pref) or ("5652" in pref)
+                    if wants_epson:
+                        printer_ready = (e_st != "offline")
+                        pname = "Epson L3250"
+                    elif wants_brother:
+                        printer_ready = (b_st != "offline")
+                        pname = "Brother DCP-L5652DN"
+                    else:
+                        printer_ready = (r_st != "offline")
+                        pname = "Ricoh SP 3710SF"
                     forced_now = (j.get("progresso") == 10)
 
                     if printer_ready or forced_now:
@@ -988,7 +1053,6 @@ while True:
                         proc(j)
                     elif jid not in notified_waiting_jobs:
                         notified_waiting_jobs.add(jid)
-                        pname = "Epson L3250" if wants_epson else "Ricoh SP 3710SF"
                         try:
                             SESSION.patch(
                                 f"{API}/api/impressoes/{jid}/status",

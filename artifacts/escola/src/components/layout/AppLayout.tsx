@@ -267,8 +267,10 @@ function PrinterStatusBadge() {
     online: boolean;
     ricohOnline: boolean;
     epsonOnline: boolean;
+    brotherOnline: boolean;
     ricohStatus: PrinterStatus;
     epsonStatus: PrinterStatus;
+    brotherStatus: PrinterStatus;
   } | null>(null);
 
   useEffect(() => {
@@ -279,10 +281,12 @@ function PrinterStatusBadge() {
           online: d.online,
           ricohOnline: d.ricohOnline,
           epsonOnline: d.epsonOnline,
+          brotherOnline: d.brotherOnline,
           ricohStatus: (d.ricohStatus as PrinterStatus) || (d.ricohOnline ? "online" : "offline"),
           epsonStatus: (d.epsonStatus as PrinterStatus) || (d.epsonOnline ? "online" : "offline"),
+          brotherStatus: (d.brotherStatus as PrinterStatus) || (d.brotherOnline ? "online" : "offline"),
         }))
-        .catch(() => setStatus({ online: false, ricohOnline: false, epsonOnline: false, ricohStatus: "offline", epsonStatus: "offline" }));
+        .catch(() => setStatus({ online: false, ricohOnline: false, epsonOnline: false, brotherOnline: false, ricohStatus: "offline", epsonStatus: "offline", brotherStatus: "offline" }));
     };
     check();
     const t = setInterval(check, 3000);
@@ -293,8 +297,10 @@ function PrinterStatusBadge() {
 
   const ricohSt = printerStatusStyle(status.ricohStatus);
   const epsonSt = printerStatusStyle(status.epsonStatus);
+  const brotherSt = printerStatusStyle(status.brotherStatus);
   const ricohTitle = status.ricohStatus === "online" ? "RICOH Online – Pronta para imprimir" : status.ricohStatus === "descanso" ? "RICOH em Modo de Espera – Será acordada ao enviar documento" : "RICOH Offline – Sem resposta de ping";
   const epsonTitle = status.epsonStatus === "online" ? "EPSON Online – Pronta para imprimir" : status.epsonStatus === "descanso" ? "EPSON em Modo de Espera – Será acordada ao enviar documento" : "EPSON Offline – Sem resposta de ping";
+  const brotherTitle = status.brotherStatus === "online" ? "BROTHER Online – Pronta para imprimir" : status.brotherStatus === "descanso" ? "BROTHER em Modo de Espera – Será acordada ao enviar documento" : "BROTHER Offline – Sem resposta de ping";
 
   return (
     <div className="flex flex-col sm:flex-row items-center gap-1.5">
@@ -320,6 +326,18 @@ function PrinterStatusBadge() {
       >
         <div className={cn("w-1 h-1 rounded-full", epsonSt.dot)} />
         <span>EPSON · {epsonSt.label}</span>
+      </div>
+
+      {/* BROTHER Badge */}
+      <div
+        title={brotherTitle}
+        className={cn(
+          "flex items-center gap-1 px-1.5 md:px-2 py-0.5 md:py-1 rounded-full border text-[8px] md:text-[9px] font-bold uppercase tracking-wider transition-colors cursor-help shrink-0",
+          brotherSt.badge
+        )}
+      >
+        <div className={cn("w-1 h-1 rounded-full", brotherSt.dot)} />
+        <span>BROTHER · {brotherSt.label}</span>
       </div>
     </div>
   );

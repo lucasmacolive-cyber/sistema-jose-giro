@@ -24,6 +24,15 @@ async function main() {
       });
     console.log("IP EPSON (192.168.18.75) salvo!");
 
+    // BROTHER IP
+    await db.insert(configuracoesTable)
+      .values({ chave: "impressora_brother_ip", valor: "192.168.18.44", atualizadoEm: new Date() })
+      .onConflictDoUpdate({
+        target: configuracoesTable.chave,
+        set: { valor: "192.168.18.44", atualizadoEm: new Date() }
+      });
+    console.log("IP BROTHER (192.168.18.44) salvo!");
+
     // Consultar para verificar
     const rows = await db.select().from(configuracoesTable);
     console.log("Configurações atuais na tabela:");

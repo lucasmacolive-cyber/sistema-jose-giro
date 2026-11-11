@@ -29,12 +29,16 @@ type StatusAgente = {
   secondsAgo?: number;
   ricohOnline: boolean;
   epsonOnline: boolean;
+  brotherOnline: boolean;
   ricohStatus: "online" | "descanso" | "offline";
   epsonStatus: "online" | "descanso" | "offline";
+  brotherStatus: "online" | "descanso" | "offline";
   ricohIp?: string;
   epsonIp?: string;
+  brotherIp?: string;
   ricohPingMs?: number | null;
   epsonPingMs?: number | null;
+  brotherPingMs?: number | null;
 };
 
 type PedidoStatus = {
@@ -92,10 +96,13 @@ export default function ImpressoesEnviarPage() {
     online: false,
     ricohOnline: false,
     epsonOnline: false,
+    brotherOnline: false,
     ricohStatus: "offline",
     epsonStatus: "offline",
+    brotherStatus: "offline",
     ricohPingMs: null,
     epsonPingMs: null,
+    brotherPingMs: null,
   });
   const [verificandoStatus, setVerificandoStatus] = useState(false);
 
@@ -114,12 +121,16 @@ export default function ImpressoesEnviarPage() {
           secondsAgo: d.secondsAgo,
           ricohOnline: !!d.ricohOnline || d.ricohStatus === "online" || d.ricohStatus === "descanso",
           epsonOnline: !!d.epsonOnline || d.epsonStatus === "online" || d.epsonStatus === "descanso",
+          brotherOnline: !!d.brotherOnline || d.brotherStatus === "online" || d.brotherStatus === "descanso",
           ricohStatus: d.ricohStatus || (d.ricohOnline ? "online" : "offline"),
           epsonStatus: d.epsonStatus || (d.epsonOnline ? "online" : "offline"),
+          brotherStatus: d.brotherStatus || (d.brotherOnline ? "online" : "offline"),
           ricohIp: d.ricohIp,
           epsonIp: d.epsonIp,
+          brotherIp: d.brotherIp,
           ricohPingMs: d.ricohPingMs ?? null,
           epsonPingMs: d.epsonPingMs ?? null,
+          brotherPingMs: d.brotherPingMs ?? null,
         });
       }
     } catch {
@@ -211,8 +222,20 @@ export default function ImpressoesEnviarPage() {
 
   const ricohLigada = statusAgente.online && statusAgente.ricohStatus !== "offline";
   const epsonLigada = statusAgente.online && statusAgente.epsonStatus !== "offline";
-  const impressoraSelecionadaLigada = colorida ? epsonLigada : ricohLigada;
-  const nomeImpressoraSelecionada = colorida ? "Epson L3250 (Colorida)" : "Ricoh SP 3710SF (P&B)";
+  const brotherLigada = statusAgente.online && statusAgente.brotherStatus !== "offline";
+  const impressoraAtiva = impressoraManual || (colorida ? "EPSON" : "RICOH");
+  const impressoraSelecionadaLigada =
+    impressoraAtiva === "BROTHER"
+      ? brotherLigada
+      : impressoraAtiva === "EPSON"
+      ? epsonLigada
+      : ricohLigada;
+  const nomeImpressoraSelecionada =
+    impressoraAtiva === "BROTHER"
+      ? "Brother DCP-L5652DN (P&B)"
+      : impressoraAtiva === "EPSON"
+      ? "Epson L3250 (Colorida)"
+      : "Ricoh SP 3710SF (P&B)";
   const tipoLinkDetectado = modo === "link" ? detectarTipoLink(link) : null;
 
   if (sucesso) {
@@ -382,7 +405,7 @@ export default function ImpressoesEnviarPage() {
             </button>
           </div>
 
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
             {/* Card Ricoh */}
             <div
               className={`rounded-xl border px-3 py-2 flex flex-col justify-between transition-all ${
@@ -415,6 +438,43 @@ export default function ImpressoesEnviarPage() {
                 {ricohLigada && statusAgente.ricohPingMs != null && (
                   <span className="text-[10px] font-mono text-emerald-300/70">
                     {statusAgente.ricohPingMs}ms
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Card Brother */}
+            <div
+              className={`rounded-xl border px-3 py-2 flex flex-col justify-between transition-all ${
+                brotherLigada
+                  ? "bg-emerald-500/10 border-emerald-500/30"
+                  : "bg-red-500/10 border-red-500/25"
+              }`}
+            >
+              <div className="flex items-center justify-between gap-1">
+                <span className="text-xs font-bold text-white truncate">Brother DCP-L5652DN</span>
+                {brotherLigada ? (
+                  <Wifi className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                ) : (
+                  <WifiOff className="h-3.5 w-3.5 text-red-400 shrink-0" />
+                )}
+              </div>
+              <div className="flex items-center justify-between mt-1">
+                <span
+                  className={`text-[11px] font-semibold flex items-center gap-1 ${
+                    brotherLigada ? "text-emerald-300" : "text-red-300"
+                  }`}
+                >
+                  <span
+                    className={`h-1.5 w-1.5 rounded-full ${
+                      brotherLigada ? "bg-emerald-400 animate-pulse" : "bg-red-400"
+                    }`}
+                  />
+                  {brotherLigada ? "Ligada (Online)" : "Desligada (Offline)"}
+                </span>
+                {brotherLigada && statusAgente.brotherPingMs != null && (
+                  <span className="text-[10px] font-mono text-emerald-300/70">
+                    {statusAgente.brotherPingMs}ms
                   </span>
                 )}
               </div>
@@ -562,7 +622,7 @@ export default function ImpressoesEnviarPage() {
           {/* Seleção de Impressora com status Ligada/Desligada */}
           <div className="space-y-1.5">
             <Label className="text-xs text-white/50">Escolha a Impressora</Label>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-3 gap-2">
               <button
                 type="button"
                 onClick={() => {
@@ -570,13 +630,13 @@ export default function ImpressoesEnviarPage() {
                   setImpressoraManual("RICOH");
                 }}
                 className={`flex flex-col items-center justify-center p-2.5 rounded-xl border transition-all ${
-                  !colorida
+                  impressoraAtiva === "RICOH"
                     ? "bg-white/12 border-white/30 text-white shadow-md"
                     : "bg-black/20 border-white/8 text-white/45 hover:bg-white/5"
                 }`}
               >
-                <span className="text-sm font-semibold">⬛ Padrão (P&B)</span>
-                <span className="text-[11px] opacity-75">Ricoh SP 3710SF</span>
+                <span className="text-xs font-semibold">⬛ Ricoh (P&B)</span>
+                <span className="text-[10px] opacity-75">SP 3710SF</span>
                 <span
                   className={`mt-1 text-[10px] font-semibold px-2 py-0.5 rounded-full ${
                     ricohLigada
@@ -591,17 +651,42 @@ export default function ImpressoesEnviarPage() {
               <button
                 type="button"
                 onClick={() => {
+                  setColorida(false);
+                  setImpressoraManual("BROTHER");
+                }}
+                className={`flex flex-col items-center justify-center p-2.5 rounded-xl border transition-all ${
+                  impressoraAtiva === "BROTHER"
+                    ? "bg-indigo-500/20 border-indigo-500/40 text-indigo-200 shadow-md"
+                    : "bg-black/20 border-white/8 text-white/45 hover:bg-white/5"
+                }`}
+              >
+                <span className="text-xs font-semibold">⬛ Brother (P&B)</span>
+                <span className="text-[10px] opacity-75">DCP-L5652DN</span>
+                <span
+                  className={`mt-1 text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                    brotherLigada
+                      ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                      : "bg-red-500/20 text-red-300 border border-red-500/30"
+                  }`}
+                >
+                  {brotherLigada ? "● Ligada" : "● Desligada"}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
                   setColorida(true);
                   setImpressoraManual("EPSON");
                 }}
                 className={`flex flex-col items-center justify-center p-2.5 rounded-xl border transition-all ${
-                  colorida
+                  impressoraAtiva === "EPSON"
                     ? "bg-sky-500/20 border-sky-500/40 text-sky-200 shadow-md"
                     : "bg-black/20 border-white/8 text-white/45 hover:bg-white/5"
                 }`}
               >
-                <span className="text-sm font-semibold">🎨 Colorida</span>
-                <span className="text-[11px] opacity-75">Epson L3250</span>
+                <span className="text-xs font-semibold">🎨 Colorida</span>
+                <span className="text-[10px] opacity-75">Epson L3250</span>
                 <span
                   className={`mt-1 text-[10px] font-semibold px-2 py-0.5 rounded-full ${
                     epsonLigada

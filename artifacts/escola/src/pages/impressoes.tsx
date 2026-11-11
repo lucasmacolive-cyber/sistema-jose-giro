@@ -232,6 +232,7 @@ function FormNovoPedido({ onSucesso, nomeUsuario }: { onSucesso: () => void; nom
   const [obs, setObs]                 = useState("");
   const [duplex, setDuplex]           = useState(false);
   const [colorida, setColorida]       = useState(false);
+  const [impressoraAlvo, setImpressoraAlvo] = useState<"RICOH" | "BROTHER" | "EPSON">("RICOH");
   const [link, setLink]               = useState("");
   const [arquivo, setArquivo]         = useState<File | null>(null);
   const [enviando, setEnviando]       = useState(false);
@@ -256,7 +257,8 @@ function FormNovoPedido({ onSucesso, nomeUsuario }: { onSucesso: () => void; nom
       form.append("professorSolicitante", nome.trim());
       form.append("quantidadeCopias", String(copias));
       form.append("duplex", String(duplex));
-      form.append("colorida", String(colorida));
+      form.append("colorida", String(impressoraAlvo === "EPSON"));
+      form.append("impressoraNome", impressoraAlvo);
       if (!imprimirAgora && data)    form.append("dataParaUso", data);
       if (!imprimirAgora && horario) form.append("horarioImpressao", horario);
       if (obs)     form.append("observacoes", obs.trim());
@@ -265,7 +267,8 @@ function FormNovoPedido({ onSucesso, nomeUsuario }: { onSucesso: () => void; nom
 
       const res = await fetch(API("impressoes"), { method: "POST", body: form, credentials: "include" });
       if (!res.ok) throw new Error("Erro ao enviar");
-      toast({ title: imprimirAgora ? "Enviado! Imprimindo agora na Ricoh..." : "Pedido agendado com sucesso!" });
+      const nomeImp = impressoraAlvo === "EPSON" ? "Epson" : impressoraAlvo === "BROTHER" ? "Brother" : "Ricoh";
+      toast({ title: imprimirAgora ? `Enviado! Imprimindo agora na ${nomeImp}...` : "Pedido agendado com sucesso!" });
       onSucesso();
     } catch {
       toast({ title: "Erro ao enviar pedido", variant: "destructive" });
@@ -373,29 +376,37 @@ function FormNovoPedido({ onSucesso, nomeUsuario }: { onSucesso: () => void; nom
           <Zap className="h-4 w-4 text-emerald-400 shrink-0" />
           <p className="text-[12px] text-emerald-300/80">
             O arquivo entrará na fila imediatamente e será impresso na{" "}
-            <strong>{colorida ? "Epson L3250" : "Ricoh SP 3710SF"}</strong> em poucos segundos.
+            <strong>{impressoraAlvo === "EPSON" ? "Epson L3250" : impressoraAlvo === "BROTHER" ? "Brother DCP-L5652DN" : "Ricoh SP 3710SF"}</strong> em poucos segundos.
           </p>
         </div>
       )}
 
       {/* Seleção de Impressora */}
       <div className="space-y-1.5">
-        <Label className="text-xs text-white/50">Tipo de Impressão</Label>
-        <div className="flex gap-2">
-          <button type="button" onClick={() => setColorida(false)}
-            className={`flex-1 flex flex-col items-center justify-center p-2 rounded-xl border transition-all ${
-              !colorida ? "bg-white/10 border-white/20 text-white" : "bg-black/20 border-white/5 text-white/40 hover:bg-white/5"
+        <Label className="text-xs text-white/50">Escolha a Impressora</Label>
+        <div className="grid grid-cols-3 gap-2">
+          <button type="button" onClick={() => { setColorida(false); setImpressoraAlvo("RICOH"); }}
+            className={`flex flex-col items-center justify-center p-2 rounded-xl border transition-all ${
+              impressoraAlvo === "RICOH" ? "bg-white/10 border-white/20 text-white" : "bg-black/20 border-white/5 text-white/40 hover:bg-white/5"
             }`}
           >
-            <span className="text-sm font-semibold mb-0.5">⬛ Padrão (P&B)</span>
-            <span className="text-[10px] opacity-70">Ricoh SP 3710SF</span>
+            <span className="text-xs font-semibold mb-0.5">⬛ Ricoh (P&B)</span>
+            <span className="text-[10px] opacity-70">SP 3710SF</span>
           </button>
-          <button type="button" onClick={() => setColorida(true)}
-            className={`flex-1 flex flex-col items-center justify-center p-2 rounded-xl border transition-all ${
-              colorida ? "bg-sky-500/20 border-sky-500/40 text-sky-300" : "bg-black/20 border-white/5 text-white/40 hover:bg-white/5"
+          <button type="button" onClick={() => { setColorida(false); setImpressoraAlvo("BROTHER"); }}
+            className={`flex flex-col items-center justify-center p-2 rounded-xl border transition-all ${
+              impressoraAlvo === "BROTHER" ? "bg-indigo-500/20 border-indigo-500/40 text-indigo-200" : "bg-black/20 border-white/5 text-white/40 hover:bg-white/5"
             }`}
           >
-            <span className="text-sm font-semibold mb-0.5">🎨 Colorida</span>
+            <span className="text-xs font-semibold mb-0.5">⬛ Brother (P&B)</span>
+            <span className="text-[10px] opacity-70">DCP-L5652DN</span>
+          </button>
+          <button type="button" onClick={() => { setColorida(true); setImpressoraAlvo("EPSON"); }}
+            className={`flex flex-col items-center justify-center p-2 rounded-xl border transition-all ${
+              impressoraAlvo === "EPSON" ? "bg-sky-500/20 border-sky-500/40 text-sky-300" : "bg-black/20 border-white/5 text-white/40 hover:bg-white/5"
+            }`}
+          >
+            <span className="text-xs font-semibold mb-0.5">🎨 Colorida</span>
             <span className="text-[10px] opacity-70">Epson L3250</span>
           </button>
         </div>
@@ -476,12 +487,16 @@ export default function ImpressoesPage() {
   const [agenteOnline, setAgenteOnline] = useState(false);
   const [ricohStatus, setRicohStatus] = useState<"online"|"descanso"|"offline">("offline");
   const [epsonStatus, setEpsonStatus] = useState<"online"|"descanso"|"offline">("offline");
+  const [brotherStatus, setBrotherStatus] = useState<"online"|"descanso"|"offline">("offline");
   const [ricohIp, setRicohIp] = useState<string>("192.168.18.17");
   const [epsonIp, setEpsonIp] = useState<string>("192.168.18.162");
+  const [brotherIp, setBrotherIp] = useState<string>("192.168.18.44");
   const [ricohPingMs, setRicohPingMs] = useState<number | null>(null);
   const [epsonPingMs, setEpsonPingMs] = useState<number | null>(null);
+  const [brotherPingMs, setBrotherPingMs] = useState<number | null>(null);
   const ricohOnline = ricohStatus !== "offline";
   const epsonOnline = epsonStatus !== "offline";
+  const brotherOnline = brotherStatus !== "offline";
   const knownIds            = useRef<Set<number>>(new Set());
   const printedIds          = useRef<Set<number>>(new Set());
   const isFirstPoll         = useRef(true);
@@ -675,15 +690,19 @@ export default function ImpressoesPage() {
           setAgenteOnline(!!data.online);
           setRicohStatus((data.ricohStatus as any) || (data.ricohOnline ? "online" : "offline"));
           setEpsonStatus((data.epsonStatus as any) || (data.epsonOnline ? "online" : "offline"));
+          setBrotherStatus((data.brotherStatus as any) || (data.brotherOnline ? "online" : "offline"));
           if (data.ricohIp) setRicohIp(data.ricohIp);
           if (data.epsonIp) setEpsonIp(data.epsonIp);
+          if (data.brotherIp) setBrotherIp(data.brotherIp);
           setRicohPingMs(data.ricohPingMs ?? null);
           setEpsonPingMs(data.epsonPingMs ?? null);
+          setBrotherPingMs(data.brotherPingMs ?? null);
         }
       } catch { 
         setAgenteOnline(false); 
         setRicohStatus("offline"); 
-        setEpsonStatus("offline"); 
+        setEpsonStatus("offline");
+        setBrotherStatus("offline");
       }
     }
 
@@ -878,6 +897,18 @@ export default function ImpressoesPage() {
                   }
                 </span>
               </div>
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/30 border border-white/10 text-[10px] font-medium uppercase tracking-wider">
+                <span className={`h-2 w-2 rounded-full ${
+                  brotherStatus === "online" ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)] animate-pulse" :
+                  brotherStatus === "descanso" ? "bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.5)] animate-pulse" : "bg-red-500"
+                }`} />
+                <span className={brotherStatus === "online" ? "text-emerald-400" : brotherStatus === "descanso" ? "text-amber-400" : "text-red-400"}>
+                  BROTHER {
+                    brotherStatus === "online" ? `Ligada (Online)${brotherPingMs != null ? ` · ${brotherPingMs}ms` : ""}` :
+                    brotherStatus === "descanso" ? "Em Espera" : "Desligada (Offline)"
+                  }
+                </span>
+              </div>
               {pendentes > 0 && (
                 <span className="text-base font-normal bg-orange-500/20 text-orange-300 border border-orange-500/30 rounded-full px-3 py-0.5">
                   {pendentes} pendente{pendentes > 1 ? "s" : ""}
@@ -1062,33 +1093,47 @@ export default function ImpressoesPage() {
                   </Button>
                 </div>
 
-                {/* Cards de status direto das duas impressoras */}
-                <div className="grid grid-cols-2 gap-2">
+                {/* Cards de status direto das três impressoras */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                   <div className={`rounded-xl border p-2.5 space-y-1 ${ricohOnline ? "bg-emerald-500/10 border-emerald-500/30" : "bg-red-500/10 border-red-500/25"}`}>
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-white">Ricoh SP 3710SF</span>
-                      <span className={`h-2 w-2 rounded-full ${ricohOnline ? "bg-emerald-400 animate-pulse" : "bg-red-400"}`} />
+                      <span className="text-xs font-bold text-white truncate">Ricoh SP 3710SF</span>
+                      <span className={`h-2 w-2 rounded-full shrink-0 ${ricohOnline ? "bg-emerald-400 animate-pulse" : "bg-red-400"}`} />
                     </div>
                     <p className={`text-[11px] font-semibold ${ricohOnline ? "text-emerald-300" : "text-red-300"}`}>
                       {ricohOnline ? "Ligada (Online)" : "Desligada (Offline)"}
                     </p>
                     <div className="flex items-center justify-between text-[10px] font-mono text-white/45">
-                      <span>{ricohIp}</span>
+                      <span className="truncate">{ricohIp}</span>
                       <span>{ricohOnline && ricohPingMs != null ? `${ricohPingMs}ms` : "sem resp."}</span>
                     </div>
                   </div>
 
                   <div className={`rounded-xl border p-2.5 space-y-1 ${epsonOnline ? "bg-emerald-500/10 border-emerald-500/30" : "bg-red-500/10 border-red-500/25"}`}>
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-white">Epson L3250</span>
-                      <span className={`h-2 w-2 rounded-full ${epsonOnline ? "bg-emerald-400 animate-pulse" : "bg-red-400"}`} />
+                      <span className="text-xs font-bold text-white truncate">Epson L3250</span>
+                      <span className={`h-2 w-2 rounded-full shrink-0 ${epsonOnline ? "bg-emerald-400 animate-pulse" : "bg-red-400"}`} />
                     </div>
                     <p className={`text-[11px] font-semibold ${epsonOnline ? "text-emerald-300" : "text-red-300"}`}>
                       {epsonOnline ? "Ligada (Online)" : "Desligada (Offline)"}
                     </p>
                     <div className="flex items-center justify-between text-[10px] font-mono text-white/45">
-                      <span>{epsonIp}</span>
+                      <span className="truncate">{epsonIp}</span>
                       <span>{epsonOnline && epsonPingMs != null ? `${epsonPingMs}ms` : "sem resp."}</span>
+                    </div>
+                  </div>
+
+                  <div className={`rounded-xl border p-2.5 space-y-1 ${brotherOnline ? "bg-emerald-500/10 border-emerald-500/30" : "bg-red-500/10 border-red-500/25"}`}>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-white truncate">Brother DCP-L5652DN</span>
+                      <span className={`h-2 w-2 rounded-full shrink-0 ${brotherOnline ? "bg-emerald-400 animate-pulse" : "bg-red-400"}`} />
+                    </div>
+                    <p className={`text-[11px] font-semibold ${brotherOnline ? "text-emerald-300" : "text-red-300"}`}>
+                      {brotherOnline ? "Ligada (Online)" : "Desligada (Offline)"}
+                    </p>
+                    <div className="flex items-center justify-between text-[10px] font-mono text-white/45">
+                      <span className="truncate">{brotherIp}</span>
+                      <span>{brotherOnline && brotherPingMs != null ? `${brotherPingMs}ms` : "sem resp."}</span>
                     </div>
                   </div>
                 </div>
@@ -1236,7 +1281,13 @@ export default function ImpressoesPage() {
                             <td className="px-4 py-3 text-white/60 max-w-[200px] truncate">{h.nomeArquivo || "—"}</td>
                             <td className="px-4 py-3 font-black text-violet-400">{h.quantidadeCopias}</td>
                             <td className="px-4 py-3">
-                              <span className={`text-[10px] px-2 py-0.5 rounded-full border ${h.impressoraNome === "RICOH" ? "bg-slate-500/10 border-slate-500/30 text-slate-300" : "bg-sky-500/10 border-sky-500/30 text-sky-300"} inline-flex items-center shrink-0 whitespace-nowrap align-middle`}>
+                              <span className={`text-[10px] px-2 py-0.5 rounded-full border ${
+                                h.impressoraNome === "RICOH"
+                                  ? "bg-slate-500/10 border-slate-500/30 text-slate-300"
+                                  : h.impressoraNome === "BROTHER"
+                                  ? "bg-indigo-500/10 border-indigo-500/30 text-indigo-300"
+                                  : "bg-sky-500/10 border-sky-500/30 text-sky-300"
+                              } inline-flex items-center shrink-0 whitespace-nowrap align-middle`}>
                                 {h.impressoraNome || "—"}
                               </span>
                             </td>

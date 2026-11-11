@@ -112,7 +112,7 @@ const obterHtmlLogWhatsApp = (logsArr: string[]) => {
   return `<h2>Logs de Fluxo do Bot</h2><pre style="background: #f5f5f5; padding: 10px; border-radius: 5px; font-family: monospace; font-size: 11px; white-space: pre-wrap; word-break: break-all;">${logsArr.join("\n")}</pre>`;
 };
 
-const imprimirLogOnline = async (impressora: "RICOH" | "EPSON", titulo: string, htmlConteudo: string, toast: any) => {
+const imprimirLogOnline = async (impressora: "RICOH" | "EPSON" | "BROTHER", titulo: string, htmlConteudo: string, toast: any) => {
   try {
     const fullHtml = `
       <!DOCTYPE html>
@@ -2581,6 +2581,17 @@ function SecaoSincronizacao() {
                 onClick={() => {
                   if (logAberto) {
                     const html = obterHtmlLogSinc(logAberto);
+                    imprimirLogOnline("BROTHER", "Relatório de Sincronização", html, toast);
+                  }
+                }}
+                className="bg-indigo-600/20 text-indigo-400 hover:bg-indigo-600/30 border border-indigo-500/20 text-xs font-bold"
+              >
+                <Printer className="h-3.5 w-3.5 mr-1.5" /> Brother (Online)
+              </Button>
+              <Button
+                onClick={() => {
+                  if (logAberto) {
+                    const html = obterHtmlLogSinc(logAberto);
                     imprimirLogOnline("EPSON", "Relatório de Sincronização", html, toast);
                   }
                 }}
@@ -3625,6 +3636,7 @@ function SecaoContatos() {
     escola_telefone: "",
     impressora_ricoh_ip: "",
     impressora_epson_ip: "",
+    impressora_brother_ip: "",
     smtp_host: "smtp.gmail.com",
     smtp_port: "465",
     smtp_user: "",
@@ -3643,6 +3655,7 @@ function SecaoContatos() {
         escola_telefone: r.escola_telefone || "",
         impressora_ricoh_ip: r.impressora_ricoh_ip || "",
         impressora_epson_ip: r.impressora_epson_ip || "",
+        impressora_brother_ip: r.impressora_brother_ip || "192.168.18.44",
         smtp_host: r.smtp_host || "smtp.gmail.com",
         smtp_port: r.smtp_port || "465",
         smtp_user: r.smtp_user || r.escola_email || "",
@@ -3711,7 +3724,16 @@ function SecaoContatos() {
             <Input
               value={form.impressora_ricoh_ip}
               onChange={e => setForm(f => ({ ...f, impressora_ricoh_ip: e.target.value }))}
-              placeholder="Ex: 192.168.1.100"
+              placeholder="Ex: 192.168.18.234"
+              className="bg-background/50 border-white/10 text-white font-mono"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-white/60 text-xs uppercase tracking-wider">IP da Impressora BROTHER</Label>
+            <Input
+              value={form.impressora_brother_ip}
+              onChange={e => setForm(f => ({ ...f, impressora_brother_ip: e.target.value }))}
+              placeholder="Ex: 192.168.18.44"
               className="bg-background/50 border-white/10 text-white font-mono"
             />
           </div>
@@ -3720,7 +3742,7 @@ function SecaoContatos() {
             <Input
               value={form.impressora_epson_ip}
               onChange={e => setForm(f => ({ ...f, impressora_epson_ip: e.target.value }))}
-              placeholder="Ex: 192.168.1.101"
+              placeholder="Ex: 192.168.18.75"
               className="bg-background/50 border-white/10 text-white font-mono"
             />
           </div>
@@ -5068,6 +5090,21 @@ function SecaoWhatsAppLogs() {
             className="bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/30 border border-emerald-500/20 text-xs font-bold h-8"
           >
             <Printer className="h-3.5 w-3.5 mr-1.5" /> Ricoh (Online)
+          </Button>
+          <Button
+            onClick={() => {
+              if (logs.length > 0) {
+                const html = obterHtmlLogWhatsApp(logs);
+                imprimirLogOnline("BROTHER", "Histórico de Fluxo do Bot", html, toast);
+              } else {
+                toast({ title: "Sem logs", description: "Não há logs para imprimir.", variant: "destructive" });
+              }
+            }}
+            variant="outline"
+            size="sm"
+            className="bg-indigo-600/20 text-indigo-400 hover:bg-indigo-600/30 border border-indigo-500/20 text-xs font-bold h-8"
+          >
+            <Printer className="h-3.5 w-3.5 mr-1.5" /> Brother (Online)
           </Button>
           <Button
             onClick={() => {
