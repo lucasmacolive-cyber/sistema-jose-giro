@@ -203,8 +203,8 @@ export default function AlunoPerfilPage() {
             <h2 style="font-size: 14px; text-transform: uppercase; border-bottom: 1px solid #ccc;">CONTATOS E SAÚDE</h2>
             <p><strong>Mãe:</strong> ${aluno.nomeMae || "—"}</p>
             <p><strong>Pai:</strong> ${aluno.nomePai || "—"}</p>
-            <p><strong>Responsável:</strong> ${aluno.nomeResponsavel || "—"}</p>
-            <p><strong>Telefones:</strong> ${aluno.telefones || "—"}</p>
+            <p><strong>Responsável:</strong> ${aluno.responsavel || "—"}</p>
+            <p><strong>Telefones:</strong> ${aluno.telefone || "—"}</p>
             <p><strong>Restrição Alimentar:</strong> ${aluno.restricaoAlimentar || "Nenhuma"}</p>
             <p><strong>Medicamentos:</strong> ${aluno.medicamentos || "Nenhum"}</p>
             <p><strong>Necessidades Especiais:</strong> ${aluno.necessidadesEspeciais || "Nenhuma"}</p>
@@ -254,9 +254,9 @@ export default function AlunoPerfilPage() {
           <p><strong>Turma Atual:</strong> ${aluno.turmaAtual || "N/A"}</p>
           <p><strong>Situação:</strong> ${aluno.situacao || "N/A"}</p>
           <p><strong>Data de Nascimento:</strong> ${aluno.dataNascimento ? new Date(aluno.dataNascimento).toLocaleDateString("pt-BR") : "N/A"}</p>
-          <p><strong>Nome da Mãe:</strong> ${aluno.mae || "N/A"}</p>
-          <p><strong>Nome do Pai:</strong> ${aluno.pai || "N/A"}</p>
-          <p><strong>Telefone Responsável:</strong> ${aluno.telefoneResponsavel || "N/A"}</p>
+          <p><strong>Nome da Mãe:</strong> ${aluno.nomeMae || "N/A"}</p>
+          <p><strong>Nome do Pai:</strong> ${aluno.nomePai || "N/A"}</p>
+          <p><strong>Telefone Responsável:</strong> ${aluno.telefone || "N/A"}</p>
           <p><strong>Endereço:</strong> ${aluno.endereco || "N/A"}</p>
           <p><strong>Necessidades Especiais:</strong> ${aluno.necessidadesEspeciais || "Nenhuma"}</p>
         </div>

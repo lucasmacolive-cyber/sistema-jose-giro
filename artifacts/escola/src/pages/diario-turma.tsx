@@ -194,7 +194,10 @@ export default function DiarioTurmaPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ turmaNome, data, tipo }),
       }).then((r) => r.json()),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["diario-mes"] }); },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["diario-mes"] });
+      qc.invalidateQueries({ queryKey: ["diario-frequencia-stats"] });
+    },
     onError: () => toast({ title: "Erro ao adicionar dia", variant: "destructive" }),
   });
 
@@ -206,7 +209,10 @@ export default function DiarioTurmaPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ tipo }),
       }).then((r) => r.json()),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["diario-mes"] }); },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["diario-mes"] });
+      qc.invalidateQueries({ queryKey: ["diario-frequencia-stats"] });
+    },
     onError: () => toast({ title: "Erro ao atualizar tipo de dia", variant: "destructive" }),
   });
 
@@ -216,7 +222,10 @@ export default function DiarioTurmaPage() {
         method: "DELETE",
         credentials: "include",
       }).then((r) => r.json()),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["diario-mes"] }); },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["diario-mes"] });
+      qc.invalidateQueries({ queryKey: ["diario-frequencia-stats"] });
+    },
     onError: () => toast({ title: "Erro ao remover dia", variant: "destructive" }),
   });
 
@@ -228,7 +237,10 @@ export default function DiarioTurmaPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ aulaId, alunoId, status }),
       }).then((r) => r.json()),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["diario-mes"] }); },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["diario-mes"] });
+      qc.invalidateQueries({ queryKey: ["diario-frequencia-stats"] });
+    },
   });
 
   const { refetch: refetchAtividades } = useQuery<Aula[]>({
@@ -374,10 +386,10 @@ export default function DiarioTurmaPage() {
   // - total = TODAS as aulas do mês (passadas + futuras) → denominador real do mês
   // - pct sobe gradualmente (presencas / total_do_mês) em vez de ser 100% logo no 1º dia
   function calcFreq(alunoId: number) {
-    const todasAulas = data?.aulas ?? [];
+    const todasAulas = (data?.aulas ?? []).filter((a) => a.tipo !== "feriado" && a.tipo !== "recesso");
     const aulasPassadas = todasAulas.filter((a) => dateStrLe(a.data, hojeStr));
     const totalAulasPassadas = aulasPassadas.length; 
-    if (todasAulas.length === 0) return null; // Nenhuma aula registrada ainda no mês
+    if (todasAulas.length === 0) return null; // Nenhuma aula letiva registrada ainda no mês
     
     let presencas = 0;
     for (const aula of aulasPassadas) {
@@ -399,9 +411,9 @@ export default function DiarioTurmaPage() {
     };
   }
 
-  // Total de presenças (contagem absoluta) — só aulas passadas
+  // Total de presenças (contagem absoluta) — só aulas letivas passadas
   function totalPresencas(alunoId: number): number {
-    const todasAulas = data?.aulas ?? [];
+    const todasAulas = (data?.aulas ?? []).filter((a) => a.tipo !== "feriado" && a.tipo !== "recesso");
     const aulasPassadas = todasAulas.filter((a) => dateStrLe(a.data, hojeStr));
     return aulasPassadas.filter((aula) => (data?.presencas?.[aula.id]?.[alunoId] ?? "P") === "P").length;
   }

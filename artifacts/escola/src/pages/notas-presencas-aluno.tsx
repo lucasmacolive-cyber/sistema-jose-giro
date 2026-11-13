@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { useGetAluno, useListarAlunos, useListarTurmas } from "@workspace/api-client-react";
 import { useParams, useLocation } from "wouter";
@@ -7,7 +7,13 @@ import {
   ArrowLeft, ChevronLeft, ChevronRight, Loader2,
   BookOpen, Activity, TrendingUp, AlertTriangle, CheckCircle,
   ChevronDown, ChevronUp, Calendar, BarChart3, FileText,
+  Plus, Pencil, Save,
 } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { useToast } from "@/hooks/use-toast";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 
@@ -39,10 +45,10 @@ interface DiarioFreq {
 }
 
 const BIMESTRE_MESES: Record<number, string> = {
-  1: "Fev · Mar",
-  2: "Abr · Mai · Jun",
+  1: "Jan · Fev · Mar",
+  2: "Abr · Mai · Jun · Jul",
   3: "Ago · Set",
-  4: "Out · Nov",
+  4: "Out · Nov · Dez",
 };
 
 function corFreqValor(v: number | null): string {
@@ -224,7 +230,7 @@ function BimestreCard({ info, isExpanded, onToggle }: {
 }
 
 /* ─── Painel principal do Diário ─── */
-function DiarioFrequenciaPanel({ alunoId, cor }: { alunoId: number; cor: string }) {
+function DiarioFrequenciaPanel({ alunoId, cor, refreshKey = 0 }: { alunoId: number; cor: string; refreshKey?: number }) {
   const [dados, setDados] = useState<DiarioFreq | null>(null);
   const [loading, setLoading] = useState(true);
   const [expandido, setExpandido] = useState<number | null>(null);
@@ -236,7 +242,7 @@ function DiarioFrequenciaPanel({ alunoId, cor }: { alunoId: number; cor: string 
       .then(setDados)
       .catch(() => setDados(null))
       .finally(() => setLoading(false));
-  }, [alunoId]);
+  }, [alunoId, refreshKey]);
 
   if (loading) return (
     <div className="flex items-center justify-center py-16">
@@ -359,6 +365,7 @@ function StatusBadge({ pct }: { pct: number | null }) {
 export default function NotasPresencasAlunoPage() {
   const params = useParams<{ id: string }>();
   const [, navigate] = useLocation();
+  const { toast } = useToast();
   const id = parseInt(params.id ?? "0");
 
   const { data: aluno, isLoading } = useGetAluno(id, { query: { enabled: !!id } } as any);
@@ -374,13 +381,33 @@ export default function NotasPresencasAlunoPage() {
   const [notasPorBimestre, setNotasPorBimestre] = useState<Record<number, Nota[]>>({ 1: [], 2: [], 3: [], 4: [] });
   const [presencasPorBimestre, setPresencasPorBimestre] = useState<Record<number, Presenca[]>>({ 1: [], 2: [], 3: [], 4: [] });
   const [loadingDados, setLoadingDados] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  const [notaModalOpen, setNotaModalOpen] = useState(false);
+  const [notaForm, setNotaForm] = useState({
+    bimestre: 1,
+    disciplina: "Regente / Globalizado",
+    nota1: "",
+    nota2: "",
+    notaFinal: "",
+    situacao: "",
+  });
+
+  const [presModalOpen, setPresModalOpen] = useState(false);
+  const [presForm, setPresForm] = useState({
+    bimestre: 1,
+    disciplina: "Regente / Globalizado",
+    totalAulas: "50",
+    faltas: "0",
+  });
+  const [salvando, setSalvando] = useState(false);
 
   const listaIds = (todosAlunos ?? []).map((a) => a.id);
   const posicao = listaIds.indexOf(id);
   const anteriorId = posicao > 0 ? listaIds[posicao - 1] : null;
   const proximoId = posicao < listaIds.length - 1 ? listaIds[posicao + 1] : null;
 
-  useEffect(() => {
+  const carregarDados = useCallback(() => {
     if (!id) return;
     setLoadingDados(true);
     Promise.all([
@@ -394,6 +421,117 @@ export default function NotasPresencasAlunoPage() {
       .catch(() => {})
       .finally(() => setLoadingDados(false));
   }, [id]);
+
+  useEffect(() => {
+    carregarDados();
+  }, [carregarDados]);
+
+  const abrirModalNota = (nota?: Nota) => {
+    if (nota) {
+      setNotaForm({
+        bimestre: nota.bimestre,
+        disciplina: nota.disciplina,
+        nota1: nota.nota1 ?? "",
+        nota2: nota.nota2 ?? "",
+        notaFinal: nota.notaFinal ?? "",
+        situacao: nota.situacao ?? "",
+      });
+    } else {
+      setNotaForm({
+        bimestre,
+        disciplina: "Regente / Globalizado",
+        nota1: "",
+        nota2: "",
+        notaFinal: "",
+        situacao: "",
+      });
+    }
+    setNotaModalOpen(true);
+  };
+
+  const salvarNota = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!notaForm.disciplina.trim()) return;
+    setSalvando(true);
+    try {
+      const resp = await fetch(`${BASE}/api/notas`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          alunoId: id,
+          bimestre: Number(notaForm.bimestre),
+          disciplina: notaForm.disciplina.trim(),
+          nota1: notaForm.nota1 !== "" ? Number(notaForm.nota1) : null,
+          nota2: notaForm.nota2 !== "" ? Number(notaForm.nota2) : null,
+          notaFinal: notaForm.notaFinal !== "" ? Number(notaForm.notaFinal) : null,
+          situacao: notaForm.situacao.trim() || undefined,
+        }),
+      });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        throw new Error(err.mensagem || "Erro ao salvar nota");
+      }
+      toast({ title: "Nota salva com sucesso!" });
+      setNotaModalOpen(false);
+      carregarDados();
+    } catch (err: any) {
+      toast({ title: "Erro ao salvar nota", description: err.message, variant: "destructive" });
+    } finally {
+      setSalvando(false);
+    }
+  };
+
+  const abrirModalPresenca = (pres?: Presenca) => {
+    if (pres) {
+      setPresForm({
+        bimestre: pres.bimestre,
+        disciplina: pres.disciplina,
+        totalAulas: String(pres.totalAulas ?? 50),
+        faltas: String(pres.faltas ?? 0),
+      });
+    } else {
+      setPresForm({
+        bimestre,
+        disciplina: "Regente / Globalizado",
+        totalAulas: "50",
+        faltas: "0",
+      });
+    }
+    setPresModalOpen(true);
+  };
+
+  const salvarPresenca = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!presForm.disciplina.trim()) return;
+    setSalvando(true);
+    try {
+      const resp = await fetch(`${BASE}/api/presencas`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          alunoId: id,
+          bimestre: Number(presForm.bimestre),
+          disciplina: presForm.disciplina.trim(),
+          totalAulas: Number(presForm.totalAulas) || 0,
+          faltas: Number(presForm.faltas) || 0,
+        }),
+      });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        throw new Error(err.mensagem || "Erro ao salvar presença");
+      }
+      toast({ title: "Presença bimestral salva com sucesso!" });
+      setPresModalOpen(false);
+      carregarDados();
+      setRefreshKey((k) => k + 1);
+    } catch (err: any) {
+      toast({ title: "Erro ao salvar presença", description: err.message, variant: "destructive" });
+    } finally {
+      setSalvando(false);
+    }
+  };
 
   const notasAtivas = notasPorBimestre[bimestre] ?? [];
   const presencasAtivas = presencasPorBimestre[bimestre] ?? [];
@@ -497,11 +635,21 @@ export default function NotasPresencasAlunoPage() {
               >
                 {aba === "notas" ? (
                   <>
-                    {/* Seletor de bimestre */}
-                    <div className="flex flex-wrap gap-2 mb-4">
-                      {[1, 2, 3, 4].map((b) => (
-                        <BimestreTab key={b} b={b} ativo={bimestre === b} onClick={() => setBimestre(b)} cor="#3b82f6" />
-                      ))}
+                    {/* Seletor de bimestre + lançamento manual */}
+                    <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                      <div className="flex flex-wrap gap-2">
+                        {[1, 2, 3, 4].map((b) => (
+                          <BimestreTab key={b} b={b} ativo={bimestre === b} onClick={() => setBimestre(b)} cor="#3b82f6" />
+                        ))}
+                      </div>
+                      <Button
+                        type="button"
+                        onClick={() => abrirModalNota()}
+                        className="bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl gap-2"
+                      >
+                        <Plus className="h-4 w-4" />
+                        Lançar / Editar Nota
+                      </Button>
                     </div>
                     <AnimatePresence mode="wait">
                       <motion.div key={bimestre}
@@ -516,7 +664,7 @@ export default function NotasPresencasAlunoPage() {
                         ) : notasAtivas.length === 0 ? (
                           <EmptyState texto={`Nenhuma nota registrada no ${bimestre}º bimestre.`} suap />
                         ) : (
-                          <TabelaNotas notas={notasAtivas} />
+                          <TabelaNotas notas={notasAtivas} onEdit={abrirModalNota} />
                         )}
                       </motion.div>
                     </AnimatePresence>
@@ -524,38 +672,190 @@ export default function NotasPresencasAlunoPage() {
                 ) : (
                   <div className="space-y-8">
                     {/* ── Diário de Classe (novo painel visual) ── */}
-                    <DiarioFrequenciaPanel alunoId={id} cor={cor} />
+                    <DiarioFrequenciaPanel alunoId={id} cor={cor} refreshKey={refreshKey} />
 
-                    {/* ── Presenças SUAP (se existirem) ── */}
-                    {Object.values(presencasPorBimestre).some((arr) => arr.length > 0) && (
-                      <div>
-                        <div className="flex items-center gap-2 mb-3">
-                          <div className="flex-1 h-px bg-white/8" />
-                          <span className="text-[10px] uppercase tracking-widest text-gray-600 font-bold px-2">
-                            Presenças SUAP (por bimestre)
-                          </span>
-                          <div className="flex-1 h-px bg-white/8" />
-                        </div>
-                        <div className="flex flex-wrap gap-2 mb-4">
+                    {/* ── Presenças SUAP / Bimestrais ── */}
+                    <div>
+                      <div className="flex items-center gap-2 mb-3">
+                        <div className="flex-1 h-px bg-white/8" />
+                        <span className="text-[10px] uppercase tracking-widest text-gray-600 font-bold px-2">
+                          Presenças SUAP (por bimestre)
+                        </span>
+                        <div className="flex-1 h-px bg-white/8" />
+                      </div>
+                      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                        <div className="flex flex-wrap gap-2">
                           {[1, 2, 3, 4].map((b) => (
                             <BimestreTab key={b} b={b} ativo={bimestre === b} onClick={() => setBimestre(b)} cor="#10b981" />
                           ))}
                         </div>
-                        {loadingDados ? (
-                          <div className="flex items-center justify-center h-24">
-                            <Loader2 className="h-5 w-5 animate-spin text-emerald-400" />
-                          </div>
-                        ) : presencasAtivas.length === 0 ? (
-                          <EmptyState texto={`Nenhuma presença SUAP no ${bimestre}º bimestre.`} suap />
-                        ) : (
-                          <TabelaPresencas presencas={presencasAtivas} />
-                        )}
+                        <Button
+                          type="button"
+                          onClick={() => abrirModalPresenca()}
+                          variant="outline"
+                          className="border-emerald-500/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20 hover:text-white font-bold rounded-xl gap-2"
+                        >
+                          <Plus className="h-4 w-4" />
+                          Lançar Presença Bimestral
+                        </Button>
                       </div>
-                    )}
+                      {loadingDados ? (
+                        <div className="flex items-center justify-center h-24">
+                          <Loader2 className="h-5 w-5 animate-spin text-emerald-400" />
+                        </div>
+                      ) : presencasAtivas.length === 0 ? (
+                        <EmptyState texto={`Nenhuma presença SUAP no ${bimestre}º bimestre.`} suap />
+                      ) : (
+                        <TabelaPresencas presencas={presencasAtivas} onEdit={abrirModalPresenca} />
+                      )}
+                    </div>
                   </div>
                 )}
               </motion.div>
             </AnimatePresence>
+
+            {/* Modal Lançar/Editar Nota */}
+            <Dialog open={notaModalOpen} onOpenChange={setNotaModalOpen}>
+              <DialogContent className="bg-[#0f172a] border-white/10 text-white max-w-md">
+                <DialogHeader>
+                  <DialogTitle>Lançar / Atualizar Nota</DialogTitle>
+                </DialogHeader>
+                <form onSubmit={salvarNota} className="space-y-4">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label className="text-xs text-slate-400">Bimestre</Label>
+                      <select
+                        value={notaForm.bimestre}
+                        onChange={(e) => setNotaForm({ ...notaForm, bimestre: Number(e.target.value) })}
+                        className="mt-1 w-full h-10 px-3 rounded-xl bg-white/5 border border-white/10 text-sm text-white"
+                      >
+                        {[1, 2, 3, 4].map((b) => (
+                          <option key={b} value={b} className="bg-[#0f172a]">{b}º Bimestre</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <Label className="text-xs text-slate-400">Disciplina</Label>
+                      <Input
+                        value={notaForm.disciplina}
+                        onChange={(e) => setNotaForm({ ...notaForm, disciplina: e.target.value })}
+                        required
+                        className="mt-1 bg-white/5 border-white/10 rounded-xl"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div>
+                      <Label className="text-xs text-slate-400">Nota 1 (0-10)</Label>
+                      <Input
+                        type="number" step="0.1" min="0" max="10"
+                        value={notaForm.nota1}
+                        onChange={(e) => setNotaForm({ ...notaForm, nota1: e.target.value })}
+                        className="mt-1 bg-white/5 border-white/10 rounded-xl"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs text-slate-400">Nota 2 (0-10)</Label>
+                      <Input
+                        type="number" step="0.1" min="0" max="10"
+                        value={notaForm.nota2}
+                        onChange={(e) => setNotaForm({ ...notaForm, nota2: e.target.value })}
+                        className="mt-1 bg-white/5 border-white/10 rounded-xl"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs text-slate-400">Nota Final</Label>
+                      <Input
+                        type="number" step="0.1" min="0" max="10"
+                        placeholder="Auto"
+                        value={notaForm.notaFinal}
+                        onChange={(e) => setNotaForm({ ...notaForm, notaFinal: e.target.value })}
+                        className="mt-1 bg-white/5 border-white/10 rounded-xl"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <Label className="text-xs text-slate-400">Situação (opcional — padrão automático ≥ 6)</Label>
+                    <Input
+                      placeholder="Ex: Aprovado, Em Recuperação, Cursando"
+                      value={notaForm.situacao}
+                      onChange={(e) => setNotaForm({ ...notaForm, situacao: e.target.value })}
+                      className="mt-1 bg-white/5 border-white/10 rounded-xl"
+                    />
+                  </div>
+                  <div className="flex justify-end gap-2 pt-2">
+                    <Button type="button" variant="ghost" onClick={() => setNotaModalOpen(false)}>Cancelar</Button>
+                    <Button type="submit" disabled={salvando} className="bg-blue-600 hover:bg-blue-500 text-white gap-2">
+                      {salvando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                      Salvar Nota
+                    </Button>
+                  </div>
+                </form>
+              </DialogContent>
+            </Dialog>
+
+            {/* Modal Lançar/Editar Presença Bimestral */}
+            <Dialog open={presModalOpen} onOpenChange={setPresModalOpen}>
+              <DialogContent className="bg-[#0f172a] border-white/10 text-white max-w-md">
+                <DialogHeader>
+                  <DialogTitle>Lançar / Atualizar Presença Bimestral</DialogTitle>
+                </DialogHeader>
+                <form onSubmit={salvarPresenca} className="space-y-4">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label className="text-xs text-slate-400">Bimestre</Label>
+                      <select
+                        value={presForm.bimestre}
+                        onChange={(e) => setPresForm({ ...presForm, bimestre: Number(e.target.value) })}
+                        className="mt-1 w-full h-10 px-3 rounded-xl bg-white/5 border border-white/10 text-sm text-white"
+                      >
+                        {[1, 2, 3, 4].map((b) => (
+                          <option key={b} value={b} className="bg-[#0f172a]">{b}º Bimestre</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <Label className="text-xs text-slate-400">Disciplina</Label>
+                      <Input
+                        value={presForm.disciplina}
+                        onChange={(e) => setPresForm({ ...presForm, disciplina: e.target.value })}
+                        required
+                        className="mt-1 bg-white/5 border-white/10 rounded-xl"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label className="text-xs text-slate-400">Total de Aulas</Label>
+                      <Input
+                        type="number" min="1"
+                        value={presForm.totalAulas}
+                        onChange={(e) => setPresForm({ ...presForm, totalAulas: e.target.value })}
+                        required
+                        className="mt-1 bg-white/5 border-white/10 rounded-xl"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs text-slate-400">Faltas</Label>
+                      <Input
+                        type="number" min="0"
+                        value={presForm.faltas}
+                        onChange={(e) => setPresForm({ ...presForm, faltas: e.target.value })}
+                        required
+                        className="mt-1 bg-white/5 border-white/10 rounded-xl"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex justify-end gap-2 pt-2">
+                    <Button type="button" variant="ghost" onClick={() => setPresModalOpen(false)}>Cancelar</Button>
+                    <Button type="submit" disabled={salvando} className="bg-emerald-600 hover:bg-emerald-500 text-white gap-2">
+                      {salvando ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                      Salvar Presença
+                    </Button>
+                  </div>
+                </form>
+              </DialogContent>
+            </Dialog>
           </>
         ) : (
           <div className="text-center py-20 text-muted-foreground">Aluno não encontrado.</div>
@@ -584,7 +884,7 @@ function ClipboardListIcon(props: React.SVGProps<SVGSVGElement>) {
   );
 }
 
-function TabelaNotas({ notas }: { notas: Nota[] }) {
+function TabelaNotas({ notas, onEdit }: { notas: Nota[]; onEdit: (n: Nota) => void }) {
   return (
     <div className="bg-[#111827] rounded-2xl border border-white/[0.07] overflow-hidden shadow-xl">
       <table className="w-full text-sm">
@@ -596,6 +896,7 @@ function TabelaNotas({ notas }: { notas: Nota[] }) {
             <th className="text-center px-4 py-3.5 text-[0.65rem] font-bold uppercase tracking-widest text-slate-400 border-b border-white/5">Nota Final</th>
             <th className="text-center px-4 py-3.5 text-[0.65rem] font-bold uppercase tracking-widest text-slate-400 border-b border-white/5">Média</th>
             <th className="text-center px-4 py-3.5 text-[0.65rem] font-bold uppercase tracking-widest text-slate-400 border-b border-white/5">Situação</th>
+            <th className="px-4 py-3.5 border-b border-white/5"></th>
           </tr>
         </thead>
         <tbody>
@@ -619,6 +920,16 @@ function TabelaNotas({ notas }: { notas: Nota[] }) {
                 <td className="px-4 py-3 text-center">
                   <SituacaoBadge situacao={n.situacao} />
                 </td>
+                <td className="px-3 py-3 text-right">
+                  <button
+                    type="button"
+                    onClick={() => onEdit(n)}
+                    className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
+                    title="Editar nota"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </button>
+                </td>
               </tr>
             );
           })}
@@ -628,7 +939,7 @@ function TabelaNotas({ notas }: { notas: Nota[] }) {
   );
 }
 
-function TabelaPresencas({ presencas }: { presencas: Presenca[] }) {
+function TabelaPresencas({ presencas, onEdit }: { presencas: Presenca[]; onEdit: (p: Presenca) => void }) {
   return (
     <div className="bg-[#111827] rounded-2xl border border-white/[0.07] overflow-hidden shadow-xl">
       <table className="w-full text-sm">
@@ -640,6 +951,7 @@ function TabelaPresencas({ presencas }: { presencas: Presenca[] }) {
             <th className="text-center px-4 py-3.5 text-[0.65rem] font-bold uppercase tracking-widest text-slate-400 border-b border-white/5">Presenças</th>
             <th className="text-center px-4 py-3.5 text-[0.65rem] font-bold uppercase tracking-widest text-slate-400 border-b border-white/5">Frequência</th>
             <th className="text-center px-4 py-3.5 text-[0.65rem] font-bold uppercase tracking-widest text-slate-400 border-b border-white/5">Status</th>
+            <th className="px-4 py-3.5 border-b border-white/5"></th>
           </tr>
         </thead>
         <tbody>
@@ -669,6 +981,16 @@ function TabelaPresencas({ presencas }: { presencas: Presenca[] }) {
                       ? <span className="text-xs font-bold text-emerald-400 bg-emerald-400/10 px-2 py-0.5 rounded-full">Regular</span>
                       : <span className="text-xs font-bold text-red-400 bg-red-400/10 px-2 py-0.5 rounded-full">Em risco</span>
                   )}
+                </td>
+                <td className="px-3 py-3 text-right">
+                  <button
+                    type="button"
+                    onClick={() => onEdit(p)}
+                    className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
+                    title="Editar presença bimestral"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </button>
                 </td>
               </tr>
             );

@@ -262,6 +262,21 @@ function parseSecao(linhas: string[], erros: string[]): SecaoDiario | null {
 
 /* ─── Tabela de presenças ──────────────────────────────────────── */
 
+/**
+ * Normaliza nota extraída de PDFs do SUAP para a escala 0..10.
+ * Nos PDFs de Diário/Boletim do SUAP, inteiros sem ponto decimal estão na escala 0..100
+ * (ex: "10" => 1.0, "68" => 6.8, "100" => 10.0), enquanto valores com ponto decimal
+ * já vêm na escala 0..10.
+ */
+function parseNotaSuap(raw: string): number | null {
+  const tok = raw.trim().replace(",", ".");
+  if (!tok || tok === "-" || !/^\d+(?:\.\d+)?$/.test(tok)) return null;
+  const val = Number(tok);
+  if (!Number.isFinite(val)) return null;
+  const scaled = tok.includes(".") ? (val > 10 ? val / 10 : val) : val / 10;
+  return Math.min(10, Math.max(0, Number(scaled.toFixed(2))));
+}
+
 function parseLinhaAlunoFrequencia(
   matricula: string,
   nomeEFreq: string,
@@ -296,15 +311,13 @@ function parseLinhaAlunoFrequencia(
   const faltasStr = String(faltasContadas);
   if (restoSemEspacos.endsWith(faltasStr)) {
     const notaPart = restoSemEspacos.slice(0, restoSemEspacos.length - faltasStr.length).replace(/-/g, "").trim();
-    if (notaPart && /^\d+$/.test(notaPart)) {
-      const nVal = Number(notaPart);
-      nota = nVal > 10 ? nVal / 10 : nVal;
+    if (notaPart) {
+      nota = parseNotaSuap(notaPart);
     }
   } else {
-    const nums = m[2].substring(0).trim().match(/\d+/g);
+    const nums = m[2].substring(0).trim().match(/\d+(?:\.\d+)?/g);
     if (nums && nums.length >= 2) {
-      const nVal = Number(nums[nums.length - 2]);
-      nota = nVal > 10 ? nVal / 10 : nVal;
+      nota = parseNotaSuap(nums[nums.length - 2]);
     }
   }
 
@@ -528,7 +541,7 @@ export function parseBoletimTexto(texto: string): BoletimParsed {
   const vistos = new Set<string>();
 
   for (const l of linhas) {
-    const m = l.match(/^\d{1,2}\s*(\d{12,16})\s*([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ\s'.-]+?)(\d+)%\s*(.+)$/);
+    const m = l.match(/^\d{1,3}\s*(\d{12,16})\s*([A-Za-zÀ-ÿ][A-Za-zÀ-ÿ\s'.-]+?)(\d+)%\s*(.+)$/);
     if (!m) continue;
 
     const matricula = m[1].trim();
@@ -567,23 +580,15 @@ export function parseBoletimTexto(texto: string): BoletimParsed {
       const nTok = tokens[(b - 1) * 2] ?? "-";
       const fTok = tokens[(b - 1) * 2 + 1] ?? "0";
 
-      let nota: number | null = null;
-      if (nTok !== "-" && /^\d+(\.\d+)?$/.test(nTok)) {
-        const nVal = Number(nTok);
-        nota = nVal > 10 ? nVal / 10 : nVal;
-      }
+      const nota = parseNotaSuap(nTok);
       const faltas = /^\d+$/.test(fTok) ? Number(fTok) : 0;
       bimestres.push({ bimestre: b, nota, faltas });
     }
 
-    let mediaFinal: number | null = null;
     const mdTok = tokens[8];
     const mfdTok = tokens[10];
     const mTok = mfdTok && mfdTok !== "-" ? mfdTok : mdTok;
-    if (mTok && mTok !== "-" && /^\d+(\.\d+)?$/.test(mTok)) {
-      const mVal = Number(mTok);
-      mediaFinal = mVal > 10 ? mVal / 10 : mVal;
-    }
+    const mediaFinal = mTok ? parseNotaSuap(mTok) : null;
 
     alunos.push({
       matricula,

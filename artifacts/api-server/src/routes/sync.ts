@@ -9,6 +9,7 @@ import path from "path";
 import fs from "fs";
 import { sincronizarSUAP, sincronizarDiariosSUAP, baixarDiarioPorLink, baixarDiarioEBoletimPorLink, baixarXlsTurmaPorLink, identificarDiarioPorLinks, normalizarTurma, type SecaoDiario, type BoletimParsed, sincronizarTurmasSUAP } from "../lib/suapSync.js";
 import { parseDiarioPDF, parseBoletimPDF, normNome } from "../lib/parseDiario.js";
+import { upsertNotasLote, upsertPresencasBimestraisLote, limparNotasFantasmasDisciplina } from "../lib/notasPresencasSync.js";
 import { processarImportacaoAlunos, realocarAlunosPorPlanilhaTurma } from "../services/importService.js";
 
 /* Estado em memória do sync automático */
@@ -58,6 +59,16 @@ router.get("/sync/status", async (_req, res) => {
     mensagem: status.mensagem,
     totalAlunos: status.totalAlunos ? parseInt(status.totalAlunos) : 0,
   });
+});
+
+/* ─── Histórico recente de sincronizações ─── */
+router.get("/sync/historico", async (_req, res) => {
+  const rows = await db
+    .select()
+    .from(syncStatusTable)
+    .orderBy(desc(syncStatusTable.id))
+    .limit(20);
+  res.json(rows);
 });
 
 /* ═══════════════════════════════════════════════════════════
@@ -1419,8 +1430,11 @@ async function importarSecao(
     }
   }
 
-  // 2. Importar presenças → diario_presencas em lote
+  // 2. Importar presenças → diario_presencas em lote (+ nota bimestral quando presente no PDF)
   const presencasMap = new Map<string, { aulaId: number; alunoId: number; status: string }>();
+  const notasDiarioBatch: any[] = [];
+  const disciplinaDiario = secao.disciplina || "Regente / Globalizado";
+  const bimestreDiario = Number(secao.bimestre) || 1;
 
   for (const aluno of secao.alunos) {
     let alunoId = porMatricula.get(aluno.matricula);
@@ -1448,6 +1462,19 @@ async function importarSecao(
       if (!aulaId) continue;
       presencasMap.set(`${aulaId}:${alunoId}`, { aulaId, alunoId, status: f.status });
     }
+
+    if (aluno.nota !== null && aluno.nota !== undefined && bimestreDiario >= 1 && bimestreDiario <= 4) {
+      const notaStr = String(aluno.nota);
+      notasDiarioBatch.push({
+        alunoId,
+        bimestre: bimestreDiario,
+        disciplina: disciplinaDiario,
+        nota1: notaStr,
+        notaFinal: notaStr,
+        mediaFinal: notaStr,
+        situacao: aluno.nota >= 6 ? "Aprovado" : "Em Recuperação",
+      });
+    }
   }
 
   const presencasBatch = Array.from(presencasMap.values());
@@ -1464,6 +1491,14 @@ async function importarSecao(
       presencasImportadas += chunk.length;
     } catch (e: any) {
       erros.push(`Presenças lote (${secao.turmaLocal}): ${e.message}`);
+    }
+  }
+
+  if (notasDiarioBatch.length > 0) {
+    try {
+      await upsertNotasLote(notasDiarioBatch);
+    } catch (e: any) {
+      erros.push(`Notas lote (${secao.turmaLocal}): ${e.message}`);
     }
   }
 
@@ -1522,6 +1557,17 @@ async function importarBoletim(
   const disciplinaNome = boletim.disciplina || "Regente / Globalizado";
   const aulasPorBimestre = Math.max(40, Math.round((boletim.aulasPrevistas || 200) / 4));
 
+  // Identifica quais bimestres possuem ao menos 1 nota ou falta lançada neste diário,
+  // evitando gerar presença fictícia 100% ou linhas de nota fantasma para bimestres futuros.
+  const bimestresComLancamento = new Set<number>();
+  for (const al of boletim.alunos) {
+    for (const bim of al.bimestres) {
+      if (bim.nota !== null || bim.faltas > 0) {
+        bimestresComLancamento.add(bim.bimestre);
+      }
+    }
+  }
+
   const alunoIdsAfetados: number[] = [];
   const notasBatch: any[] = [];
   const presencasBatch: any[] = [];
@@ -1536,63 +1582,47 @@ async function importarBoletim(
     alunoIdsAfetados.push(alunoId);
 
     for (const bim of al.bimestres) {
-      const notaValStr = bim.nota !== null ? String(bim.nota) : null;
-      const mediaValStr = al.mediaFinal !== null ? String(al.mediaFinal) : notaValStr;
-      const situacao =
-        bim.nota === null
-          ? "Cursando"
-          : bim.nota >= 6
-          ? "Aprovado"
-          : "Em Recuperação";
-
-      if (bim.nota !== null || al.mediaFinal !== null) {
+      if (bim.nota !== null) {
+        const notaValStr = String(bim.nota);
+        const situacao = bim.nota >= 6 ? "Aprovado" : "Em Recuperação";
         notasBatch.push({
           alunoId,
           bimestre: bim.bimestre,
           disciplina: disciplinaNome,
           nota1: notaValStr,
           notaFinal: notaValStr,
-          mediaFinal: mediaValStr,
+          mediaFinal: notaValStr,
           situacao,
-          dataAtualizacao: new Date(),
         });
       }
 
-      const freqCalc = aulasPorBimestre > 0
-        ? Math.max(0, (((aulasPorBimestre - bim.faltas) / aulasPorBimestre) * 100)).toFixed(2)
-        : String(al.percentualFrequencia);
+      if (bimestresComLancamento.has(bim.bimestre)) {
+        const freqCalc = aulasPorBimestre > 0
+          ? Math.max(0, (((aulasPorBimestre - bim.faltas) / aulasPorBimestre) * 100)).toFixed(2)
+          : String(al.percentualFrequencia);
 
-      presencasBatch.push({
-        alunoId,
-        bimestre: bim.bimestre,
-        disciplina: disciplinaNome,
-        totalAulas: aulasPorBimestre,
-        faltas: bim.faltas,
-        percentualFrequencia: freqCalc,
-        dataAtualizacao: new Date(),
-      });
+        presencasBatch.push({
+          alunoId,
+          bimestre: bim.bimestre,
+          disciplina: disciplinaNome,
+          totalAulas: aulasPorBimestre,
+          faltas: bim.faltas,
+          percentualFrequencia: freqCalc,
+        });
+      }
     }
   }
 
   if (alunoIdsAfetados.length > 0) {
-    await db.delete(notasTable).where(
-      and(inArray(notasTable.alunoId, alunoIdsAfetados), eq(notasTable.disciplina, disciplinaNome))
-    );
-    await db.delete(presencasTable).where(
-      and(inArray(presencasTable.alunoId, alunoIdsAfetados), eq(presencasTable.disciplina, disciplinaNome))
-    );
+    await limparNotasFantasmasDisciplina(alunoIdsAfetados, disciplinaNome);
   }
 
-  if (notasBatch.length > 0) {
-    await db.insert(notasTable).values(notasBatch);
-  }
-  if (presencasBatch.length > 0) {
-    await db.insert(presencasTable).values(presencasBatch);
-  }
+  const notasImportadas = await upsertNotasLote(notasBatch);
+  const presencasBimestraisImportadas = await upsertPresencasBimestraisLote(presencasBatch);
 
   return {
-    notasImportadas: notasBatch.length,
-    presencasBimestraisImportadas: presencasBatch.length,
+    notasImportadas,
+    presencasBimestraisImportadas,
     alunosNaoEncontrados,
   };
 }

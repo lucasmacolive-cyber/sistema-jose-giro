@@ -1,5 +1,6 @@
 // @ts-nocheck
-import { useState } from "react";
+import { useState, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { useListarAlunos, useListarTurmas } from "@workspace/api-client-react";
 import { useLocation } from "wouter";
@@ -11,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
 const COR_PADRAO = "#3b82f6";
+const BASE = import.meta.env.BASE_URL.replace(/\/$/, "");
 
 export default function NotasPresencasPage() {
   const [search, setSearch] = useState("");
@@ -19,6 +21,18 @@ export default function NotasPresencasPage() {
 
   const { data: alunos, isLoading } = useListarAlunos();
   const { data: turmas } = useListarTurmas();
+  const { data: resumoData } = useQuery<{ alunos: any[] }>({
+    queryKey: ["notas-presencas-resumo"],
+    queryFn: () => fetch(`${BASE}/api/notas-presencas/alunos`, { credentials: "include" }).then((r) => r.json()),
+  });
+
+  const resumoPorAluno = useMemo(() => {
+    const map: Record<number, any> = {};
+    for (const r of resumoData?.alunos ?? []) {
+      map[Number(r.id)] = r;
+    }
+    return map;
+  }, [resumoData]);
 
   const corPorTurma: Record<string, string> = {};
   (turmas ?? []).forEach((t: any) => {
@@ -151,6 +165,13 @@ export default function NotasPresencasPage() {
                 {filtered.map((aluno, i) => {
                   const cor = corPorTurma[aluno.turmaAtual ?? ""] ?? COR_PADRAO;
                   const inicial = (aluno.nomeCompleto || "?")[0].toUpperCase();
+                  const resumo = resumoPorAluno[aluno.id];
+                  const totalNotas = Number(resumo?.total_notas ?? 0);
+                  const mediaGeral = resumo?.media_geral !== null && resumo?.media_geral !== undefined ? Number(resumo.media_geral) : null;
+                  const diarioAulas = Number(resumo?.total_diario_aulas ?? 0);
+                  const diarioFaltas = Number(resumo?.total_diario_faltas ?? 0);
+                  const suapPresencas = Number(resumo?.total_presencas ?? 0);
+                  const freqDiario = diarioAulas > 0 ? Math.round(((diarioAulas - diarioFaltas) / diarioAulas) * 100) : null;
                   return (
                     <tr
                       key={aluno.id}
@@ -184,14 +205,30 @@ export default function NotasPresencasPage() {
                       </td>
                       <td className="px-4 py-3 text-center">
                         <div className="flex items-center justify-center gap-1.5">
-                          <Activity className="h-3.5 w-3.5 text-emerald-400" />
-                          <span className="text-xs text-muted-foreground">Ver</span>
+                          <Activity className={cn("h-3.5 w-3.5", freqDiario !== null ? (freqDiario >= 75 ? "text-emerald-400" : freqDiario >= 50 ? "text-amber-400" : "text-red-400") : "text-emerald-400/60")} />
+                          {freqDiario !== null ? (
+                            <span className={cn("text-xs font-bold", freqDiario >= 75 ? "text-emerald-400" : freqDiario >= 50 ? "text-amber-400" : "text-red-400")}>
+                              {freqDiario}% ({diarioFaltas}f)
+                            </span>
+                          ) : suapPresencas > 0 ? (
+                            <span className="text-xs font-semibold text-emerald-300">{suapPresencas} bim.</span>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">Sem reg.</span>
+                          )}
                         </div>
                       </td>
                       <td className="px-4 py-3 text-center">
                         <div className="flex items-center justify-center gap-1.5">
                           <BookOpen className="h-3.5 w-3.5 text-blue-400" />
-                          <span className="text-xs text-muted-foreground">Ver</span>
+                          {mediaGeral !== null ? (
+                            <span className={cn("text-xs font-bold", mediaGeral >= 6 ? "text-blue-300" : "text-amber-400")}>
+                              Média {mediaGeral.toFixed(1)} ({totalNotas})
+                            </span>
+                          ) : totalNotas > 0 ? (
+                            <span className="text-xs font-semibold text-blue-300">{totalNotas} reg.</span>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">Sem reg.</span>
+                          )}
                         </div>
                       </td>
                       <td className="px-4 py-3 text-right">

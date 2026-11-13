@@ -9,6 +9,7 @@ export const diarioAulasTable = pgTable("diario_aulas", {
   data: varchar("data", { length: 10 }).notNull(),
   numeroAulas: integer("numero_aulas").default(1),
   conteudo: text("conteudo"),
+  tipo: varchar("tipo", { length: 20 }).default("normal"),
   criadoEm: timestamp("criado_em").defaultNow(),
 }, (table) => [
   uniqueIndex("diario_aulas_turma_data_idx").on(table.turmaNome, table.data),

@@ -13,6 +13,7 @@ export const turmasTable = pgTable("turmas", {
   auxiliarTurma: text("auxiliar_turma"),
   cor: varchar("cor", { length: 30 }).default("#3b82f6"),
   linkSuap: varchar("link_suap", { length: 255 }),
+  linkSuapAlunos: varchar("link_suap_alunos", { length: 255 }),
 });
 
 export const insertTurmaSchema = createInsertSchema(turmasTable).omit({ id: true });

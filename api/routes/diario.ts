@@ -7,6 +7,7 @@ import {
 } from "../lib/db/index.ts";
 import { eq, and, inArray, or, sql } from "drizzle-orm";
 import { parseDiarioTexto } from "../lib/parseDiario";
+import { upsertNotasLote } from "../lib/notasPresencasSync.js";
 
 const router = Router();
 
@@ -71,7 +72,9 @@ router.get("/diario/relatorio-frequencia-mensal", async (req, res) => {
       .where(turmaCond ? and(turmaCond, cond) : cond)
       .orderBy(diarioAulasTable.data);
 
-    const aulasPassadas = allAulas.filter(a => dateLE(a.data, hojeStr));
+    const aulasPassadas = allAulas.filter(
+      a => a.tipo !== "feriado" && a.tipo !== "recesso" && dateLE(a.data, hojeStr)
+    );
 
     // 2. Alunos
     const queryAlunos = db
@@ -766,7 +769,9 @@ router.get("/diario/frequencia-stats", requireAuth, async (req, res) => {
       if (!presMap[p.aulaId]) presMap[p.aulaId] = {};
       presMap[p.aulaId][p.alunoId] = p.status;
     }
-    const aulasPassadas = aulas.filter(a => dateLE(a.data, hojeStr));
+    const aulasPassadas = aulas.filter(
+      a => a.tipo !== "feriado" && a.tipo !== "recesso" && dateLE(a.data, hojeStr)
+    );
 
     // Stats por turma
     const turmaNomes = [...new Set(aulas.map(a => a.turmaNome))];
@@ -881,7 +886,9 @@ router.get("/diario/ficai", requireAuth, async (req, res) => {
       presMap[p.aulaId][p.alunoId] = p.status;
     }
 
-    const aulasPassadas = aulas.filter(a => dateLE(a.data, hojeStr));
+    const aulasPassadas = aulas.filter(
+      a => a.tipo !== "feriado" && a.tipo !== "recesso" && dateLE(a.data, hojeStr)
+    );
 
     type AlertaFicai = {
       alunoId: number; nome: string; turma: string;
@@ -1234,7 +1241,11 @@ router.get("/diario/aluno/:id/frequencia", requireAuth, async (req, res) => {
 
     // Busca aluno para saber turma e turma de origem
     const [aluno] = await db
-      .select({ turmaAtual: alunosTable.turmaAtual, turmaOrigem: alunosTable.turmaOrigem })
+      .select({
+        turmaAtual: alunosTable.turmaAtual,
+        turmaOrigem: alunosTable.turmaOrigem,
+        dataTransferencia: alunosTable.dataTransferencia,
+      })
       .from(alunosTable)
       .where(eq(alunosTable.id, alunoId))
       .limit(1);
@@ -1269,12 +1280,42 @@ router.get("/diario/aluno/:id/frequencia", requireAuth, async (req, res) => {
     const presMap: Record<number, string> = {};
     for (const p of presencasRows) presMap[p.aulaId] = p.status;
 
-    // Mapeamento mês → bimestre
+    const parseAulaDate = (raw: string): { d: number; m: number; y: number; norm: string; ms: number } | null => {
+      if (!raw) return null;
+      let d: number, m: number, y: number;
+      if (/^\d{4}-\d{2}-\d{2}/.test(raw)) {
+        const [yy, mm, dd] = raw.slice(0, 10).split("-").map(Number);
+        d = dd; m = mm; y = yy;
+      } else {
+        const [dd, mm, yy] = raw.split("/").map(Number);
+        d = dd; m = mm; y = yy;
+      }
+      if (!d || !m || !y) return null;
+      const ms = new Date(y, m - 1, d).getTime();
+      const norm = `${String(d).padStart(2, "0")}/${String(m).padStart(2, "0")}/${y}`;
+      return { d, m, y, norm, ms };
+    };
+
+    const hojeFimDia = new Date();
+    hojeFimDia.setHours(23, 59, 59, 999);
+    const hojeMs = hojeFimDia.getTime();
+    const dataTransfMs = aluno.dataTransferencia ? parseAulaDate(aluno.dataTransferencia)?.ms ?? null : null;
+
+    // Datas já cobertas na turma atual têm precedência sobre turmaOrigem
+    const datasTurmaAtual = new Set<string>();
+    for (const aula of aulas) {
+      if (aula.turmaNome === aluno.turmaAtual && aula.tipo !== "feriado" && aula.tipo !== "recesso") {
+        const p = parseAulaDate(aula.data);
+        if (p) datasTurmaAtual.add(p.norm);
+      }
+    }
+
+    // Mapeamento mês → bimestre (cobrindo os 12 meses para não perder aulas como Julho/Dezembro)
     const mesBimestre: Record<number, number> = {
-      2: 1, 3: 1,
-      4: 2, 5: 2, 6: 2,
+      1: 1, 2: 1, 3: 1,
+      4: 2, 5: 2, 6: 2, 7: 2,
       8: 3, 9: 3,
-      10: 4, 11: 4,
+      10: 4, 11: 4, 12: 4,
     };
 
     const MESES_PT: Record<number, string> = {
@@ -1291,11 +1332,18 @@ router.get("/diario/aluno/:id/frequencia", requireAuth, async (req, res) => {
     let totalPresencas = 0;
 
     for (const aula of aulas) {
-      // data = DD/MM/YYYY
-      const partes = aula.data.split("/");
-      const mes = parseInt(partes[1], 10);
-      const bim = mesBimestre[mes] ?? 0;
-      if (bim === 0) continue; // Pula meses fora do calendário (Jul, Dez, Jan)
+      if (aula.tipo === "feriado" || aula.tipo === "recesso") continue;
+      const parsed = parseAulaDate(aula.data);
+      if (!parsed || parsed.ms > hojeMs) continue;
+
+      if (aluno.turmaOrigem && aluno.turmaOrigem !== aluno.turmaAtual && aula.turmaNome === aluno.turmaOrigem) {
+        if (datasTurmaAtual.has(parsed.norm)) continue;
+        if (dataTransfMs !== null && parsed.ms > dataTransfMs) continue;
+        if (dataTransfMs === null && presMap[aula.id] === undefined) continue;
+      }
+
+      const mes = parsed.m;
+      const bim = mesBimestre[mes] ?? 4;
 
       if (!bimestresMap[bim]) bimestresMap[bim] = { aulas: 0, presencas: 0, meses: {} };
       if (!bimestresMap[bim].meses[mes]) bimestresMap[bim].meses[mes] = { aulas: 0, presencas: 0 };
@@ -1416,6 +1464,9 @@ router.post("/diario/sincronizar-pdf", requireAuth, async (req, res) => {
       // ── Construir mapa de presenças por data → alunoId → status ──
       const presencasPorData: Record<string, Record<number, "P" | "F">> = {};
       const datasSet = new Set<string>();
+      const notasDiarioBatch: any[] = [];
+      const disciplinaDiario = secao.disciplina || "Regente / Globalizado";
+      const bimestreDiario = Number(secao.bimestre) || 1;
 
       for (const alunoFreq of secao.alunos) {
         // Tentar match por matrícula primeiro, depois por nome
@@ -1430,6 +1481,23 @@ router.post("/diario/sincronizar-pdf", requireAuth, async (req, res) => {
           if (!presencasPorData[dataDB]) presencasPorData[dataDB] = {};
           presencasPorData[dataDB][alunoId] = freq.status;
         }
+
+        if (alunoFreq.nota !== null && alunoFreq.nota !== undefined && bimestreDiario >= 1 && bimestreDiario <= 4) {
+          const notaStr = String(alunoFreq.nota);
+          notasDiarioBatch.push({
+            alunoId,
+            bimestre: bimestreDiario,
+            disciplina: disciplinaDiario,
+            nota1: notaStr,
+            notaFinal: notaStr,
+            mediaFinal: notaStr,
+            situacao: alunoFreq.nota >= 6 ? "Aprovado" : "Em Recuperação",
+          });
+        }
+      }
+
+      if (notasDiarioBatch.length > 0) {
+        await upsertNotasLote(notasDiarioBatch);
       }
 
       if (datasSet.size === 0) continue;
