@@ -3,7 +3,7 @@
 cd /d "%~dp0"
 
 echo Iniciando o Servidor API...
-start /b cmd /c "pnpm --filter @workspace/api-server dev"
+start /b cmd /c "pnpm --filter @workspace/api-server serve"
 
 echo Iniciando o Frontend...
 start /b cmd /c "pnpm --filter @workspace/escola dev"
