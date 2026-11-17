@@ -15,7 +15,7 @@ const SUAP_BASE = `https://${SUAP_HOST}`;
 export type ProgressCallback = (pct: number, msg: string) => void;
 
 /* ── HTTP helper com gerenciamento de cookies ── */
-class CookieJar {
+export class CookieJar {
   private jar: Record<string, string> = {};
 
   set(setCookieHeaders: string[] | undefined) {
@@ -29,6 +29,10 @@ class CookieJar {
         this.jar[k] = v;
       }
     }
+  }
+
+  replaceFrom(other: CookieJar) {
+    this.jar = { ...other.jar };
   }
 
   header(): string {
@@ -49,7 +53,28 @@ interface Resp {
   text: string;
 }
 
-async function request(
+const TRANSIENT_NET_CODES = new Set([
+  "ECONNRESET",
+  "ECONNABORTED",
+  "ETIMEDOUT",
+  "EPIPE",
+  "EAI_AGAIN",
+]);
+
+function isTransientHttpError(e: any): boolean {
+  const code = String(e?.code || "").toUpperCase();
+  if (TRANSIENT_NET_CODES.has(code)) return true;
+  const msg = String(e?.message || "").toLowerCase();
+  return (
+    msg.includes("econnreset") ||
+    msg.includes("socket hang up") ||
+    msg.includes("etimedout") ||
+    msg.includes("epipe") ||
+    msg.includes("timeout de conexão com o suap")
+  );
+}
+
+function requestOnce(
   method: string,
   path: string,
   jar: CookieJar,
@@ -62,7 +87,7 @@ async function request(
       hostname: SUAP_HOST,
       path,
       method,
-      timeout: 60000,
+      timeout: 90000,
       headers: {
         "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) Chrome/120.0.0.0",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -94,7 +119,7 @@ async function request(
     });
 
     req.on("error", (e: NodeJS.ErrnoException) => {
-      if (e.code === "ECONNREFUSED" || e.code === "ENOTFOUND" || e.code === "ETIMEDOUT") {
+      if (e.code === "ECONNREFUSED" || e.code === "ENOTFOUND") {
         reject(new Error(
           `Não foi possível conectar ao SUAP (${SUAP_HOST}). ` +
           `O servidor pode estar temporariamente inacessível a partir do servidor em nuvem. ` +
@@ -111,6 +136,38 @@ async function request(
     if (bodyBuf) req.write(bodyBuf);
     req.end();
   });
+}
+
+async function request(
+  method: string,
+  path: string,
+  jar: CookieJar,
+  body?: string,
+  extraHeaders?: Record<string, string>
+): Promise<Resp> {
+  const maxAttempts = 3;
+  let lastErr: any;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const resp = await requestOnce(method, path, jar, body, extraHeaders);
+      if ((resp.status === 502 || resp.status === 503 || resp.status === 504) && attempt < maxAttempts) {
+        const delayMs = 1500 * attempt;
+        console.warn(`[SUAP HTTP] ${method} ${path} retornou ${resp.status}, tentando novamente em ${delayMs}ms (${attempt}/${maxAttempts})`);
+        await new Promise((r) => setTimeout(r, delayMs));
+        continue;
+      }
+      return resp;
+    } catch (err: any) {
+      lastErr = err;
+      if (!isTransientHttpError(err) || attempt === maxAttempts) {
+        throw err;
+      }
+      const delayMs = 1500 * attempt;
+      console.warn(`[SUAP HTTP] ${method} ${path} falhou (${err.code || err.message}), tentando novamente em ${delayMs}ms (${attempt}/${maxAttempts})`);
+      await new Promise((r) => setTimeout(r, delayMs));
+    }
+  }
+  throw lastErr;
 }
 
 /* ── Extrair token CSRF do HTML ── */
@@ -136,10 +193,10 @@ const SUAP_RELATORIO_URL =
   "&ano_letivo=9&periodo_letivo=0&periodo_matriz=0&periodo_referencia=0&ano_conclusao=" +
   "&situacao_diario=0&turno=&situacao_matricula=&situacao_matricula_periodo=" +
   "&ano_ingresso_inicio=&periodo_ingresso_inicio=0&ano_ingresso_fim=&periodo_ingresso_fim=0" +
-  "&aluno_especial=&forma_ingresso=&situacao_sistema=MATRICULADO&medida_disciplinar=0" +
+  "&aluno_especial=&forma_ingresso=&situacao_sistema=TODOS&medida_disciplinar=0" +
   "&percentual_conclusao_curso_inicial=&percentual_conclusao_curso_final=" +
   "&tipo_necessidade_especial=0&tipo_transtorno=0&superdotacao=0&pendencias=" +
-  "&formatacao=simples&quantidade_itens=10000&ordenacao=Nome&agrupamento=Campus" +
+  "&formatacao=simples&quantidade_itens=500&ordenacao=Nome&agrupamento=Campus" +
   "&exibicao=ano_letivo_integralizacao&exibicao=ano_let_prev_conclusao&exibicao=ano_conclusao" +
   "&exibicao=ano_letivo&exibicao=pessoa_fisica.cpf&exibicao=cpf_responsavel" +
   "&exibicao=curso_campus.diretoria.setor.uo&exibicao=get_chave_responsavel" +
@@ -543,7 +600,7 @@ function normNome(s: string): string {
 /* ═══════════════════════════════════════════════════════════
    Login isolado — retorna CookieJar autenticado
 ════════════════════════════════════════════════════════════ */
-async function suapLogin(usuario: string, senha: string, onProgress: ProgressCallback): Promise<CookieJar> {
+export async function suapLogin(usuario: string, senha: string, onProgress: ProgressCallback = () => {}): Promise<CookieJar> {
   const jar = new CookieJar();
   onProgress(5, "Abrindo página de login do SUAP...");
   const loginGet = await request("GET", "/accounts/login/", jar);
@@ -868,6 +925,10 @@ export async function baixarDiarioPorLink(
   return resp.body;
 }
 
+function isPdfBuffer(body: Buffer): boolean {
+  return body && body.length > 100 && body.slice(0, 4).toString() === "%PDF";
+}
+
 /* ═══════════════════════════════════════════════════════════
    Baixar Diário PDF + Boletim PDF em uma única sessão SUAP
 ════════════════════════════════════════════════════════════ */
@@ -875,8 +936,8 @@ export async function baixarDiarioEBoletimPorLink(
   usuario: string,
   senha: string,
   link: string,
+  existingJar?: CookieJar,
 ): Promise<{ diarioPdf: Buffer; boletimPdf: Buffer | null; suapId: string }> {
-  const jar = await suapLogin(usuario, senha, () => {});
   const m =
     link.match(/\/edu\/diario_pdf\/(\d+)\//) ??
     link.match(/\/edu\/diario\/(\d+)\//) ??
@@ -884,15 +945,27 @@ export async function baixarDiarioEBoletimPorLink(
   if (!m) throw new Error(`Link inválido: "${link}". Use o formato .../edu/diario/ID/ ou .../edu/diario_pdf/ID/0/`);
 
   const suapId = m[1];
-  const resp = await request("GET", `/edu/diario_pdf/${suapId}/0/`, jar);
+  const jar = existingJar ?? (await suapLogin(usuario, senha, () => {}));
+
+  let resp = await request("GET", `/edu/diario_pdf/${suapId}/0/`, jar);
+  // Se a sessão reaproveitada expirou (redirect 302 para login ou HTML em vez de PDF), refaz login 1x
+  if (existingJar && (!isPdfBuffer(resp.body) || resp.status === 302 || resp.status === 403)) {
+    const freshJar = await suapLogin(usuario, senha, () => {});
+    jar.replaceFrom(freshJar);
+    resp = await request("GET", `/edu/diario_pdf/${suapId}/0/`, jar);
+  }
+
   if (resp.status !== 200) {
     throw new Error(`Erro HTTP ${resp.status} ao baixar o PDF do diário (ID ${suapId})`);
+  }
+  if (!isPdfBuffer(resp.body)) {
+    throw new Error(`O SUAP não retornou um PDF válido para o diário (ID ${suapId}).`);
   }
 
   let boletimPdf: Buffer | null = null;
   try {
     const bolResp = await request("GET", `/edu/emitir_boletins_pdf/${suapId}/`, jar);
-    if (bolResp.status === 200 && bolResp.body.length > 500) {
+    if (bolResp.status === 200 && isPdfBuffer(bolResp.body)) {
       boletimPdf = bolResp.body;
     }
   } catch {

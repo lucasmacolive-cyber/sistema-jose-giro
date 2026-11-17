@@ -47,6 +47,88 @@ export function SyncProvider({ children }: { children: ReactNode }) {
     setRelatorio(null);
 
     try {
+      // Se o Robô Escolar local estiver online, delega a sincronização em lote para ele
+      // (a nuvem Vercel não alcança diretamente o SUAP com estabilidade, mas o robô na escola sim).
+      const roboStatus = await fetch(`${BASE}/api/robo/status`, { credentials: "include" })
+        .then(r => r.json())
+        .catch(() => null);
+
+      if (roboStatus?.online) {
+        setProgresso({ atual: 0, total: 16, msg: "Acionando Robô Escolar...", turmaAtual: "" });
+        const startResp = await fetch(`${BASE}/api/sync/baixar-todos-diarios`, {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+        }).then(r => r.json());
+
+        if (!startResp?.ok) {
+          throw new Error(startResp?.mensagem || "Falha ao acionar Robô Escolar.");
+        }
+
+        const totalInicial = startResp.total || 16;
+        setProgresso({
+          atual: 0,
+          total: totalInicial,
+          msg: startResp.mensagem || "Aguardando Robô Escolar iniciar...",
+          turmaAtual: "",
+        });
+
+        const maxWaitMs = 25 * 60 * 1000;
+        const startedAt = Date.now();
+        let finalState: any = null;
+
+        while (Date.now() - startedAt < maxWaitMs) {
+          await new Promise(r => setTimeout(r, 2000));
+          try {
+            const st = await fetch(`${BASE}/api/sync/baixar-todos-status`, { credentials: "include" }).then(r => r.json());
+            if (!st) continue;
+            setProgresso({
+              atual: st.atual ?? 0,
+              total: st.total || totalInicial,
+              msg: st.msg || "Sincronizando diários...",
+              turmaAtual: st.turmaAtual || "",
+            });
+            if (st.concluido || (!st.rodando && (st.erro || (Array.isArray(st.resultados) && st.resultados.length > 0)))) {
+              finalState = st;
+              break;
+            }
+          } catch {
+            // ignora falha momentânea de polling
+          }
+        }
+
+        if (!finalState) {
+          throw new Error("Tempo limite excedido aguardando conclusão do Robô Escolar.");
+        }
+
+        if (finalState.erro) {
+          setFase("error");
+          setProgresso(p => ({ ...p, msg: finalState.erro }));
+          toast({ title: "Erro na sincronização", description: finalState.erro, variant: "destructive" });
+          setTimeout(() => setFase("idle"), 6000);
+          return;
+        }
+
+        const resultados = Array.isArray(finalState.resultados) ? finalState.resultados : [];
+        const turmasSemLink = Array.isArray(finalState.turmasSemLink) ? finalState.turmasSemLink : [];
+        const concluidos = resultados.filter((r: any) => !r.erro).length;
+        const comErro = resultados.filter((r: any) => r.erro).length;
+
+        setProgresso({
+          atual: finalState.total || totalInicial,
+          total: finalState.total || totalInicial,
+          msg: finalState.msg || `${concluidos} diários sincronizados${comErro > 0 ? ` · ${comErro} com erro` : ""}`,
+          turmaAtual: "",
+        });
+        setFase("done");
+        setRelatorio({ resultados, turmasSemLink });
+        setUltimaSyncGlob(finalState.ultimaSync || new Date().toISOString());
+        carregarUltimaSyncGlobal();
+        toast({ title: "Diários sincronizados!", description: `${concluidos} diários atualizados` });
+        return;
+      }
+
       const turmasResp = await fetch(`${BASE}/api/diario/turmas`, { credentials: "include" }).then(r => r.json());
       const todasTurmas = Array.isArray(turmasResp) ? turmasResp : [];
 

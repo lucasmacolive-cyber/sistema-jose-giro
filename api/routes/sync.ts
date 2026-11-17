@@ -1,13 +1,13 @@
 // @ts-nocheck
 import { Router, type IRouter } from "express";
-import { db } from "../lib/db/index.ts";
+import { db, withDbRetry, formatDbError } from "../lib/db/index.ts";
 import { syncStatusTable, alunosTable, configuracoesTable, diarioAulasTable, diarioPresencasTable, turmasTable, professoresTable, notasTable, presencasTable } from "../lib/db/index.ts";
 import { desc, eq, isNotNull, and, inArray, sql } from "drizzle-orm";
 import * as XLSX from "xlsx";
 import archiver from "archiver";
 import path from "path";
 import fs from "fs";
-import { sincronizarSUAP, sincronizarDiariosSUAP, baixarDiarioPorLink, baixarDiarioEBoletimPorLink, baixarXlsTurmaPorLink, identificarDiarioPorLinks, normalizarTurma, type SecaoDiario, type BoletimParsed, sincronizarTurmasSUAP } from "../lib/suapSync.js";
+import { sincronizarSUAP, sincronizarDiariosSUAP, baixarDiarioPorLink, baixarDiarioEBoletimPorLink, baixarXlsTurmaPorLink, identificarDiarioPorLinks, normalizarTurma, suapLogin, type SecaoDiario, type BoletimParsed, sincronizarTurmasSUAP } from "../lib/suapSync.js";
 import { parseDiarioPDF, parseBoletimPDF, normNome } from "../lib/parseDiario.js";
 import { upsertNotasLote, upsertPresencasBimestraisLote, limparNotasFantasmasDisciplina } from "../lib/notasPresencasSync.js";
 import { processarImportacaoAlunos, realocarAlunosPorPlanilhaTurma } from "../services/importService.js";
@@ -20,6 +20,7 @@ let autoSyncState: {
   erro: string | null;
   concluido: boolean;
 } = { rodando: false, pct: 0, msg: "", erro: null, concluido: false };
+let autoSyncStartedAt = 0;
 
 let autoSyncTurmasState: {
   rodando: boolean;
@@ -35,11 +36,17 @@ let batchSyncState: {
   rodando: boolean;
   total: number;
   atual: number;
+  pct?: number;
+  turmaAtual?: string;
   msg: string;
+  mensagem?: string;
   erro: string | null;
   concluido: boolean;
   ultimaSync: string | null;
+  resultados?: any[];
+  turmasSemLink?: string[];
 } = { rodando: false, total: 0, atual: 0, msg: "", erro: null, concluido: false, ultimaSync: null };
+let batchSyncStartedAt = 0;
 
 const router: IRouter = Router();
 
@@ -210,13 +217,19 @@ async function getSuapCreds() {
 
 /* Utilitário: lê e salva metadata de um link */
 async function salvarLinkMeta(link: string, turma: string) {
-  const [metaRow] = await db.select().from(configuracoesTable).where(eq(configuracoesTable.chave, "diario_links_meta"));
+  const [metaRow] = await withDbRetry(
+    () => db.select().from(configuracoesTable).where(eq(configuracoesTable.chave, "diario_links_meta")),
+    "salvarLinkMeta:select"
+  );
   let meta: Record<string, { turma?: string | null; ultimaSync?: string | null; status?: string | null }> = {};
   try { meta = metaRow?.valor ? JSON.parse(metaRow.valor) : {}; } catch { /* ignore */ }
   meta[link] = { ...meta[link], turma, ultimaSync: new Date().toISOString(), status: "ok" };
   const metaStr = JSON.stringify(meta);
-  await db.insert(configuracoesTable).values({ chave: "diario_links_meta", valor: metaStr })
-    .onConflictDoUpdate({ target: configuracoesTable.chave, set: { valor: metaStr, atualizadoEm: new Date() } });
+  await withDbRetry(
+    () => db.insert(configuracoesTable).values({ chave: "diario_links_meta", valor: metaStr })
+      .onConflictDoUpdate({ target: configuracoesTable.chave, set: { valor: metaStr, atualizadoEm: new Date() } }),
+    "salvarLinkMeta:upsert"
+  );
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -291,16 +304,20 @@ router.post("/sync/baixar-diario-turma", async (req, res) => {
     return;
   }
   try {
-    const todosAlunos = await db.select({
-      id: alunosTable.id, matricula: alunosTable.matricula,
-      nomeCompleto: alunosTable.nomeCompleto, turmaAtual: alunosTable.turmaAtual,
-    }).from(alunosTable);
+    const todosAlunos = await withDbRetry(
+      () => db.select({
+        id: alunosTable.id, matricula: alunosTable.matricula,
+        nomeCompleto: alunosTable.nomeCompleto, turmaAtual: alunosTable.turmaAtual,
+      }).from(alunosTable),
+      "baixar-diario-turma:alunos"
+    );
 
     const resultados: { turma: string; aulasImportadas: number; presencasImportadas: number; erros: string[] }[] = [];
     const errosParseAll: string[] = [];
+    const sharedJar = links.length > 1 ? await suapLogin(usuario, senha, () => {}) : undefined;
 
     for (const link of links) {
-      const { diarioPdf, boletimPdf } = await baixarDiarioEBoletimPorLink(usuario, senha, link);
+      const { diarioPdf, boletimPdf } = await baixarDiarioEBoletimPorLink(usuario, senha, link, sharedJar);
       const { secoes, erros: errosParse } = await parseDiarioPDF(diarioPdf);
       errosParseAll.push(...errosParse);
       for (const secao of secoes) {
@@ -313,31 +330,45 @@ router.post("/sync/baixar-diario-turma", async (req, res) => {
         bol.turmaLocal = turma;
         await importarBoletim(bol, todosAlunos);
       }
-      await salvarLinkMeta(link, turma);
+      await salvarLinkMeta(link, turma).catch(() => {});
     }
 
     const totalAulas     = resultados.reduce((s, r) => s + r.aulasImportadas, 0);
     const totalPresencas = resultados.reduce((s, r) => s + r.presencasImportadas, 0);
     res.json({ ok: true, turma, totalAulas, totalPresencas, secoes: resultados, errosParse: errosParseAll });
   } catch (e: any) {
-    res.status(500).json({ ok: false, mensagem: e.message ?? "Erro interno." });
+    res.status(500).json({ ok: false, mensagem: formatDbError(e) ?? "Erro interno." });
   }
 });
 
 // Helper to read setting
 async function getChave(chave: string, defaultVal: string = ""): Promise<string> {
-  const [row] = await db.select().from(configuracoesTable).where(eq(configuracoesTable.chave, chave)).limit(1);
+  const [row] = await withDbRetry(
+    () => db.select().from(configuracoesTable).where(eq(configuracoesTable.chave, chave)).limit(1),
+    `getChave:${chave}`
+  );
   return row ? (row.valor || defaultVal) : defaultVal;
 }
 
 // Helper to write setting
 async function setChave(chave: string, valor: string) {
-  await db.insert(configuracoesTable)
-    .values({ chave, valor, atualizadoEm: new Date() })
-    .onConflictDoUpdate({
-      target: configuracoesTable.chave,
-      set: { valor, atualizadoEm: new Date() }
-    });
+  await withDbRetry(
+    () => db.insert(configuracoesTable)
+      .values({ chave, valor, atualizadoEm: new Date() })
+      .onConflictDoUpdate({
+        target: configuracoesTable.chave,
+        set: { valor, atualizadoEm: new Date() }
+      }),
+    `setChave:${chave}`
+  );
+}
+
+async function safeSetBatchState(state: any) {
+  try {
+    await setChave("batch_sync_state", JSON.stringify(state));
+  } catch (err: any) {
+    console.warn("[BatchSync] Aviso ao salvar progresso no banco:", formatDbError(err));
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -398,7 +429,7 @@ router.post("/sync/baixar-todos-diarios", async (req, res) => {
     return;
   }
 
-  if (batchSyncState.rodando) {
+  if (batchSyncState.rodando && (Date.now() - batchSyncStartedAt < 15 * 60 * 1000)) {
     res.json({ ok: true, mensagem: "Download já em andamento.", ...batchSyncState });
     return;
   }
@@ -414,69 +445,103 @@ router.post("/sync/baixar-todos-diarios", async (req, res) => {
     return;
   }
 
+  batchSyncStartedAt = Date.now();
   batchSyncState = {
-    rodando: true, total: jobs.length, atual: 0,
+    rodando: true, total: jobs.length, atual: 0, pct: 0,
     msg: "Iniciando...", turmaAtual: "",
     erro: null, concluido: false, ultimaSync: null,
     resultados: [], turmasSemLink,
   };
-  await setChave("batch_sync_state", JSON.stringify(batchSyncState));
+  await safeSetBatchState(batchSyncState);
   res.json({ ok: true, total: jobs.length, turmasSemLink });
 
   // Background: baixar cada diário em sequência
   (async () => {
-    const todosAlunos = await db.select({
-      id: alunosTable.id, matricula: alunosTable.matricula,
-      nomeCompleto: alunosTable.nomeCompleto, turmaAtual: alunosTable.turmaAtual,
-    }).from(alunosTable);
+    try {
+      const todosAlunos = await withDbRetry(
+        () => db.select({
+          id: alunosTable.id, matricula: alunosTable.matricula,
+          nomeCompleto: alunosTable.nomeCompleto, turmaAtual: alunosTable.turmaAtual,
+        }).from(alunosTable),
+        "batchSync:alunos"
+      );
 
-    for (let i = 0; i < jobs.length; i++) {
-      const { nomeTurma, link } = jobs[i];
-      batchSyncState.atual = i;
-      batchSyncState.pct = Math.round((i / jobs.length) * 100);
-      batchSyncState.turmaAtual = nomeTurma;
-      batchSyncState.msg = `Baixando ${nomeTurma} (${i + 1}/${jobs.length})...`;
-      await setChave("batch_sync_state", JSON.stringify(batchSyncState));
-      try {
-        const { diarioPdf, boletimPdf } = await baixarDiarioEBoletimPorLink(usuario, senha, link);
-        const { secoes } = await parseDiarioPDF(diarioPdf);
-        let totalAulas = 0;
-        let totalPresencas = 0;
-        for (const secao of secoes) {
-          secao.turmaLocal = nomeTurma; // Forçar o nome correto da turma
-          const r = await importarSecao(secao, todosAlunos);
-          totalAulas += r.aulasImportadas;
-          totalPresencas += r.presencasImportadas;
-          await salvarLinkMeta(link, nomeTurma);
+      // Reutiliza uma única sessão SUAP para todos os diários (evita 16 logins seguidos)
+      batchSyncState.msg = "Autenticando no SUAP...";
+      await safeSetBatchState(batchSyncState);
+      const sharedJar = await suapLogin(usuario, senha, () => {});
+
+      for (let i = 0; i < jobs.length; i++) {
+        const { nomeTurma, link } = jobs[i];
+        batchSyncState.atual = i;
+        batchSyncState.pct = Math.round((i / jobs.length) * 100);
+        batchSyncState.turmaAtual = nomeTurma;
+        batchSyncState.msg = `Baixando ${nomeTurma} (${i + 1}/${jobs.length})...`;
+        await safeSetBatchState(batchSyncState);
+        try {
+          const { diarioPdf, boletimPdf } = await baixarDiarioEBoletimPorLink(usuario, senha, link, sharedJar);
+          const { secoes } = await parseDiarioPDF(diarioPdf);
+          let totalAulas = 0;
+          let totalPresencas = 0;
+          for (const secao of secoes) {
+            secao.turmaLocal = nomeTurma; // Forçar o nome correto da turma
+            const r = await importarSecao(secao, todosAlunos);
+            totalAulas += r.aulasImportadas;
+            totalPresencas += r.presencasImportadas;
+          }
+          await salvarLinkMeta(link, nomeTurma).catch((err) => {
+            console.warn(`[BatchSync] Aviso ao salvar meta de ${nomeTurma}:`, formatDbError(err));
+          });
+          if (boletimPdf) {
+            const bol = await parseBoletimPDF(boletimPdf);
+            bol.turmaLocal = nomeTurma;
+            await importarBoletim(bol, todosAlunos);
+          }
+          batchSyncState.resultados.push({ turma: nomeTurma, aulas: totalAulas, presencas: totalPresencas });
+          batchSyncState.msg = `${i + 1}/${jobs.length} concluídos`;
+        } catch (e: any) {
+          const errStr = formatDbError(e);
+          console.error(`[BatchSync] Erro em ${nomeTurma}:`, errStr);
+          batchSyncState.resultados.push({ turma: nomeTurma, aulas: 0, presencas: 0, erro: errStr });
+          batchSyncState.msg = `Erro em ${nomeTurma} (${i + 1}/${jobs.length}): ${errStr}`;
         }
-        if (boletimPdf) {
-          const bol = await parseBoletimPDF(boletimPdf);
-          bol.turmaLocal = nomeTurma;
-          await importarBoletim(bol, todosAlunos);
-        }
-        batchSyncState.resultados.push({ turma: nomeTurma, aulas: totalAulas, presencas: totalPresencas });
-        batchSyncState.msg = `${i + 1}/${jobs.length} concluídos`;
-      } catch (e: any) {
-        batchSyncState.resultados.push({ turma: nomeTurma, aulas: 0, presencas: 0, erro: e.message });
-        batchSyncState.msg = `Erro em ${nomeTurma} (${i + 1}/${jobs.length}): ${e.message}`;
+        await safeSetBatchState(batchSyncState);
       }
-      await setChave("batch_sync_state", JSON.stringify(batchSyncState));
+
+      const agora = new Date().toISOString();
+      const falhas = batchSyncState.resultados.filter(r => r.erro);
+      const comErro = falhas.length;
+      const concluidos = batchSyncState.resultados.filter(r => !r.erro).length;
+      const resumoErros = falhas.slice(0, 3).map(f => `${f.turma}: ${f.erro}`).join("; ");
+      const finalMsg = comErro > 0
+        ? `${concluidos} diários sincronizados (${comErro} com erro: ${resumoErros}${comErro > 3 ? "..." : ""})`
+        : `${concluidos} diários sincronizados`;
+      const erroGeral = concluidos === 0 && comErro > 0 ? finalMsg : null;
+
+      batchSyncState = {
+        ...batchSyncState,
+        rodando: false, atual: jobs.length, pct: 100,
+        msg: finalMsg,
+        mensagem: finalMsg,
+        erro: erroGeral,
+        turmaAtual: "",
+        concluido: true, ultimaSync: agora,
+      };
+      await safeSetBatchState(batchSyncState);
+    } catch (e: any) {
+      const errMsg = formatDbError(e);
+      console.error("[BatchSync] Erro fatal:", errMsg);
+      batchSyncState = {
+        ...batchSyncState,
+        rodando: false,
+        erro: errMsg,
+        mensagem: errMsg,
+        msg: errMsg,
+        concluido: true,
+      };
+      await safeSetBatchState(batchSyncState);
     }
-    const agora = new Date().toISOString();
-    const comErro = batchSyncState.resultados.filter(r => r.erro).length;
-    const concluidos = batchSyncState.resultados.filter(r => !r.erro).length;
-    batchSyncState = {
-      ...batchSyncState,
-      rodando: false, atual: jobs.length,
-      msg: `${concluidos} diários sincronizados${comErro > 0 ? ` (${comErro} com erro)` : ""}`,
-      turmaAtual: "",
-      concluido: true, ultimaSync: agora,
-    };
-    await setChave("batch_sync_state", JSON.stringify(batchSyncState));
-  })().catch(async (e) => {
-    batchSyncState = { ...batchSyncState, rodando: false, erro: e.message, concluido: true };
-    await setChave("batch_sync_state", JSON.stringify(batchSyncState));
-  });
+  })();
 });
 
 /* ─── Iniciar sync (ainda legado) ─── */
@@ -505,7 +570,7 @@ router.get("/sync/auto/status", (_req, res) => {
    (login HTTP + download XLS + importação, tudo server-side)
 ════════════════════════════════════════════════════════════ */
 router.post("/sync/auto", async (req, res) => {
-  if (autoSyncState.rodando) {
+  if (autoSyncState.rodando && (Date.now() - autoSyncStartedAt < 10 * 60 * 1000)) {
     res.json({ ok: false, mensagem: "Já existe uma sincronização em andamento." });
     return;
   }
@@ -527,6 +592,7 @@ router.post("/sync/auto", async (req, res) => {
   }
 
   // Iniciar sync em background
+  autoSyncStartedAt = Date.now();
   autoSyncState = { rodando: true, pct: 0, msg: "Iniciando sincronização...", erro: null, concluido: false };
   res.json({ ok: true, mensagem: "Sincronização iniciada. Acompanhe o progresso." });
 
@@ -1409,17 +1475,20 @@ async function importarSecao(
           conteudo: info?.conteudo || null,
         };
       });
-      const rowsAulas = await db
-        .insert(diarioAulasTable)
-        .values(aulasBatch)
-        .onConflictDoUpdate({
-          target: [diarioAulasTable.turmaNome, diarioAulasTable.data],
-          set: {
-            numeroAulas: sql`excluded.numero_aulas`,
-            conteudo: sql`COALESCE(excluded.conteudo, ${diarioAulasTable.conteudo})`,
-          },
-        })
-        .returning({ id: diarioAulasTable.id, data: diarioAulasTable.data });
+      const rowsAulas = await withDbRetry(
+        () => db
+          .insert(diarioAulasTable)
+          .values(aulasBatch)
+          .onConflictDoUpdate({
+            target: [diarioAulasTable.turmaNome, diarioAulasTable.data],
+            set: {
+              numeroAulas: sql`excluded.numero_aulas`,
+              conteudo: sql`COALESCE(excluded.conteudo, ${diarioAulasTable.conteudo})`,
+            },
+          })
+          .returning({ id: diarioAulasTable.id, data: diarioAulasTable.data }),
+        `importarSecao:aulas:${secao.turmaLocal}`
+      );
 
       for (const r of rowsAulas) {
         aulaIdPorData.set(r.data, r.id);
@@ -1481,16 +1550,19 @@ async function importarSecao(
   for (let k = 0; k < presencasBatch.length; k += 300) {
     const chunk = presencasBatch.slice(k, k + 300);
     try {
-      await db
-        .insert(diarioPresencasTable)
-        .values(chunk)
-        .onConflictDoUpdate({
-          target: [diarioPresencasTable.aulaId, diarioPresencasTable.alunoId],
-          set: { status: sql`excluded.status` },
-        });
+      await withDbRetry(
+        () => db
+          .insert(diarioPresencasTable)
+          .values(chunk)
+          .onConflictDoUpdate({
+            target: [diarioPresencasTable.aulaId, diarioPresencasTable.alunoId],
+            set: { status: sql`excluded.status` },
+          }),
+        `importarSecao:presencas:${secao.turmaLocal}`
+      );
       presencasImportadas += chunk.length;
     } catch (e: any) {
-      erros.push(`Presenças lote (${secao.turmaLocal}): ${e.message}`);
+      erros.push(`Presenças lote (${secao.turmaLocal}): ${formatDbError(e)}`);
     }
   }
 

@@ -19,7 +19,16 @@ if (!process.env.DATABASE_URL) {
 
 export const pool = new Pool({ 
   connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false } // Necessário para Neon
+  ssl: { rejectUnauthorized: false }, // Necessário para Neon
+  max: 10,
+  idleTimeoutMillis: 20000,
+  connectionTimeoutMillis: 15000,
+  keepAlive: true,
+  keepAliveInitialDelayMillis: 10000,
+});
+
+pool.on("error", (err) => {
+  console.error("Unexpected error on idle pg client in pool:", err);
 });
 
 export const db = drizzle(pool, { schema });
